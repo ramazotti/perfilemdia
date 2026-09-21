@@ -1,0 +1,10 @@
+/vendor/
+.env
+.phpunit.cache/
+storage/logs/*
+!storage/logs/.gitkeep
+storage/media/*
+!storage/media/.gitkeep
+public/m/*
+!public/m/.htaccess
+!public/m/.gitkeep
