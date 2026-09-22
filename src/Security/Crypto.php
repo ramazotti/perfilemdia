@@ -22,7 +22,7 @@ final class Crypto
         Config::load();
         $decoded = base64_decode(Config::get('APP_ENCRYPTION_KEY'), true);
         if ($decoded === false) {
-            throw new RuntimeException('APP_ENCRYPTION_KEY n„o È base64 v·lido.');
+            throw new RuntimeException('APP_ENCRYPTION_KEY n√£o √© base64 v√°lido.');
         }
 
         return new self($decoded);
@@ -41,7 +41,7 @@ final class Crypto
         $decoded = base64_decode($payload, true);
         $minLength = SODIUM_CRYPTO_SECRETBOX_NONCEBYTES + SODIUM_CRYPTO_SECRETBOX_MACBYTES;
         if ($decoded === false || strlen($decoded) < $minLength) {
-            throw new RuntimeException('Payload cifrado inv·lido.');
+            throw new RuntimeException('Payload cifrado inv√°lido.');
         }
 
         $nonce = substr($decoded, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);

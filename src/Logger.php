@@ -22,7 +22,7 @@ final class Logger
 
         $dir = Config::root() . '/storage/logs';
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
-            throw new \RuntimeException('Não foi possível criar storage/logs.');
+            throw new \RuntimeException('NÃ£o foi possÃ­vel criar storage/logs.');
         }
 
         $logger = new MonologLogger('perfilemdia');

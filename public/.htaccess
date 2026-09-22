@@ -1,1 +1,9 @@
 Options -Indexes
+RewriteEngine On
+
+RewriteRule ^(webhook|oauth|m|assets)/ - [L]
+
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+RewriteRule ^ index.php [L]

@@ -23,12 +23,24 @@ final class Db
             Config::get('DB_HOST'),
             Config::get('DB_NAME')
         );
-
-        self::$pdo = new PDO($dsn, Config::get('DB_USER'), Config::get('DB_PASS', ''), [
+        $user = Config::get('DB_USER');
+        $pass = Config::get('DB_PASS', '');
+        $options = [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
+        ];
+
+        try {
+            self::$pdo = new PDO($dsn, $user, $pass, $options);
+        } catch (\PDOException $e) {
+            $fallback = Config::get('APP_ENV', 'production') === 'local' && Config::get('DB_HOST') === '127.0.0.1';
+            if (!$fallback) {
+                throw $e;
+            }
+            $dsn = sprintf('mysql:host=db;dbname=%s;charset=utf8mb4', Config::get('DB_NAME'));
+            self::$pdo = new PDO($dsn, $user, $pass, $options);
+        }
 
         return self::$pdo;
     }
