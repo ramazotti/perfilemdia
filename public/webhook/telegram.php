@@ -10,6 +10,7 @@ use PerfilEmDia\Db;
 use PerfilEmDia\Domain\OnboardingService;
 use PerfilEmDia\Domain\PostRepository;
 use PerfilEmDia\Domain\PostService;
+use PerfilEmDia\Domain\TicketService;
 use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Http;
 use PerfilEmDia\Image\ImageNormalizer;
@@ -25,9 +26,9 @@ require dirname(__DIR__, 2) . '/vendor/autoload.php';
 
 Config::load();
 
-$secret = Config::get('TELEGRAM_WEBHOOK_SECRET');
+$secret = Config::get('TELEGRAM_WEBHOOK_SECRET', '');
 $header = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
-if (!is_string($header) || !hash_equals($secret, $header)) {
+if ($secret === '' || !is_string($header) || !hash_equals($secret, $header)) {
     http_response_code(403);
     echo 'forbidden';
     exit;
@@ -98,5 +99,5 @@ function buildHandler(PDO $pdo): UpdateHandler
         new \PerfilEmDia\Billing\PlanAccess($pdo),
     );
 
-    return new UpdateHandler($users, $posts, $channel, $onboarding, $postService, BillingFactory::service($pdo));
+    return new UpdateHandler($users, $posts, $channel, $onboarding, $postService, BillingFactory::service($pdo), new TicketService($pdo, $users));
 }

@@ -69,6 +69,107 @@ final class CaptionGeneratorTest extends TestCase
         $this->assertSame(['#obra'], $result->hashtags);
     }
 
+    public function testJsonInsideProseStillParses(): void
+    {
+        $payload = "Segue a legenda:\n"
+            . json_encode([
+                'legenda' => 'Texto no meio da resposta.',
+                'hashtags' => ['vaticano'],
+                'alt_text' => 'Praca',
+            ], JSON_UNESCAPED_UNICODE)
+            . "\nEspero que sirva.";
+
+        $http = $this->fakeHttp(fn () => $this->okResponse($payload));
+        $result = (new CaptionGenerator($http))->generate($this->profile(null), 'vaticano', [$this->jpegPath]);
+
+        $this->assertSame('Texto no meio da resposta.', $result->legenda);
+    }
+
+    public function testArrayContentStillParses(): void
+    {
+        $json = json_encode([
+            'legenda' => 'Veio em partes.',
+            'hashtags' => ['foto'],
+            'alt_text' => 'alt',
+        ], JSON_UNESCAPED_UNICODE);
+        $http = $this->fakeHttp(function () use ($json) {
+            $response = $this->okResponse('');
+            $response['body']['choices'][0]['message']['content'] = [
+                ['type' => 'text', 'text' => (string) $json],
+            ];
+
+            return $response;
+        });
+
+        $result = (new CaptionGenerator($http))->generate($this->profile(null), 'tema', [$this->jpegPath]);
+
+        $this->assertSame('Veio em partes.', $result->legenda);
+    }
+
+    public function testStringHashtagsStillParse(): void
+    {
+        $http = $this->fakeHttp(fn () => $this->okResponse(json_encode([
+            'legenda' => 'Hashtags em texto.',
+            'hashtags' => '#Vaticano, Roma',
+            'alt_text' => 'Praca',
+        ], JSON_UNESCAPED_UNICODE)));
+
+        $result = (new CaptionGenerator($http))->generate($this->profile(null), 'vaticano', [$this->jpegPath]);
+
+        $this->assertSame('Hashtags em texto.', $result->legenda);
+        $this->assertSame(['#vaticano', '#roma'], $result->hashtags);
+    }
+
+    public function testProfileContactIsPlacedAfterHashtags(): void
+    {
+        $http = $this->fakeHttp(fn () => $this->okResponse(json_encode([
+            'legenda' => "Texto da legenda.\n\nAcesse: https://\nwww.exemplo.com para um exame que transforma a manha e o restante do dia com calma.",
+            'hashtags' => ['fe'],
+            'alt_text' => 'alt',
+        ], JSON_UNESCAPED_UNICODE)));
+        $profile = $this->profile(null);
+        $profile['contact_cta'] = 'https://www.exemplo.com';
+
+        $result = (new CaptionGenerator($http))->generate($profile, 'tema', [$this->jpegPath]);
+
+        $contactAt = mb_strpos($result->caption, 'https://www.exemplo.com');
+        $hashAt = mb_strpos($result->caption, '#fe');
+        $this->assertNotFalse($contactAt);
+        $this->assertNotFalse($hashAt);
+        $this->assertGreaterThan($hashAt, $contactAt);
+        $this->assertSame(1, substr_count($result->caption, 'https://www.exemplo.com'));
+        $this->assertStringNotContainsString('transforma a manha', $result->caption);
+    }
+
+    public function testHashtagsAlreadyInLegendAreNotRepeated(): void
+    {
+        $http = $this->fakeHttp(fn () => $this->okResponse(json_encode([
+            'legenda' => "Texto da legenda.\n\n#fe #oracao",
+            'hashtags' => ['fe', 'oracao'],
+            'alt_text' => 'alt',
+        ], JSON_UNESCAPED_UNICODE)));
+
+        $result = (new CaptionGenerator($http))->generate($this->profile(null), 'padre pio', [$this->jpegPath]);
+
+        $this->assertSame(1, substr_count($result->caption, '#fe'));
+        $this->assertSame(1, substr_count($result->caption, '#oracao'));
+        $this->assertStringContainsString('Texto da legenda.', $result->caption);
+    }
+
+    public function testLiteralNewlineEscapesBecomeRealBreaks(): void
+    {
+        $http = $this->fakeHttp(fn () => $this->okResponse(json_encode([
+            'legenda' => "Primeira linha.\\n\\nSegunda linha.",
+            'hashtags' => ['vaticano'],
+            'alt_text' => 'alt',
+        ], JSON_UNESCAPED_UNICODE)));
+
+        $result = (new CaptionGenerator($http))->generate($this->profile(null), 'vaticano', [$this->jpegPath]);
+
+        $this->assertSame("Primeira linha.\n\nSegunda linha.", $result->legenda);
+        $this->assertStringNotContainsString('\\n', $result->caption);
+    }
+
     public function testConteudoInadequadoThrows(): void
     {
         $http = $this->fakeHttp(fn () => $this->okResponse(json_encode([

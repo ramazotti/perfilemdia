@@ -15,10 +15,10 @@ final class TelegramClient
     private string $token;
     private HttpPoster $http;
 
-    public function __construct(?HttpPoster $http = null)
+    public function __construct(?HttpPoster $http = null, ?string $token = null)
     {
         Config::load();
-        $this->token = Config::get('TELEGRAM_BOT_TOKEN');
+        $this->token = $token ?? Config::get('TELEGRAM_BOT_TOKEN');
         $this->http = $http ?? new GuzzleHttpPoster();
     }
 
@@ -143,7 +143,12 @@ final class TelegramClient
                 ['command' => 'status', 'description' => 'Conta e limite do mes'],
                 ['command' => 'assinatura', 'description' => 'Ver ou cancelar a assinatura'],
                 ['command' => 'cancelar', 'description' => 'Cancelar post pendente'],
-                ['command' => 'ajuda', 'description' => 'Como o bot funciona'],
+                ['command' => 'chamado', 'description' => 'Abrir ou ver um chamado'],
+                ['command' => 'ideia', 'description' => 'Ideia para o post de hoje'],
+                ['command' => 'resultado', 'description' => 'Alcance dos ultimos 7 dias'],
+                ['command' => 'marca', 'description' => 'Cor e estilo da marca'],
+                ['command' => 'ajuda', 'description' => 'Lista de comandos'],
+                ['command' => 'help', 'description' => 'O mesmo que /ajuda'],
                 ['command' => 'excluirconta', 'description' => 'Apagar seus dados'],
             ],
         ]);

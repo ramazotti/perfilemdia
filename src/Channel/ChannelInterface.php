@@ -17,6 +17,11 @@ interface ChannelInterface
     public function sendPhoto(int $chatId, string $photoPath, ?string $caption, ?array $buttons = null): int;
 
     /**
+     * @param list<list<array{text:string, callback_data?:string, url?:string}>>|null $buttons
+     */
+    public function sendVideo(int $chatId, string $videoPath, ?string $caption, ?array $buttons = null): int;
+
+    /**
      * @param list<string> $photoPaths
      */
     public function sendAlbum(int $chatId, array $photoPaths): void;

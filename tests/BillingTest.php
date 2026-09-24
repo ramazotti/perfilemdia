@@ -83,6 +83,24 @@ final class BillingTest extends TestCase
         $this->assertStringNotContainsString('4000000000000002', (string) $row['pix_payload']);
     }
 
+    public function testPendingPixAppearsOnlyAfterItIsStarted(): void
+    {
+        $plan = (new PlanRepository($this->pdo))->findBySlug('essencial');
+        $this->assertNotNull($plan);
+        $service = new CheckoutService($this->pdo, new FakeGateway());
+        $checkout = $service->open($plan, 'mensal', [
+            'name' => 'Lia Teste',
+            'email' => 'lia-pix@example.com',
+            'phone' => '11988887777',
+            'document' => '529.982.247-25',
+        ], null);
+        $this->assertNull($service->pendingPix($checkout['public_id']));
+        $started = $service->startPix($checkout['public_id']);
+        $pending = $service->pendingPix($checkout['public_id']);
+        $this->assertNotNull($pending);
+        $this->assertSame($started['id'], $pending['id']);
+    }
+
     public function testFullCouponSkipsGatewayAndDeclinedCardCanRetry(): void
     {
         $plan = (new PlanRepository($this->pdo))->findBySlug('profissional');

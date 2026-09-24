@@ -53,6 +53,30 @@ final class TelegramChannel implements ChannelInterface
         return $messageId;
     }
 
+    public function sendVideo(int $chatId, string $videoPath, ?string $caption, ?array $buttons = null): int
+    {
+        $captionTooLong = $caption !== null && mb_strlen($caption) > self::CAPTION_LIMIT;
+        $params = [
+            'chat_id' => $chatId,
+            'video' => $this->photoInput($videoPath),
+        ];
+        if ($caption !== null && !$captionTooLong) {
+            $params['caption'] = $caption;
+            if ($buttons !== null) {
+                $params['reply_markup'] = $this->markup($buttons);
+            }
+        }
+
+        $result = $this->client->request('sendVideo', $params);
+        $messageId = (int) ($result['message_id'] ?? 0);
+
+        if ($captionTooLong) {
+            return $this->sendText($chatId, (string) $caption, $buttons);
+        }
+
+        return $messageId;
+    }
+
     public function sendAlbum(int $chatId, array $photoPaths): void
     {
         $media = [];

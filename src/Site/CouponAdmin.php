@@ -52,7 +52,7 @@ final class CouponAdmin
         $rows = '';
         foreach ($repo->all() as $coupon) {
             $limit = $coupon['max_uses'] === null ? 'sem limite' : ((int) $coupon['used_count'] . ' de ' . (int) $coupon['max_uses']);
-            $until = $coupon['valid_until'] === null ? 'sem validade' : substr((string) $coupon['valid_until'], 0, 10);
+            $until = $coupon['valid_until'] === null ? 'sem validade' : Layout::when((string) $coupon['valid_until']);
             $rows .= '<tr><td>' . Layout::e((string) $coupon['code']) . '</td>'
                 . '<td>' . (int) $coupon['percent'] . '%</td>'
                 . '<td>' . Layout::e($limit) . '</td>'

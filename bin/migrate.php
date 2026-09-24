@@ -22,7 +22,7 @@ $files = glob($dir . '/*.sql') ?: [];
 sort($files, SORT_STRING);
 
 if ($files === []) {
-    fwrite(STDERR, "Nenhuma migração em migrations/.\n");
+    fwrite(STDERR, "Nenhuma migraÃ§Ã£o em migrations/.\n");
     exit(1);
 }
 
@@ -32,7 +32,7 @@ foreach ($files as $file) {
     $check = $pdo->prepare('SELECT 1 FROM schema_migrations WHERE filename = ?');
     $check->execute([$filename]);
     if ($check->fetchColumn()) {
-        echo "ok  {$filename} (já aplicada)\n";
+        echo "ok  {$filename} (jÃ¡ aplicada)\n";
         continue;
     }
 
@@ -52,7 +52,7 @@ foreach ($files as $file) {
     $applied++;
 }
 
-echo $applied === 0 ? "Nada novo para aplicar.\n" : "Migrações novas: {$applied}.\n";
+echo $applied === 0 ? "Nada novo para aplicar.\n" : "MigraÃ§Ãµes novas: {$applied}.\n";
 
 /**
  * @return list<string>

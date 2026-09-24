@@ -10,6 +10,7 @@ use PerfilEmDia\Db;
 use PerfilEmDia\Domain\OnboardingService;
 use PerfilEmDia\Domain\PostRepository;
 use PerfilEmDia\Domain\PostService;
+use PerfilEmDia\Domain\TicketService;
 use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Image\ImageNormalizer;
 use PerfilEmDia\Instagram\InstagramClient;
@@ -46,7 +47,7 @@ $postService = new PostService(
     new InstagramPublisher(new InstagramClient()),
     new \PerfilEmDia\Billing\PlanAccess($pdo),
 );
-$handler = new UpdateHandler($users, $posts, $channel, $onboarding, $postService, BillingFactory::service($pdo));
+$handler = new UpdateHandler($users, $posts, $channel, $onboarding, $postService, BillingFactory::service($pdo), new TicketService($pdo, $users));
 
 foreach ($store->stuck() as $row) {
     $updateId = (int) $row['update_id'];
@@ -77,6 +78,40 @@ foreach ($posts->collectingOlderThanSeconds(30) as $post) {
         $postService->finalizeCollecting((int) $post['id']);
     } catch (Throwable $e) {
         Logger::get()->error('Worker collecting falhou', [
+            'post_id' => $post['id'],
+            'error' => $e->getMessage(),
+        ]);
+    }
+}
+
+foreach ($posts->imageEditingOlderThanMinutes(2) as $post) {
+    try {
+        $postService->abandonImageEdit((int) $post['id']);
+    } catch (Throwable $e) {
+        Logger::get()->error('Worker image edit falhou', [
+            'post_id' => $post['id'],
+            'error' => $e->getMessage(),
+        ]);
+    }
+}
+
+try {
+    $postService->publishDue();
+} catch (Throwable $e) {
+    Logger::get()->error('Worker agendamento falhou', ['error' => $e->getMessage()]);
+}
+
+try {
+    $postService->sendDailyIdeas();
+} catch (Throwable $e) {
+    Logger::get()->error('Worker ideia do dia falhou', ['error' => $e->getMessage()]);
+}
+
+foreach ($posts->publishingOlderThanMinutes(2) as $post) {
+    try {
+        $postService->resumePublishing((int) $post['id']);
+    } catch (Throwable $e) {
+        Logger::get()->error('Worker publishing falhou', [
             'post_id' => $post['id'],
             'error' => $e->getMessage(),
         ]);

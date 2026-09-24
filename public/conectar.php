@@ -10,6 +10,7 @@ use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Instagram\InstagramClient;
 use PerfilEmDia\Instagram\InstagramOAuth;
 use PerfilEmDia\Security\Crypto;
+use PerfilEmDia\Site\Layout;
 
 Config::load();
 
@@ -18,22 +19,10 @@ $users = new UserRepository(Db::pdo(), Crypto::fromConfig());
 $userId = $state !== '' ? $users->peekOauthState($state) : null;
 
 if ($userId === null) {
-    header('Content-Type: text/html; charset=utf-8');
-    echo '<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Link expirado</title>
-</head>
-<body>
-    <main>
-        <h1>Este link expirou</h1>
-        <p>Peça um novo link de conexão no Telegram.</p>
-        <p><a href="https://t.me/PerfilEmDiaBot">Abrir o bot no Telegram</a></p>
-    </main>
-</body>
-</html>';
+    $html = "<section class=\"center-page\"><div><h1>Este link expirou</h1>"
+        . "<p>Esse link nÃ£o vale mais. No Telegram, envie /conectar para receber outro.</p>"
+        . "<a class=\"btn btn-primary\" href=\"https://t.me/PerfilEmDiaBot\">Abrir o bot no Telegram</a></div></section>";
+    Layout::page("Link expirado", $html);
     exit;
 }
 

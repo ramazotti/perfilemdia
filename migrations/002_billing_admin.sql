@@ -132,7 +132,7 @@ CREATE TABLE login_attempts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO plans (slug, name, description, price_cents, posts_limit, features, highlighted, active, sort_order, created_at, updated_at) VALUES
-('essencial', 'Essencial', 'Para quem posta quando termina um trabalho.', 2900, 16, 'Até 16 posts por mês\nFoto única e carrossel\nLegenda e hashtags no seu tom\nAté 5 versões por post', 0, 1, 1, NOW(), NOW()),
+('essencial', 'Essencial', 'Para quem posta de vez em quando, no serviço ou no produto.', 2900, 16, 'Até 16 posts por mês\nFoto única e carrossel\nLegenda e hashtags no seu tom\nAté 5 versões por post', 0, 1, 1, NOW(), NOW()),
 ('profissional', 'Profissional', 'Para quem quer aparecer quase todo dia.', 4900, 40, 'Até 40 posts por mês\nFoto única e carrossel\nLegenda e hashtags no seu tom\nAté 5 versões por post\nSuporte prioritário pelo Telegram', 1, 1, 2, NOW(), NOW());
 
 INSERT INTO settings (skey, svalue) VALUES

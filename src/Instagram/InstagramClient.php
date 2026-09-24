@@ -180,6 +180,77 @@ final class InstagramClient
         return (string) ($body['id'] ?? '');
     }
 
+    public function createReelContainer(
+        string $igUserId,
+        string $token,
+        string $videoUrl,
+        string $caption,
+    ): string {
+        $response = $this->http->request(
+            'POST',
+            'https://graph.instagram.com/' . $this->version . '/' . $igUserId . '/media',
+            [
+                'form_params' => [
+                    'media_type' => 'REELS',
+                    'video_url' => $videoUrl,
+                    'caption' => $caption,
+                    'share_to_feed' => 'true',
+                    'access_token' => $token,
+                ],
+            ]
+        );
+
+        $body = $this->assertOk($response);
+
+        return (string) ($body['id'] ?? '');
+    }
+
+    public function createStoryContainer(
+        string $igUserId,
+        string $token,
+        string $mediaUrl,
+        bool $video,
+    ): string {
+        $response = $this->http->request(
+            'POST',
+            'https://graph.instagram.com/' . $this->version . '/' . $igUserId . '/media',
+            [
+                'form_params' => [
+                    'media_type' => 'STORIES',
+                    $video ? 'video_url' : 'image_url' => $mediaUrl,
+                    'access_token' => $token,
+                ],
+            ]
+        );
+
+        $body = $this->assertOk($response);
+
+        return (string) ($body['id'] ?? '');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function accountInsights(string $igUserId, string $token, int $since, int $until): array
+    {
+        $response = $this->http->request(
+            'GET',
+            'https://graph.instagram.com/' . $this->version . '/' . $igUserId . '/insights',
+            [
+                'query' => [
+                    'metric' => 'reach,views',
+                    'period' => 'day',
+                    'metric_type' => 'total_value',
+                    'since' => (string) $since,
+                    'until' => (string) $until,
+                    'access_token' => $token,
+                ],
+            ]
+        );
+
+        return $this->assertOk($response);
+    }
+
     public function containerStatus(string $containerId, string $token): string
     {
         $response = $this->http->request(
@@ -232,6 +303,38 @@ final class InstagramClient
         $body = $this->assertOk($response);
 
         return (string) ($body['permalink'] ?? '');
+    }
+
+    public function profilePicture(string $token): ?string
+    {
+        try {
+            $response = $this->http->request(
+                'GET',
+                'https://graph.instagram.com/' . $this->version . '/me',
+                [
+                    'query' => [
+                        'fields' => 'profile_picture_url',
+                        'access_token' => $token,
+                    ],
+                ]
+            );
+            $body = $this->assertOk($response);
+        } catch (InstagramApiException) {
+            return null;
+        }
+
+        $url = (string) ($body['profile_picture_url'] ?? '');
+        if (!str_starts_with($url, 'https://')) {
+            return null;
+        }
+
+        $file = $this->http->request('GET', $url, ['timeout' => 20]);
+        $bytes = $file['body'] ?? null;
+        if (($file['status'] ?? 0) !== 200 || !is_string($bytes) || strlen($bytes) < 32) {
+            return null;
+        }
+
+        return $bytes;
     }
 
     /**
@@ -294,7 +397,7 @@ final class InstagramClient
         if ($code === 2207009 || $code === 2207005 || $subcode === 2207009 || $subcode === 2207005) {
             return ['media_invalid', false];
         }
-        if ($code === 2207027 || $subcode === 2207027) {
+        if ($code === 9007 || $code === 2207027 || $subcode === 2207027) {
             return ['not_ready', true];
         }
 

@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace PerfilEmDia\Telegram;
 
+use PerfilEmDia\Ai\OpenRouterSpeechTranscriber;
+use PerfilEmDia\Ai\SpeechTranscriber;
 use PerfilEmDia\Billing\CheckoutService;
+use PerfilEmDia\Billing\CustomerAccess;
+use PerfilEmDia\Db;
 use PerfilEmDia\Channel\ChannelInterface;
 use PerfilEmDia\Config;
 use PerfilEmDia\Domain\OnboardingService;
 use PerfilEmDia\Domain\PostRepository;
 use PerfilEmDia\Domain\PostService;
+use PerfilEmDia\Domain\TicketService;
 use PerfilEmDia\Domain\UserRepository;
+use PerfilEmDia\Logger;
 use PerfilEmDia\Messages;
 
 final class UpdateHandler
@@ -22,6 +28,8 @@ final class UpdateHandler
         private readonly OnboardingService $onboarding,
         private readonly PostService $postsService,
         private readonly ?CheckoutService $billing = null,
+        private readonly ?TicketService $tickets = null,
+        private readonly ?SpeechTranscriber $speech = null,
     ) {
     }
 
@@ -85,7 +93,28 @@ final class UpdateHandler
             return;
         }
 
-        if ($this->hasMedia($message)) {
+        $spoken = $this->spokenText($chatId, $message);
+        if ($spoken !== null) {
+            if ($spoken === '') {
+                return;
+            }
+            $text = $spoken;
+        }
+
+        if ($this->inTicketDraft($user)) {
+            if ($spoken === null && $this->hasMedia($message)) {
+                $this->channel->sendText($chatId, Messages::ticketNeedText(), Keyboards::ticketCompose());
+
+                return;
+            }
+            if ($text !== '') {
+                $this->tickets?->receive($user, $chatId, $text, $this->channel);
+
+                return;
+            }
+        }
+
+        if ($spoken === null && $this->hasMedia($message)) {
             $this->postsService->handleIncomingMedia($user, $chatId, $message);
 
             return;
@@ -96,6 +125,15 @@ final class UpdateHandler
                 return;
             }
             $user = $this->users->find((int) $user['id']) ?? $user;
+            if ($this->postsService->handleScheduleText($user, $chatId, $text)) {
+                return;
+            }
+            if ($this->postsService->handlePhraseText($user, $chatId, $text)) {
+                return;
+            }
+            if ($this->postsService->handleIdeaText($user, $chatId, $text)) {
+                return;
+            }
             if ($this->postsService->handleThemeText($user, $chatId, $text)) {
                 return;
             }
@@ -110,22 +148,31 @@ final class UpdateHandler
         $parts = preg_split('/\s+/', trim($text), 2) ?: [];
         $command = strtolower((string) ($parts[0] ?? ''));
         $command = explode('@', $command)[0];
+        if (!in_array($command, ['/chamado', '/suporte'], true)) {
+            $this->leaveTicketDraft($user);
+        }
 
         match ($command) {
             '/start' => $this->startCommand($user, $chatId, (string) ($parts[1] ?? '')),
-            '/novo' => $this->channel->sendText($chatId, Messages::novo()),
+            '/novo' => $this->postsService->askPostKind($chatId, $user),
             '/perfil' => $this->channel->sendText($chatId, Messages::perfil($user), Keyboards::perfilFields()),
             '/conectar' => $this->cmdConectar($user, $chatId),
             '/status' => $this->cmdStatus($user, $chatId),
             '/assinatura' => $this->cmdAssinatura($user, $chatId),
             '/cancelar' => $this->postsService->cancelPending($user, $chatId),
-            '/ajuda' => $this->channel->sendText($chatId, Messages::ajuda()),
+            '/chamado', '/suporte' => $this->tickets === null
+                ? $this->channel->sendText($chatId, Messages::ajuda())
+                : $this->tickets->showMenu($user, $chatId, $this->channel),
+            '/ajuda', '/help' => $this->channel->sendText($chatId, Messages::ajuda()),
+            '/ideia' => $this->postsService->showIdea($user, $chatId),
+            '/resultado' => $this->postsService->report($user, $chatId),
+            '/marca' => $this->onboarding->beginEdit($user, $chatId, 'marca'),
             '/excluirconta' => $this->channel->sendText(
                 $chatId,
                 Messages::deleteConfirm(),
                 Keyboards::deleteConfirm()
             ),
-            default => null,
+            default => $this->channel->sendText($chatId, Messages::ajuda()),
         };
     }
 
@@ -164,12 +211,39 @@ final class UpdateHandler
             return;
         }
 
+        $url = $this->accountUrl((int) $user['id']);
+        $status = match ((string) $summary['status']) {
+            'ativa' => 'Ativa',
+            'inadimplente' => 'Pagamento pendente',
+            'pendente' => 'Aguardando pagamento',
+            'cancelada' => 'Cancelada',
+            default => (string) $summary['status'],
+        };
+        $note = '';
+        if (!empty($summary['cancel_at'])) {
+            $status = 'Cancelamento marcado';
+            $note = 'O acesso segue até o fim do período pago.';
+        } elseif ((string) ($summary['renew_method'] ?? '') !== 'cartao') {
+            $note = 'Não há cartão salvo para a próxima cobrança.';
+        }
+        $buttons = $url !== '' ? Keyboards::openUrl('Minha conta', $url) : null;
         $this->channel->sendText($chatId, Messages::subscription(
             (string) $summary['plan'],
             (string) $summary['cycle'],
-            (string) $summary['status'],
+            $status,
             $summary['until'] !== null ? (string) $summary['until'] : null,
-        ));
+            $url,
+            $note,
+        ), $buttons);
+    }
+
+    private function accountUrl(int $userId): string
+    {
+        try {
+            return (new CustomerAccess(Db::pdo()))->urlForUser($userId);
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     /**
@@ -198,6 +272,9 @@ final class UpdateHandler
         if ($chatId === 0) {
             $chatId = (int) $user['telegram_chat_id'];
         }
+        if (!str_starts_with($data, 'ch:')) {
+            $this->leaveTicketDraft($user);
+        }
 
         if ($data === 'del:sim') {
             $this->channel->answerCallback($callbackId);
@@ -218,6 +295,12 @@ final class UpdateHandler
         if ($data === 'novo:sim' || $data === 'novo:nao') {
             $this->channel->answerCallback($callbackId);
             $this->postsService->handleReplaceDecision($user, $chatId, $data === 'novo:sim');
+
+            return;
+        }
+        if (str_starts_with($data, 'pk:')) {
+            $this->channel->answerCallback($callbackId);
+            $this->postsService->choosePostKind($user, $chatId, substr($data, 3));
 
             return;
         }
@@ -245,7 +328,36 @@ final class UpdateHandler
 
             return;
         }
-        if (preg_match('/^a:(pub|adj|reg|man|can):(\d+)$/', $data, $m) === 1) {
+        if ($this->tickets !== null && (
+            $data === 'ch:novo' || $data === 'ch:sair' || $data === 'ch:menu'
+            || str_starts_with($data, 'ch:ver:') || str_starts_with($data, 'ch:resp:')
+        )) {
+            $this->channel->answerCallback($callbackId);
+            $this->tickets->handleCallback($user, $chatId, $data, $this->channel);
+
+            return;
+        }
+        if (preg_match('/^s:(t18|n9|n18|in):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->chooseSchedule($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+
+            return;
+        }
+        if (preg_match('/^w:(tl|tr|bl|br|c):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->placeMark($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+
+            return;
+        }
+        if ($data === 'id:ia' || $data === 'id:on' || $data === 'id:off') {
+            $this->channel->answerCallback($callbackId);
+            if ($data === 'id:ia') {
+                $this->postsService->createFromStoredIdea($user, $chatId);
+            } else {
+                $this->postsService->setDailyIdeas($user, $chatId, $data === 'id:on');
+            }
+
+            return;
+        }
+        if (preg_match('/^a:(pub|adj|reg|man|can|img|txt|wm|sch|uns|sty|pic):(\d+)$/', $data, $m) === 1) {
             $this->postsService->handleApprovalCallback($user, $chatId, $callbackId, $m[1], (int) $m[2]);
 
             return;
@@ -278,13 +390,15 @@ final class UpdateHandler
             $window = $this->billing->postWindow((int) $user['id']);
             if ($window !== null) {
                 if ($window['scope'] === 'encerrado') {
+                    $accountUrl = $this->accountUrl((int) $user['id']);
                     $text = ($window['blocked'] ?? '') === 'recusado'
-                        ? Messages::renewalRefused($window['plan'])
+                        ? Messages::renewalRefused($window['plan'], $accountUrl)
                         : Messages::periodEnded(
                             $window['plan'],
                             (int) $window['next_cents'],
                             (int) $window['days'],
                             $window['kind'],
+                            $accountUrl,
                         );
                     $this->channel->sendText($chatId, $text);
 
@@ -312,9 +426,108 @@ final class UpdateHandler
     /**
      * @param array<string, mixed> $message
      */
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function inTicketDraft(array $user): bool
+    {
+        return $this->tickets !== null
+            && str_starts_with((string) ($user['pending_action'] ?? ''), 'chamado:');
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function leaveTicketDraft(array &$user): void
+    {
+        if (!$this->inTicketDraft($user)) {
+            return;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => null]);
+        $user['pending_action'] = null;
+    }
+
+    /**
+     * @param array<string, mixed> $message
+     */
+    /**
+     * @param array<string, mixed> $message
+     */
+    private function spokenText(int $chatId, array $message): ?string
+    {
+        $speech = SpeechMessage::from($message);
+        if ($speech === null) {
+            return null;
+        }
+        if (SpeechMessage::tooLong($speech)) {
+            $this->channel->sendText($chatId, Messages::audioTooLong());
+
+            return '';
+        }
+
+        $temp = tempnam(sys_get_temp_dir(), 'pdv');
+        if ($temp === false) {
+            $this->channel->sendText($chatId, Messages::audioFailed());
+
+            return '';
+        }
+
+        try {
+            $this->channel->download($speech['file_id'], $temp);
+            $bytes = file_get_contents($temp);
+            if (!is_string($bytes) || $bytes === '') {
+                $this->channel->sendText($chatId, Messages::audioFailed());
+
+                return '';
+            }
+            if (strlen($bytes) > SpeechMessage::MAX_BYTES) {
+                $this->channel->sendText($chatId, Messages::audioTooLong());
+
+                return '';
+            }
+            if ($speech['duration'] <= 0) {
+                $measured = SpeechDuration::seconds($bytes, $speech['format']);
+                if ($measured === null || $measured > SpeechMessage::MAX_SECONDS) {
+                    $this->channel->sendText($chatId, Messages::audioTooLong());
+
+                    return '';
+                }
+            }
+            $text = trim(strip_tags(($this->speech ?? new OpenRouterSpeechTranscriber())->transcribe($bytes, $speech['format'])));
+        } catch (\Throwable $e) {
+            Logger::get()->error('Transcricao falhou', ['error' => $e->getMessage()]);
+            $this->channel->sendText($chatId, Messages::audioFailed());
+
+            return '';
+        } finally {
+            if (is_file($temp)) {
+                unlink($temp);
+            }
+        }
+
+        if (str_starts_with($text, '/')) {
+            $text = ltrim(substr($text, 1));
+        }
+        $text = mb_substr($text, 0, 2000);
+        if ($text === '') {
+            $this->channel->sendText($chatId, Messages::audioEmpty());
+
+            return '';
+        }
+        $this->channel->sendText($chatId, Messages::audioHeard($text));
+
+        return $text;
+    }
+
+    /**
+     * @param array<string, mixed> $message
+     */
     private function hasMedia(array $message): bool
     {
-        return !empty($message['photo']) || !empty($message['document']);
+        return !empty($message['photo'])
+            || !empty($message['document'])
+            || !empty($message['video'])
+            || !empty($message['video_note']);
     }
 
     private function deleteMediaPath(string $path): void
@@ -327,9 +540,11 @@ final class UpdateHandler
         if ($path === '') {
             return;
         }
-        $candidate = Config::root() . '/public/m/' . $path . '.jpg';
-        if (is_file($candidate)) {
-            @unlink($candidate);
+        foreach (['.jpg', '.mp4'] as $ext) {
+            $candidate = Config::root() . '/public/m/' . $path . $ext;
+            if (is_file($candidate)) {
+                @unlink($candidate);
+            }
         }
     }
 }

@@ -22,52 +22,128 @@ final class InstagramPublisher implements InstagramPublisherInterface
         array $imageUrls,
         string $caption,
         ?string $altText = null,
+        ?string $containerId = null,
+        ?string $mediaId = null,
+        ?callable $checkpoint = null,
     ): PublishedMedia {
-        $count = count($imageUrls);
-        if ($count === 0) {
-            throw new InvalidArgumentException('At least one image URL is required');
-        }
-
-        if ($count === 1) {
-            $containerId = $this->client->createImageContainer(
-                $igUserId,
-                $accessToken,
-                $imageUrls[0],
-                $caption,
-                $altText,
-                false,
-            );
-        } else {
-            $childrenIds = [];
-            foreach ($imageUrls as $url) {
-                $childrenIds[] = $this->client->createImageContainer(
-                    $igUserId,
-                    $accessToken,
-                    $url,
-                    null,
-                    null,
-                    true,
-                );
+        $note = static function (string $field, string $value) use ($checkpoint): void {
+            if ($checkpoint !== null) {
+                $checkpoint($field, $value);
             }
-            $containerId = $this->client->createCarouselContainer(
-                $igUserId,
-                $accessToken,
-                $childrenIds,
-                $caption,
-            );
+        };
+
+        if ($mediaId === null || $mediaId === '') {
+            if ($containerId === null || $containerId === '') {
+                $count = count($imageUrls);
+                if ($count === 0) {
+                    throw new InvalidArgumentException('At least one image URL is required');
+                }
+
+                if ($count === 1) {
+                    $containerId = $this->client->createImageContainer(
+                        $igUserId,
+                        $accessToken,
+                        $imageUrls[0],
+                        $caption,
+                        $altText,
+                        false,
+                    );
+                } else {
+                    $childrenIds = [];
+                    foreach ($imageUrls as $url) {
+                        $childrenIds[] = $this->client->createImageContainer(
+                            $igUserId,
+                            $accessToken,
+                            $url,
+                            null,
+                            null,
+                            true,
+                        );
+                    }
+                    $containerId = $this->client->createCarouselContainer(
+                        $igUserId,
+                        $accessToken,
+                        $childrenIds,
+                        $caption,
+                    );
+                }
+                $note('container', $containerId);
+            }
+
+            $this->waitUntilReady($containerId, $accessToken);
+            $mediaId = $this->client->publishContainer($igUserId, $accessToken, $containerId);
+            $note('media', $mediaId);
         }
 
-        $this->waitUntilReady($containerId, $accessToken);
-
-        $mediaId = $this->client->publishContainer($igUserId, $accessToken, $containerId);
         $permalink = $this->client->permalink($mediaId, $accessToken);
 
-        return new PublishedMedia($containerId, $mediaId, $permalink);
+        return new PublishedMedia($containerId ?? '', $mediaId, $permalink);
     }
 
-    private function waitUntilReady(string $containerId, string $token): void
+    public function publishStory(
+        string $igUserId,
+        string $accessToken,
+        string $mediaUrl,
+        bool $video,
+        ?string $containerId = null,
+        ?string $mediaId = null,
+        ?callable $checkpoint = null,
+    ): PublishedMedia {
+        $note = static function (string $field, string $value) use ($checkpoint): void {
+            if ($checkpoint !== null) {
+                $checkpoint($field, $value);
+            }
+        };
+
+        if ($mediaId === null || $mediaId === '') {
+            if ($containerId === null || $containerId === '') {
+                $containerId = $this->client->createStoryContainer($igUserId, $accessToken, $mediaUrl, $video);
+                $note('container', $containerId);
+            }
+            $this->waitUntilReady($containerId, $accessToken);
+            $mediaId = $this->client->publishContainer($igUserId, $accessToken, $containerId);
+            $note('media', $mediaId);
+        }
+
+        $permalink = $this->client->permalink($mediaId, $accessToken);
+
+        return new PublishedMedia($containerId ?? '', $mediaId, $permalink);
+    }
+
+    public function publishReel(
+        string $igUserId,
+        string $accessToken,
+        string $videoUrl,
+        string $caption,
+        ?string $containerId = null,
+        ?string $mediaId = null,
+        ?callable $checkpoint = null,
+    ): PublishedMedia {
+        $note = static function (string $field, string $value) use ($checkpoint): void {
+            if ($checkpoint !== null) {
+                $checkpoint($field, $value);
+            }
+        };
+
+        if ($mediaId === null || $mediaId === '') {
+            if ($containerId === null || $containerId === '') {
+                $containerId = $this->client->createReelContainer($igUserId, $accessToken, $videoUrl, $caption);
+                $note('container', $containerId);
+            }
+
+            $this->waitUntilReady($containerId, $accessToken, 45);
+            $mediaId = $this->client->publishContainer($igUserId, $accessToken, $containerId);
+            $note('media', $mediaId);
+        }
+
+        $permalink = $this->client->permalink($mediaId, $accessToken);
+
+        return new PublishedMedia($containerId ?? '', $mediaId, $permalink);
+    }
+
+    private function waitUntilReady(string $containerId, string $token, int $maxSeconds = self::POLL_MAX_SECONDS): void
     {
-        $deadline = time() + self::POLL_MAX_SECONDS;
+        $deadline = time() + $maxSeconds;
 
         while (true) {
             try {

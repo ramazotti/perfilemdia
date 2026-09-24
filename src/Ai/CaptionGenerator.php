@@ -20,6 +20,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
 
     private HttpPoster $http;
     private bool $allowSleep;
+    private bool $creative = false;
 
     public function __construct(?HttpPoster $http = null)
     {
@@ -35,39 +36,57 @@ final class CaptionGenerator implements CaptionGeneratorInterface
         ?string $feedback = null,
     ): CaptionResult {
         Config::load();
+        $this->creative = str_starts_with($theme, "[[criacao]]\n");
+        if ($this->creative) {
+            $theme = substr($theme, strlen("[[criacao]]\n"));
+        }
 
         $primaryModel = self::model('ai_model', 'OPENROUTER_MODEL', 'openai/gpt-4o-mini');
         $fallbackModel = self::model('ai_model_fallback', 'OPENROUTER_MODEL_FALLBACK', 'google/gemini-2.5-flash');
-        $maxTokens = (int) Config::get('ANTHROPIC_MAX_TOKENS', '1024');
+        $legacyTokens = Config::get('ANTHROPIC_MAX_TOKENS', '1024');
+        $maxTokens = (int) Config::get('OPENROUTER_MAX_TOKENS', $legacyTokens);
 
         $imageBlocks = $this->imageBlocks($jpegPaths);
+        $contact = trim((string) ($profile['contact_cta'] ?? ''));
+        if ($previousCaption !== null && $contact !== '') {
+            $previousCaption = self::withoutRepeatedContact($previousCaption, $contact);
+        }
         $userText = Prompts::user($profile, $theme, $previousCaption, $feedback, count($jpegPaths));
 
         $response = $this->requestWithFailover($primaryModel, $fallbackModel, $imageBlocks, $userText, $maxTokens);
+        $this->rejectProviderError($response['body']);
         $parsed = $this->decodeModelJson($this->extractText($response['body']));
 
         if ($parsed === null) {
             $retryText = $userText . "\n\n" . self::JSON_RETRY_HINT;
             $response = $this->requestWithFailover($primaryModel, $fallbackModel, $imageBlocks, $retryText, $maxTokens);
+            $this->rejectProviderError($response['body']);
             $parsed = $this->decodeModelJson($this->extractText($response['body']));
         }
 
         if ($parsed === null) {
-            throw new CaptionException('Model returned invalid JSON.', 'invalid_json');
+            $snippet = trim((string) preg_replace('/\s+/', ' ', $this->extractText($response['body'])));
+            throw new CaptionException('Model returned invalid JSON. ' . mb_substr($snippet, 0, 240), 'invalid_json');
+        }
+
+        if (array_is_list($parsed) && isset($parsed[0]) && is_array($parsed[0])) {
+            $parsed = $parsed[0];
         }
 
         if (($parsed['erro'] ?? null) === 'conteudo_inadequado') {
             throw new CaptionException('Content flagged as inadequate.', 'conteudo_inadequado');
         }
 
-        if (!isset($parsed['legenda'], $parsed['hashtags'], $parsed['alt_text']) || !is_array($parsed['hashtags'])) {
-            throw new CaptionException('Model returned invalid JSON.', 'invalid_json');
+        $fields = $this->captionFields($parsed);
+        if ($fields === null) {
+            $snippet = mb_substr((string) json_encode($parsed, JSON_UNESCAPED_UNICODE), 0, 240);
+            throw new CaptionException('Model returned invalid JSON. ' . $snippet, 'invalid_json');
         }
 
-        $legenda = (string) $parsed['legenda'];
-        $hashtags = $this->mergeHashtags($parsed['hashtags'], (string) ($profile['fixed_hashtags'] ?? ''));
-        $altText = $this->truncate((string) $parsed['alt_text'], self::MAX_ALT_TEXT_CHARS);
-        $caption = $this->buildCaption($legenda, $hashtags);
+        $legenda = $fields['legenda'];
+        $hashtags = $this->mergeHashtags($fields['hashtags'], (string) ($profile['fixed_hashtags'] ?? ''));
+        $altText = $this->truncate($fields['alt_text'], self::MAX_ALT_TEXT_CHARS);
+        $caption = $this->buildCaption($legenda, $hashtags, trim((string) ($profile['contact_cta'] ?? '')));
 
         $usage = is_array($response['body']['usage'] ?? null) ? $response['body']['usage'] : [];
         $model = (string) ($response['body']['model'] ?? $response['model']);
@@ -218,7 +237,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => Prompts::system(),
+                        'content' => $this->creative ? Prompts::creative() : Prompts::system(),
                     ],
                     [
                         'role' => 'user',
@@ -242,6 +261,19 @@ final class CaptionGenerator implements CaptionGeneratorInterface
     private function isRetryableStatus(int $status): bool
     {
         return $status === 429 || $status >= 500;
+    }
+
+    /**
+     * @param array<string, mixed>|string $body
+     */
+    private function rejectProviderError(array|string $body): void
+    {
+        if (!is_array($body) || !isset($body['error'])) {
+            return;
+        }
+        $error = $body['error'];
+        $message = is_array($error) ? (string) ($error['message'] ?? 'OpenRouter error') : (string) $error;
+        throw new CaptionException($message, 'api_error');
     }
 
     private function isSuccess(int $status): bool
@@ -269,8 +301,22 @@ final class CaptionGenerator implements CaptionGeneratorInterface
         if (is_string($choice)) {
             return $choice;
         }
+        if (!is_array($choice)) {
+            return '';
+        }
 
-        return '';
+        $parts = [];
+        foreach ($choice as $part) {
+            if (is_string($part)) {
+                $parts[] = $part;
+                continue;
+            }
+            if (is_array($part) && is_string($part['text'] ?? null)) {
+                $parts[] = $part['text'];
+            }
+        }
+
+        return implode("\n", $parts);
     }
 
     /**
@@ -283,16 +329,105 @@ final class CaptionGenerator implements CaptionGeneratorInterface
             return null;
         }
 
-        if (preg_match('/^```(?:json)?\s*(.*?)\s*```$/si', $text, $matches) === 1) {
-            $text = trim($matches[1]);
+        $candidates = [$text];
+        if (preg_match('/```(?:json)?\s*(.*?)\s*```/si', $text, $matches) === 1) {
+            $candidates[] = trim($matches[1]);
+        }
+        $object = $this->firstJsonObject($text);
+        if ($object !== null) {
+            $candidates[] = $object;
         }
 
-        $decoded = json_decode($text, true);
-        if (!is_array($decoded)) {
+        foreach ($candidates as $candidate) {
+            $decoded = json_decode($candidate, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
+    }
+
+    private function firstJsonObject(string $text): ?string
+    {
+        $start = strpos($text, '{');
+        if ($start === false) {
             return null;
         }
 
-        return $decoded;
+        $depth = 0;
+        $inString = false;
+        $escape = false;
+        $length = strlen($text);
+        for ($i = $start; $i < $length; $i++) {
+            $char = $text[$i];
+            if ($inString) {
+                if ($escape) {
+                    $escape = false;
+                    continue;
+                }
+                if ($char === '\\') {
+                    $escape = true;
+                    continue;
+                }
+                if ($char === '"') {
+                    $inString = false;
+                }
+                continue;
+            }
+            if ($char === '"') {
+                $inString = true;
+                continue;
+            }
+            if ($char === '{') {
+                $depth++;
+                continue;
+            }
+            if ($char === '}') {
+                $depth--;
+                if ($depth === 0) {
+                    return substr($text, $start, $i - $start + 1);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $parsed
+     * @return array{legenda:string, hashtags:list<mixed>, alt_text:string}|null
+     */
+    private function captionFields(array $parsed): ?array
+    {
+        $legenda = $parsed['legenda'] ?? $parsed['caption'] ?? $parsed['texto'] ?? null;
+        if (!is_string($legenda) || trim($legenda) === '') {
+            return null;
+        }
+
+        $tags = $parsed['hashtags'] ?? $parsed['tags'] ?? [];
+        if (is_string($tags)) {
+            $tags = preg_split('/[\s,]+/', trim($tags), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        }
+        if (!is_array($tags)) {
+            $tags = [];
+        }
+
+        $alt = $parsed['alt_text'] ?? $parsed['alt'] ?? '';
+        if (!is_string($alt)) {
+            $alt = '';
+        }
+
+        return [
+            'legenda' => $this->normalizeBreaks($legenda),
+            'hashtags' => array_values($tags),
+            'alt_text' => $this->normalizeBreaks($alt),
+        ];
+    }
+
+    private function normalizeBreaks(string $text): string
+    {
+        return str_replace(["\\r\\n", "\\n", "\\r"], "\n", $text);
     }
 
     /**
@@ -350,26 +485,129 @@ final class CaptionGenerator implements CaptionGeneratorInterface
     /**
      * @param list<string> $hashtags
      */
-    private function buildCaption(string $legenda, array $hashtags): string
+    private function buildCaption(string $legenda, array $hashtags, string $contact = ''): string
     {
-        $tags = $hashtags;
-        $caption = $legenda;
-        if ($tags !== []) {
-            $caption = $legenda . "\n\n" . implode(' ', $tags);
+        $legenda = self::withoutHashtagBlocks($legenda);
+        $contact = trim($contact);
+        if ($contact !== '') {
+            $legenda = self::withoutRepeatedContact($legenda, $contact);
         }
+        $tags = $hashtags;
+        $caption = self::assembleCaption($legenda, $tags, $contact);
 
         while (mb_strlen($caption) > self::MAX_CAPTION_CHARS && $tags !== []) {
             array_pop($tags);
-            $caption = $tags === []
-                ? $legenda
-                : $legenda . "\n\n" . implode(' ', $tags);
+            $caption = self::assembleCaption($legenda, $tags, $contact);
         }
 
         if (mb_strlen($caption) > self::MAX_CAPTION_CHARS) {
-            $caption = $this->truncate($caption, self::MAX_CAPTION_CHARS);
+            $tail = $contact === '' ? '' : "\n\n" . $contact;
+            $room = self::MAX_CAPTION_CHARS - mb_strlen($tail);
+            $caption = $room < 1
+                ? $this->truncate($contact, self::MAX_CAPTION_CHARS)
+                : $this->truncate($legenda, $room) . $tail;
         }
 
-        return $caption;
+        return self::dedupeHashtagBlocks($caption);
+    }
+
+    public static function dedupeHashtagBlocks(string $caption): string
+    {
+        $parts = preg_split("/\n{2,}/", trim($caption)) ?: [];
+        $seen = [];
+        $kept = [];
+        foreach ($parts as $part) {
+            $trim = trim($part);
+            if ($trim === '') {
+                continue;
+            }
+            $flat = trim((string) preg_replace('/\s+/u', ' ', str_replace("\n", ' ', $trim)));
+            if (preg_match('/^(?:#[\p{L}\p{N}_]+\s*)+$/u', $flat) === 1) {
+                $key = mb_strtolower($flat);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+            }
+            $kept[] = $trim;
+        }
+
+        return implode("\n\n", $kept);
+    }
+
+    /**
+     * @param list<string> $tags
+     */
+    private static function assembleCaption(string $legenda, array $tags, string $contact): string
+    {
+        $parts = [];
+        if ($legenda !== '') {
+            $parts[] = $legenda;
+        }
+        if ($tags !== []) {
+            $parts[] = implode(' ', $tags);
+        }
+        if ($contact !== '') {
+            $parts[] = $contact;
+        }
+
+        return implode("\n\n", $parts);
+    }
+
+    private static function withoutRepeatedContact(string $legenda, string $contact): string
+    {
+        $compact = static function (string $text): string {
+            return mb_strtolower((string) preg_replace('/\s+/u', '', $text));
+        };
+        $needles = [$compact($contact)];
+        if (preg_match_all('#https?://\S+#iu', $contact, $urls) > 0) {
+            foreach ($urls[0] as $url) {
+                $needles[] = $compact($url);
+            }
+        }
+        $needles = array_values(array_filter($needles, static fn (string $needle): bool => $needle !== ''));
+        if ($needles === []) {
+            return $legenda;
+        }
+        $blocks = preg_split("/\n{2,}/", trim($legenda)) ?: [];
+        $kept = [];
+        foreach ($blocks as $block) {
+            $trim = trim($block);
+            $flat = $compact($trim);
+            $drop = false;
+            foreach ($needles as $needle) {
+                if ($flat !== '' && str_contains($flat, $needle)) {
+                    $drop = true;
+                    break;
+                }
+                if ($flat !== '' && str_contains($needle, $flat) && mb_strlen($trim) <= mb_strlen($contact) + 40) {
+                    $drop = true;
+                    break;
+                }
+            }
+            if ($drop || $trim === '') {
+                continue;
+            }
+            $kept[] = $trim;
+        }
+
+        return implode("\n\n", $kept);
+    }
+
+    private static function withoutHashtagBlocks(string $legenda): string
+    {
+        $lines = preg_split("/\r\n|\n|\r/", $legenda) ?: [];
+        $kept = [];
+        foreach ($lines as $line) {
+            $flat = trim((string) preg_replace('/\s+/u', ' ', $line));
+            if ($flat !== '' && preg_match('/^(?:#[\p{L}\p{N}_]+\s*)+$/u', $flat) === 1) {
+                continue;
+            }
+            $kept[] = $line;
+        }
+        $text = trim(implode("\n", $kept));
+
+        return (string) preg_replace("/\n{3,}/", "\n\n", $text);
     }
 
     private function truncate(string $text, int $max): string

@@ -15,13 +15,13 @@ final class PlanAccess
     }
 
     /**
-     * @return array{scope:string,limit:int,from:string,until:string,days:int,plan:string,next_cents:int,kind:string,blocked:string}|null
+     * @return array{scope:string,limit:int,from:string,until:string,days:int,plan:string,slug:string,next_cents:int,kind:string,blocked:string}|null
      */
     public function window(int $userId): ?array
     {
         $stmt = $this->pdo->prepare(
             'SELECT s.status, s.period_kind, s.posts_limit, s.period_days, s.period_started_at, s.current_period_end,
-                    s.price_cents, p.name AS plan_name, p.posts_limit AS plan_posts
+                    s.comp_forever, s.comp_until, s.price_cents, p.name AS plan_name, p.slug AS plan_slug, p.posts_limit AS plan_posts
              FROM customers c
              INNER JOIN subscriptions s ON s.customer_id = c.id
              INNER JOIN plans p ON p.id = s.plan_id
@@ -45,11 +45,15 @@ final class PlanAccess
             'until' => $end,
             'days' => $days > 0 ? $days : 3,
             'plan' => (string) $row['plan_name'],
+            'slug' => (string) $row['plan_slug'],
             'next_cents' => (int) $row['price_cents'],
             'kind' => $kind,
             'blocked' => '',
         ];
-        if ((string) $row['status'] === 'inadimplente' || $end === '' || $end < $now->format('Y-m-d H:i:s')) {
+        $forever = (int) ($row['comp_forever'] ?? 0) === 1;
+        $compUntil = (string) ($row['comp_until'] ?? '');
+        $comped = $forever || ($compUntil !== '' && $compUntil >= $now->format('Y-m-d H:i:s'));
+        if (!$comped && ((string) $row['status'] === 'inadimplente' || $end === '' || $end < $now->format('Y-m-d H:i:s'))) {
             $base['scope'] = 'encerrado';
             $base['blocked'] = (string) $row['status'] === 'inadimplente' ? 'recusado' : 'fim';
 
@@ -80,5 +84,30 @@ final class PlanAccess
         $base['until'] = $local->modify('first day of next month')->setTime(0, 0, 0)->format('Y-m-d H:i:s');
 
         return $base;
+    }
+
+    public function canEditPhoto(int $userId): bool
+    {
+        return $this->planAllows($userId, ['profissional', 'estudio']);
+    }
+
+    public function canPublishVideo(int $userId): bool
+    {
+        return $this->planAllows($userId, ['profissional', 'estudio']);
+    }
+
+    public function canCreateWithAi(int $userId): bool
+    {
+        return $this->planAllows($userId, ['estudio']);
+    }
+
+    /**
+     * @param list<string> $slugs
+     */
+    private function planAllows(int $userId, array $slugs): bool
+    {
+        $window = $this->window($userId);
+
+        return $window !== null && $window['blocked'] === '' && in_array($window['slug'], $slugs, true);
     }
 }

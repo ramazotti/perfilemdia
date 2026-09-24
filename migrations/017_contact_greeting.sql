@@ -1,0 +1,4 @@
+CREATE TABLE contact_greetings (
+  customer_chat_id BIGINT NOT NULL PRIMARY KEY,
+  greeted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

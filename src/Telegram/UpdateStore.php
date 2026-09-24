@@ -9,15 +9,20 @@ use PDOException;
 
 final class UpdateStore
 {
-    public function __construct(private readonly PDO $pdo)
-    {
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly string $tableName = 'telegram_updates',
+    ) {
+        if (!in_array($this->tableName, ['telegram_updates', 'contact_updates'], true)) {
+            throw new \InvalidArgumentException('Tabela de updates invalida.');
+        }
     }
 
     public function remember(int $updateId, string $payloadJson): bool
     {
         try {
             $stmt = $this->pdo->prepare(
-                'INSERT INTO telegram_updates (update_id, payload) VALUES (?, ?)'
+                'INSERT INTO ' . $this->tableName . ' (update_id, payload) VALUES (?, ?)'
             );
             $stmt->execute([$updateId, $payloadJson]);
 
@@ -33,7 +38,15 @@ final class UpdateStore
     public function markProcessed(int $updateId): void
     {
         $stmt = $this->pdo->prepare(
-            'UPDATE telegram_updates SET processed_at = NOW() WHERE update_id = ?'
+            'UPDATE ' . $this->tableName . ' SET processed_at = NOW() WHERE update_id = ?'
+        );
+        $stmt->execute([$updateId]);
+    }
+
+    public function forget(int $updateId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM ' . $this->tableName . ' WHERE update_id = ? AND processed_at IS NULL'
         );
         $stmt->execute([$updateId]);
     }
@@ -41,7 +54,7 @@ final class UpdateStore
     public function markError(int $updateId, string $error): void
     {
         $stmt = $this->pdo->prepare(
-            'UPDATE telegram_updates
+            'UPDATE ' . $this->tableName . '
              SET attempts = attempts + 1, last_error = ?
              WHERE update_id = ?'
         );
@@ -54,7 +67,7 @@ final class UpdateStore
     public function stuck(int $olderThanSeconds = 120, int $maxAttempts = 3): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM telegram_updates
+            'SELECT * FROM ' . $this->tableName . '
              WHERE processed_at IS NULL
                AND attempts < ?
                AND received_at < DATE_SUB(NOW(), INTERVAL ? SECOND)

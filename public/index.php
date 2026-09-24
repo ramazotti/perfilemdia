@@ -5,6 +5,7 @@ declare(strict_types=1);
 use PerfilEmDia\Config;
 use PerfilEmDia\Db;
 use PerfilEmDia\Site\AdminSite;
+use PerfilEmDia\Site\CustomerPortal;
 use PerfilEmDia\Site\Layout;
 use PerfilEmDia\Site\PublicSite;
 
@@ -14,20 +15,37 @@ Config::load();
 
 header('Content-Type: text/html; charset=utf-8');
 
-$secure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-session_set_cookie_params([
-    'lifetime' => 0,
-    'path' => Layout::base() === '' ? '/' : Layout::base() . '/',
-    'httponly' => true,
-    'samesite' => 'Lax',
-    'secure' => $secure,
-]);
-session_start();
-
 $path = Layout::path();
+$method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$cacheable = in_array($method, ['GET', 'HEAD'], true) && in_array($path, [
+    '/',
+    '/planos',
+    '/ajuda',
+    '/manual',
+    '/conta',
+    '/privacidade',
+    '/termos',
+    '/sitemap.xml',
+    '/conectado',
+    '/erro-conexao',
+], true);
+if (!$cacheable) {
+    $secure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => Layout::base() === '' ? '/' : Layout::base() . '/',
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure' => $secure,
+    ]);
+    session_start();
+}
 $pdo = Db::pdo();
 
 if ((new AdminSite($pdo))->dispatch($path)) {
+    return;
+}
+if ((new CustomerPortal($pdo))->dispatch($path)) {
     return;
 }
 if ((new PublicSite($pdo))->dispatch($path)) {

@@ -1,3 +1,15 @@
 User-agent: *
 Allow: /
-Allow: /m/
+Disallow: /admin
+Disallow: /minha-conta
+Disallow: /contratar
+Disallow: /pronto
+Disallow: /conectado
+Disallow: /erro-conexao
+Disallow: /webhook
+Disallow: /oauth
+Disallow: /m/
+Disallow: /appmax
+Disallow: /webhooks
+
+Sitemap: https://perfilemdia.com.br/sitemap.xml

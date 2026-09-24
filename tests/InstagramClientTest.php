@@ -88,6 +88,40 @@ final class InstagramClientTest extends TestCase
             $this->assertFalse($e->retryable);
         }
     }
+
+    public function testProfilePictureDownloadsTheHttpsFile(): void
+    {
+        $jpeg = $this->tinyJpeg();
+        $fake = new FakeHttpPoster([
+            [
+                'status' => 200,
+                'body' => ['profile_picture_url' => 'https://cdn.example/avatar.jpg'],
+            ],
+            [
+                'status' => 200,
+                'body' => $jpeg,
+            ],
+        ]);
+
+        $bytes = (new InstagramClient($fake))->profilePicture('token');
+
+        $this->assertSame($jpeg, $bytes);
+        $this->assertSame('profile_picture_url', $fake->requests[0]['options']['query']['fields']);
+        $this->assertSame('https://cdn.example/avatar.jpg', $fake->requests[1]['url']);
+    }
+
+    private function tinyJpeg(): string
+    {
+        $image = imagecreatetruecolor(8, 8);
+        $this->assertNotFalse($image);
+        ob_start();
+        imagejpeg($image);
+        $jpeg = ob_get_clean();
+        imagedestroy($image);
+        $this->assertIsString($jpeg);
+
+        return $jpeg;
+    }
 }
 
 /**

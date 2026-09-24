@@ -88,6 +88,30 @@ final class InstagramPublisherTest extends TestCase
         $this->assertSame('Carrossel', $fake->requests[2]['options']['form_params']['caption']);
     }
 
+    public function testPublishReelUsesReelsAndSharesToFeed(): void
+    {
+        $fake = new FakeHttpPoster([
+            ['status' => 200, 'body' => ['id' => 'reel-container']],
+            ['status' => 200, 'body' => ['status_code' => 'FINISHED']],
+            ['status' => 200, 'body' => ['id' => 'reel-media']],
+            ['status' => 200, 'body' => ['permalink' => 'https://www.instagram.com/reel/abc/']],
+        ]);
+        $publisher = new InstagramPublisher(new InstagramClient($fake));
+
+        $result = $publisher->publishReel(
+            'ig-user-1',
+            'token-xyz',
+            'https://cdn.example.com/a.mp4',
+            'Legenda do video',
+        );
+
+        $this->assertSame('reel-container', $result->containerId);
+        $this->assertSame('REELS', $fake->requests[0]['options']['form_params']['media_type']);
+        $this->assertSame('https://cdn.example.com/a.mp4', $fake->requests[0]['options']['form_params']['video_url']);
+        $this->assertSame('true', $fake->requests[0]['options']['form_params']['share_to_feed']);
+        $this->assertSame('reel-container', $fake->requests[2]['options']['form_params']['creation_id']);
+    }
+
     public function testPublishWithZeroUrlsThrowsInvalidArgument(): void
     {
         $publisher = new InstagramPublisher(new InstagramClient(new FakeHttpPoster([])));

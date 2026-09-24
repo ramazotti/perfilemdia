@@ -78,6 +78,11 @@ final class FakeChannel implements ChannelInterface
         return count($this->sent);
     }
 
+    public function sendVideo(int $chatId, string $videoPath, ?string $caption, ?array $buttons = null): int
+    {
+        return 1;
+    }
+
     public function sendPhoto(int $chatId, string $photoPath, ?string $caption, ?array $buttons = null): int
     {
         $this->sent[] = ['type' => 'photo', 'chatId' => $chatId, 'text' => (string) $caption];

@@ -20,6 +20,7 @@ final class OnboardingService
         'tom' => 'tone',
         'contato' => 'contact_cta',
         'sobre' => 'about',
+        'marca' => 'brand_style',
     ];
 
     private const LIMITS = [
@@ -28,6 +29,7 @@ final class OnboardingService
         'city' => 120,
         'contact_cta' => 255,
         'about' => 500,
+        'brand_style' => 160,
     ];
 
     public function __construct(
@@ -180,6 +182,7 @@ final class OnboardingService
             'tom' => $this->channel->sendText($chatId, Messages::askTone(), Keyboards::tone()),
             'contato' => $this->channel->sendText($chatId, Messages::askCta()),
             'sobre' => $this->channel->sendText($chatId, Messages::askAbout()),
+            'marca' => $this->channel->sendText($chatId, Messages::askBrand()),
             default => null,
         };
     }

@@ -57,6 +57,10 @@ final class UserRepository
             'contact_cta',
             'fixed_hashtags',
             'about',
+            'brand_style',
+            'idea_daily',
+            'idea_sent_on',
+            'idea_text',
             'onboarding_step',
             'pending_action',
             'status',
@@ -82,7 +86,7 @@ final class UserRepository
     {
         $state = bin2hex(random_bytes(32));
         $expires = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))
-            ->modify('+15 minutes')
+            ->modify('+24 hours')
             ->format('Y-m-d H:i:s');
         $stmt = $this->pdo->prepare('INSERT INTO oauth_states (state, user_id, expires_at) VALUES (?, ?, ?)');
         $stmt->execute([$state, $userId, $expires]);
@@ -231,6 +235,10 @@ final class UserRepository
         $this->pdo->prepare('DELETE FROM instagram_accounts WHERE user_id = ?')->execute([$userId]);
         $this->pdo->prepare('DELETE FROM ai_usage WHERE user_id = ?')->execute([$userId]);
         $this->pdo->prepare('DELETE FROM events WHERE user_id = ?')->execute([$userId]);
+        $this->pdo->prepare(
+            'DELETE tm FROM ticket_messages tm INNER JOIN tickets t ON t.id = tm.ticket_id WHERE t.user_id = ?'
+        )->execute([$userId]);
+        $this->pdo->prepare('DELETE FROM tickets WHERE user_id = ?')->execute([$userId]);
         $this->pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$userId]);
 
         return $paths;
@@ -254,5 +262,21 @@ final class UserRepository
         }
 
         return $rows;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function dueDailyIdeas(string $today): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM users
+             WHERE idea_daily = 1 AND status = ? AND onboarding_step = ?
+               AND (idea_sent_on IS NULL OR idea_sent_on < ?)
+             LIMIT 40'
+        );
+        $stmt->execute(['active', 'done', $today]);
+
+        return $stmt->fetchAll();
     }
 }

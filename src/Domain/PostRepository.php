@@ -22,14 +22,46 @@ final class PostRepository
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function addMedia(int $postId, int $position, string $fileId, int $messageId): int
+    public function addMedia(int $postId, int $position, string $fileId, int $messageId, string $kind = 'image'): int
     {
+        $kind = $kind === 'video' ? 'video' : 'image';
         $stmt = $this->pdo->prepare(
-            'INSERT INTO post_media (post_id, position, telegram_file_id, telegram_msg_id) VALUES (?, ?, ?, ?)'
+            'INSERT INTO post_media (post_id, position, telegram_file_id, telegram_msg_id, kind) VALUES (?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$postId, $position, $fileId, $messageId]);
+        $stmt->execute([$postId, $position, $fileId, $messageId, $kind]);
 
         return (int) $this->pdo->lastInsertId();
+    }
+
+    public function addMediaIfRoom(int $postId, string $fileId, int $messageId, int $max = 10): ?int
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $lock = $this->pdo->prepare('SELECT id FROM posts WHERE id = ? FOR UPDATE');
+            $lock->execute([$postId]);
+            if ($lock->fetch() === false) {
+                $this->pdo->commit();
+
+                return null;
+            }
+            $countStmt = $this->pdo->prepare('SELECT COUNT(*) FROM post_media WHERE post_id = ?');
+            $countStmt->execute([$postId]);
+            $count = (int) $countStmt->fetchColumn();
+            if ($count >= $max) {
+                $this->pdo->commit();
+
+                return null;
+            }
+            $id = $this->addMedia($postId, $count, $fileId, $messageId);
+            $this->pdo->commit();
+
+            return $id;
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     public function find(int $id): ?array
@@ -96,6 +128,8 @@ final class PostRepository
             'alt_text',
             'caption_version',
             'regen_count',
+            'image_edit_count',
+            'idea_regen_count',
             'last_feedback',
             'media_group_id',
             'preview_message_id',
@@ -106,6 +140,9 @@ final class PostRepository
             'error_message',
             'attempts',
             'published_at',
+            'scheduled_at',
+            'creative',
+            'destination',
         ];
         $set = [];
         $values = [];
@@ -127,7 +164,7 @@ final class PostRepository
     {
         $stmt = $this->pdo->prepare(
             "SELECT * FROM posts
-             WHERE user_id = ? AND status IN ('AWAITING_THEME', 'AWAITING_APPROVAL', 'AWAITING_FEEDBACK', 'AWAITING_MANUAL_EDIT')
+             WHERE user_id = ? AND status IN ('AWAITING_THEME', 'AWAITING_APPROVAL', 'AWAITING_FEEDBACK', 'AWAITING_MANUAL_EDIT', 'AWAITING_IMAGE_EDIT')
              ORDER BY id DESC LIMIT 1"
         );
         $stmt->execute([$userId]);
@@ -170,6 +207,48 @@ final class PostRepository
             "SELECT * FROM posts WHERE status = 'COLLECTING' AND updated_at < DATE_SUB(NOW(), INTERVAL ? SECOND)"
         );
         $stmt->execute([$seconds]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function dueScheduled(string $now): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM posts
+             WHERE status = 'SCHEDULED' AND scheduled_at IS NOT NULL AND scheduled_at <= ?
+             ORDER BY scheduled_at ASC
+             LIMIT 20"
+        );
+        $stmt->execute([$now]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function publishingOlderThanMinutes(int $minutes): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM posts WHERE status = 'PUBLISHING' AND updated_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)"
+        );
+        $stmt->execute([$minutes]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function imageEditingOlderThanMinutes(int $minutes): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM posts WHERE status = 'IMAGE_EDITING' AND updated_at < DATE_SUB(NOW(), INTERVAL ? MINUTE)"
+        );
+        $stmt->execute([$minutes]);
 
         return $stmt->fetchAll();
     }

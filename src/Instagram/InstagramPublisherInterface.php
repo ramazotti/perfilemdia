@@ -17,5 +17,34 @@ interface InstagramPublisherInterface
         array $imageUrls,
         string $caption,
         ?string $altText = null,
+        ?string $containerId = null,
+        ?string $mediaId = null,
+        ?callable $checkpoint = null,
+    ): PublishedMedia;
+
+    /**
+     * Publica um vídeo curto como Reels e também no feed.
+     */
+    public function publishReel(
+        string $igUserId,
+        string $accessToken,
+        string $videoUrl,
+        string $caption,
+        ?string $containerId = null,
+        ?string $mediaId = null,
+        ?callable $checkpoint = null,
+    ): PublishedMedia;
+
+    /**
+     * Publica uma foto ou um vídeo único como story.
+     */
+    public function publishStory(
+        string $igUserId,
+        string $accessToken,
+        string $mediaUrl,
+        bool $video,
+        ?string $containerId = null,
+        ?string $mediaId = null,
+        ?callable $checkpoint = null,
     ): PublishedMedia;
 }

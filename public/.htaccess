@@ -1,6 +1,18 @@
 Options -Indexes
 RewriteEngine On
 
+RewriteCond %{HTTP_HOST} ^www\.perfilemdia\.com\.br$ [NC]
+RewriteRule ^ https://perfilemdia.com.br%{REQUEST_URI} [L,R=301,QSA]
+
+RewriteCond %{HTTP_HOST} ^perfilemdia\.com\.br$ [NC]
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^ https://perfilemdia.com.br%{REQUEST_URI} [L,R=301,QSA]
+
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} ^(.+)/$
+RewriteRule ^ %1 [L,R=301,QSA]
+
 RewriteRule ^(webhook|oauth|m|assets)/ - [L]
 
 RewriteCond %{REQUEST_FILENAME} -f

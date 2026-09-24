@@ -27,7 +27,7 @@ final class Guides
             [
                 'id' => 'perfil',
                 'title' => 'Conte quem você é',
-                'body' => 'Responda nome, profissão, cidade e o tom da legenda. Depois, como o cliente fala com você e o que você faz de melhor. Para corrigir qualquer resposta mais tarde, envie /perfil e toque no campo.',
+                'body' => 'Responda como quer ser chamado, o que você faz (a profissão ou o produto), onde atende e o tom da legenda. Depois, o contato que entra na legenda, depois das hashtags, e o que você faz de melhor. Para corrigir qualquer resposta mais tarde, envie /perfil e toque no campo.',
                 'when' => 'O bot pede para conectar o Instagram.',
             ],
             [
@@ -44,21 +44,21 @@ final class Guides
             ],
             [
                 'id' => 'foto',
-                'title' => 'Mande a foto e uma frase',
-                'body' => 'Envie uma foto real do serviço, ou um álbum de até 10 fotos. Na mesma mensagem, uma frase curta: o que foi feito e onde. A legenda só pode usar o que está na foto e nessa frase.',
-                'when' => 'Chega uma prévia com a legenda, as hashtags e os botões Publicar, Ajustar e Outra versão.',
+                'title' => 'Escolha o tipo do post',
+                'body' => 'No bot, envie /novo ou mande o material. O bot pergunta o tipo: foto única, carrossel, vídeo curto ou criado pela IA. Na foto única, mande uma foto e uma frase na mesma mensagem. No carrossel, mande as fotos juntas, até 10, e uma frase. O vídeo curto tem de 3 a 90 segundos, até 20 MB, sozinho, com uma frase, nos planos Profissional e Estúdio. Criado pela IA é só do plano Estúdio: o texto é a ideia, e a imagem e a legenda saem a partir dele. Uma foto junto, se quiser, é só referência. Se o arquivo chegar antes da escolha, o bot pergunta o tipo e você envia de novo. A legenda usa o material, a frase e o contato do perfil. Esse contato entra depois das hashtags.',
+                'when' => 'O bot mostra os botões do tipo. Depois da escolha, chega a prévia com a legenda, as hashtags e os botões Publicar, Ajustar e Outra versão.',
             ],
             [
                 'id' => 'aprovar',
                 'title' => 'Publique só se a prévia estiver boa',
-                'body' => 'Publicar manda para o Instagram. Ajustar serve para dizer o que mudar. Outra versão pede um texto novo. Você também pode escrever a legenda do seu jeito. Nada sai sem esse toque.',
+                'body' => 'Publicar manda para o Instagram. Ajustar serve para dizer o que mudar. Outra versão pede um texto novo. Você também pode escrever a legenda do seu jeito. Nada sai sem esse toque. Nos planos Profissional e Estúdio, Texto na foto escreve uma frase curta em cima da imagem. Marca d\'água coloca a foto do Instagram em um círculo com borda, no canto que você escolher. Agendar marca o dia e a hora, e o bot publica sozinho. Dá para escolher um horário pronto ou escrever só a hora, ou o dia e a hora. O menu da prévia segue até o post sair. Tratar foto muda a imagem com IA, e a frase entre aspas também entra em cima da foto. O post criado pela IA segue a mesma regra: só publica quando você toca em Publicar, ou na hora agendada.',
                 'when' => 'O bot devolve o link do post publicado.',
             ],
             [
                 'id' => 'sozinho',
                 'title' => 'Se travar, resolva na conversa',
-                'body' => 'Conexão expirada: /conectar. Foto cortada: o Instagram só aceita do retrato 4:5 ao paisagem 1,91:1, e o corte é no centro. Limite do mês: /status. Cancelar a assinatura: /assinatura. Apagar os dados: /excluirconta, ou a página Exclusão de dados, que gera um protocolo.',
-                'when' => 'O bot confirma a ação. Se a dúvida for de plano ou de pagamento, /assinatura mostra o estado atual.',
+                'body' => 'Conexão expirada: /conectar. Foto cortada: o Instagram só aceita do retrato 4:5 ao paisagem 1,91:1, e o corte é no centro. Limite do mês: /status. Cancelar a assinatura, trocar o cartão ou ver os pagamentos: /assinatura, no botão Minha conta. Apagar os dados: /excluirconta, ou a página Exclusão de dados, que gera um protocolo. Se nada disso resolver, envie /chamado e descreva o problema. A resposta chega na mesma conversa.',
+                'when' => 'O bot confirma a ação. Se a dúvida for de plano ou de pagamento, /assinatura abre a página da conta. Se o bot perguntar o tipo de novo, envie /novo e escolha outra vez.',
             ],
         ];
     }
@@ -77,22 +77,27 @@ final class Guides
             [
                 'id' => 'clientes',
                 'title' => 'Clientes',
-                'body' => 'Aguardando ativação: pagou e ainda não enviou o código no Telegram. Ativo: o código já ligou o pagamento à conversa. Busque por nome, e-mail ou documento. No detalhe, Bloquear impede o uso. O link de conexão abre a página que o cliente usa no /conectar. Mudar plano vale para a assinatura ativa e não reabre o checkout. Cancelar assinatura encerra o período seguinte. Excluir dados apaga perfil, fotos e Instagram, e guarda o pagamento sem o nome.',
+                'body' => 'A lista mostra o plano, o ciclo, a vigência, o Instagram e o celular. Aguardando ativação: pagou e ainda não enviou o código no Telegram. Ativo: o código já ligou o pagamento à conversa. Busque por nome, e-mail ou documento. No detalhe, Bloquear marca o cliente como cancelado. A assinatura segue ativa e o bot continua publicando. Para cortar o uso, cancele a assinatura. O link de conexão abre a página que o cliente usa no /conectar. Mudar plano troca o plano na hora, sem abrir outro checkout. O preço cobrado continua o do checkout. O limite de posts da assinatura muda na renovação. Cancelar assinatura encerra agora: a assinatura fica cancelada e o cliente, cancelado. Quem cancela sozinho, em Minha conta, segue até o fim do período já pago. Mesmo cancelada no painel, o bot ainda aceita post até 30 no mês. Excluir dados apaga perfil, fotos e Instagram, e guarda o pagamento sem o nome. Isentar para sempre, ou até uma data, libera o plano escolhido no formulário, sem cobrança, e o limite daquele plano vale na hora. Tirar a isenção marca a cobrança para o dia seguinte. Sem cartão salvo, essa cobrança não completa.',
+            ],
+            [
+                'id' => 'chamados',
+                'title' => 'Chamados',
+                'body' => 'A pessoa abre pelo comando /chamado no Telegram e descreve o problema em uma mensagem. O chamado entra em Em análise. Responder muda para Em andamento e a resposta chega na conversa do bot. Encerrado fecha. Se você responder um chamado encerrado, ele volta para Em andamento. Apagar a conta da pessoa apaga os chamados dela.',
             ],
             [
                 'id' => 'posts',
                 'title' => 'Posts',
-                'body' => 'Cada linha é uma tentativa do bot. Filtre por FAILED para ver o que não publicou. O cliente tenta de novo no Telegram, com /novo ou outra foto. Esta lista não tem botão de publicar no lugar dele.',
+                'body' => 'A lista mostra o cliente e o @ do Instagram, com link para o perfil. Cada linha é uma tentativa do bot. Filtre por Falhou para ver o que não publicou. O cliente tenta de novo no Telegram. Se a publicação falhar, o bot mostra o motivo e o botão Tentar de novo. Post agendado sai na hora marcada, sem um novo toque. Esta lista não tem botão de publicar no lugar dele. Foto, carrossel, vídeo curto e post criado pela IA entram nesta lista. O cliente escolhe o tipo no Telegram, com /novo.',
             ],
             [
                 'id' => 'pagamentos',
                 'title' => 'Pagamentos',
-                'body' => 'Entram valor, status, meio (Pix, cartão ou cupom), bandeira e os 4 últimos dígitos. O número completo do cartão não é pedido de volta e não fica no banco. Pendente no Pix espera o webhook do banco. No sandbox local, o botão Confirmar no sandbox simula esse aviso.',
+                'body' => 'Cada linha mostra o cliente, com nome, e-mail e documento. O nome abre a ficha. Entram valor, status, meio (Pix, cartão ou cupom), bandeira e os 4 últimos dígitos. O número completo do cartão não é pedido de volta e não fica no banco. Pendente no Pix espera o webhook do banco. No sandbox local, o botão Confirmar no sandbox simula esse aviso.',
             ],
             [
                 'id' => 'planos',
                 'title' => 'Planos',
-                'body' => 'Nome, preço mensal, preço do teste, dias de teste, limite de posts e a lista de itens saem na página pública assim que você salva. Os posts do teste são a fração desses dias em um mês de 30, arredondada. O anual continua sendo 10 vezes o mensal, sem teste. Quem já assinou permanece no preço que estava no checkout.',
+                'body' => 'Nome, preço mensal, preço do teste, dias de teste, limite de posts e a lista de itens saem na página pública assim que você salva. Os posts do teste são a fração desses dias em um mês de 30, arredondada. O anual continua sendo 10 vezes o mensal, sem teste. Quem já assinou permanece no preço que estava no checkout. Estúdio é o plano com post criado pela IA. Vídeo curto e tratamento da foto ficam no Profissional e no Estúdio. Mudar o texto do item não muda essa regra: ela segue o plano.',
             ],
             [
                 'id' => 'cupons',
@@ -102,12 +107,12 @@ final class Guides
             [
                 'id' => 'ia',
                 'title' => 'Uso de IA',
-                'body' => 'Soma os tokens do mês e estima o custo com o preço por milhão e o câmbio definidos em Configurações. A relação por cliente só aparece depois que a pessoa ativou o código e passou a gerar legenda. A chave do OpenRouter não é mostrada.',
+                'body' => 'O custo do mês, do dia e o total vêm da chave no OpenRouter. As tabelas contam os tokens das legendas gravados aqui. A imagem do post criado pela IA entra no custo da chave e não entra nessa contagem. A chave não aparece nesta tela.',
             ],
             [
                 'id' => 'eventos',
                 'title' => 'Erros e eventos',
-                'body' => 'Histórico curto do que o sistema registrou, inclusive cliente_excluido. Filtre pelo tipo quando alguém disser que um dado sumiu ou que um post falhou.',
+                'body' => 'A lista mostra o cliente e o @ do Instagram. Histórico curto do que o sistema registrou, inclusive cliente_excluido. Filtre pelo tipo quando alguém disser que um dado sumiu ou que um post falhou.',
             ],
             [
                 'id' => 'config',
@@ -116,8 +121,8 @@ final class Guides
             ],
             [
                 'id' => 'antes',
-                'title' => 'Antes de ligar as contas externas',
-                'body' => 'Dá para revisar o site, o checkout sandbox e estes manuais sem chave nenhuma. Para um cliente real, ainda faltam: os nameservers do domínio apontando para a hospedagem; o token do bot, o webhook e os comandos; o app do Instagram com a URL de retorno; a chave e o webhook do Asaas, se o Pix e o cartão forem de verdade; a chave do OpenRouter no .env de produção; a razão social, o CNPJ e a revisão jurídica dos textos; e um admin criado com php bin/admin.php create-admin, sem senha de demonstração.',
+                'title' => 'O que fica fora do painel',
+                'body' => 'O site, o bot, o Instagram, a AppMax e o OpenRouter já estão em uso. Em Configurações, Integrações mostra se a chave existe, sem revelar o valor. Nameservers, token do bot, webhook, URL de retorno do Instagram, token da AppMax e chave do OpenRouter ficam no .env do servidor. Razão social, CNPJ e a revisão jurídica dos textos continuam fora deste painel. Um admin novo se cria com php bin/admin.php create-admin.',
             ],
         ];
     }
