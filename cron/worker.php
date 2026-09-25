@@ -102,6 +102,12 @@ try {
 }
 
 try {
+    $postService->finishAiVideos();
+} catch (Throwable $e) {
+    Logger::get()->error('Worker video IA falhou', ['error' => $e->getMessage()]);
+}
+
+try {
     $postService->sendDailyIdeas();
 } catch (Throwable $e) {
     Logger::get()->error('Worker ideia do dia falhou', ['error' => $e->getMessage()]);

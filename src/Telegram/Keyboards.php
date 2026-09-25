@@ -80,26 +80,67 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function markPlace(int $postId): array
+    public static function markSource(int $postId, bool $hasLogo): array
     {
+        $rows = [
+            [['text' => 'Foto do perfil', 'callback_data' => 'm:ig:' . $postId]],
+        ];
+        if ($hasLogo) {
+            $rows[] = [['text' => 'Minha logo', 'callback_data' => 'm:ok:' . $postId]];
+        }
+        $rows[] = [['text' => 'Enviar logo', 'callback_data' => 'm:up:' . $postId]];
+
+        return $rows;
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
+    public static function phraseStyles(int $postId, string $current): array
+    {
+        $labels = [
+            'cursiva' => 'Cursiva',
+            'classica' => "Cl\u{00e1}ssica",
+            'limpa' => 'Limpa',
+            'forte' => 'Forte',
+        ];
+        $button = static function (string $style) use ($postId, $current, $labels): array {
+            $text = $labels[$style];
+            if ($style === $current) {
+                $text .= " \u{2713}";
+            }
+
+            return ['text' => $text, 'callback_data' => 'f:' . $style . ':' . $postId];
+        };
+
         return [
-            [
-                ['text' => 'Em cima, à esquerda', 'callback_data' => 'w:tl:' . $postId],
-                ['text' => 'Em cima, à direita', 'callback_data' => 'w:tr:' . $postId],
-            ],
-            [
-                ['text' => 'Embaixo, à esquerda', 'callback_data' => 'w:bl:' . $postId],
-                ['text' => 'Embaixo, à direita', 'callback_data' => 'w:br:' . $postId],
-            ],
-            [
-                ['text' => 'No centro', 'callback_data' => 'w:c:' . $postId],
-            ],
+            [$button('cursiva'), $button('classica')],
+            [$button('limpa'), $button('forte')],
         ];
     }
 
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
+    public static function markPlace(int $postId, string $source = 'ig'): array
+    {
+        $source = $source === 'lg' ? 'lg' : 'ig';
+
+        return [
+            [
+                ['text' => 'Em cima, à esquerda', 'callback_data' => 'w:tl:' . $source . ':' . $postId],
+                ['text' => 'Em cima, à direita', 'callback_data' => 'w:tr:' . $source . ':' . $postId],
+            ],
+            [
+                ['text' => 'Embaixo, à esquerda', 'callback_data' => 'w:bl:' . $source . ':' . $postId],
+                ['text' => 'Embaixo, à direita', 'callback_data' => 'w:br:' . $source . ':' . $postId],
+            ],
+            [
+                ['text' => 'No centro', 'callback_data' => 'w:c:' . $source . ':' . $postId],
+            ],
+        ];
+    }
+
     public static function tone(): array
     {
         return [
@@ -231,9 +272,9 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function postKind(): array
+    public static function postKind(bool $aiVideo = false): array
     {
-        return [
+        $rows = [
             [
                 ['text' => 'Foto única', 'callback_data' => 'pk:foto'],
                 ['text' => 'Carrossel', 'callback_data' => 'pk:album'],
@@ -243,11 +284,25 @@ final class Keyboards
                 ['text' => 'Criado pela IA', 'callback_data' => 'pk:ia'],
             ],
         ];
+        if ($aiVideo) {
+            $rows[] = [['text' => "V\u{00ed}deo com IA", 'callback_data' => 'pk:aivideo']];
+        }
+
+        return $rows;
     }
 
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
+    public static function videoSeconds(): array
+    {
+        return [[
+            ['text' => '5 segundos', 'callback_data' => 'vd:5'],
+            ['text' => '8 segundos', 'callback_data' => 'vd:8'],
+            ['text' => '15 segundos', 'callback_data' => 'vd:15'],
+        ]];
+    }
+
     public static function publishRetry(int $postId): array
     {
         return [[['text' => 'Tentar de novo', 'callback_data' => 'a:pub:' . $postId]]];

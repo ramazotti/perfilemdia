@@ -261,6 +261,32 @@ final class AppMaxGateway implements PaymentGateway
         ];
     }
 
+    /**
+     * @return array{gross_cents:int, net_cents:int}|null
+     */
+    public function settlement(string $orderId): ?array
+    {
+        if ($orderId === '' || !ctype_digit($orderId)) {
+            return null;
+        }
+        $response = $this->call('GET', '/order/' . $orderId);
+        $body = $this->body($response);
+        $data = $body['data'] ?? null;
+        if (($body['success'] ?? false) !== true || !is_array($data)) {
+            return null;
+        }
+        $gross = $data['total'] ?? null;
+        $net = $data['partner_total'] ?? null;
+        if (!is_numeric($gross) || !is_numeric($net)) {
+            return null;
+        }
+
+        return [
+            'gross_cents' => (int) round((float) $gross * 100),
+            'net_cents' => (int) round((float) $net * 100),
+        ];
+    }
+
     public function orderIsPaid(string $orderId): bool
     {
         if ($orderId === '' || !ctype_digit($orderId)) {

@@ -182,4 +182,110 @@ final class PhotoMark
 
         return [max(0, $x), max(0, $y)];
     }
+
+    public static function stampPlate(string $jpegPath, string $logoPath, string $place): bool
+    {
+        if (!is_file($jpegPath) || !is_file($logoPath)) {
+            return false;
+        }
+        $place = in_array($place, ['tl', 'tr', 'bl', 'br', 'c'], true) ? $place : 'br';
+        if (extension_loaded('imagick') && class_exists(\Imagick::class)) {
+            try {
+                return self::plateImagick($jpegPath, $logoPath, $place);
+            } catch (\Throwable) {
+                return self::plateGd($jpegPath, $logoPath, $place);
+            }
+        }
+
+        return self::plateGd($jpegPath, $logoPath, $place);
+    }
+
+    private static function plateImagick(string $jpegPath, string $logoPath, string $place): bool
+    {
+        $photo = new \Imagick($jpegPath);
+        $logo = new \Imagick($logoPath);
+        $logo->setImageFormat('png');
+        $logo->setImageAlphaChannel(\Imagick::ALPHACHANNEL_SET);
+        $width = $photo->getImageWidth();
+        $height = $photo->getImageHeight();
+        $maxW = (int) max(48, $width * 0.28);
+        $maxH = (int) max(48, $height * 0.22);
+        $logo->resizeImage($maxW, $maxH, \Imagick::FILTER_LANCZOS, 1, true);
+        $boxW = $logo->getImageWidth();
+        $boxH = $logo->getImageHeight();
+        [$x, $y] = self::plateOrigin($width, $height, $boxW, $boxH, $place);
+        $photo->compositeImage($logo, \Imagick::COMPOSITE_OVER, $x, $y);
+        $photo->setImageFormat('jpeg');
+        $photo->setImageCompressionQuality(90);
+        $photo->writeImage($jpegPath);
+        $photo->clear();
+        $logo->clear();
+
+        return true;
+    }
+
+    private static function plateGd(string $jpegPath, string $logoPath, string $place): bool
+    {
+        $photo = @imagecreatefromjpeg($jpegPath);
+        $raw = file_get_contents($logoPath);
+        $logo = is_string($raw) ? @imagecreatefromstring($raw) : false;
+        if ($photo === false || $logo === false) {
+            if ($photo !== false) {
+                imagedestroy($photo);
+            }
+
+            return false;
+        }
+        $logoWidth = imagesx($logo);
+        $logoHeight = imagesy($logo);
+        if ($logoWidth < 1 || $logoHeight < 1) {
+            imagedestroy($photo);
+            imagedestroy($logo);
+
+            return false;
+        }
+        $width = imagesx($photo);
+        $height = imagesy($photo);
+        $maxW = (int) max(48, $width * 0.28);
+        $maxH = (int) max(48, $height * 0.22);
+        $scale = min($maxW / $logoWidth, $maxH / $logoHeight);
+        $boxW = max(1, (int) round($logoWidth * $scale));
+        $boxH = max(1, (int) round($logoHeight * $scale));
+        $scaled = imagecreatetruecolor($boxW, $boxH);
+        imagealphablending($scaled, false);
+        imagesavealpha($scaled, true);
+        $clear = imagecolorallocatealpha($scaled, 0, 0, 0, 127);
+        imagefilledrectangle($scaled, 0, 0, $boxW, $boxH, $clear);
+        imagealphablending($scaled, true);
+        imagecopyresampled($scaled, $logo, 0, 0, 0, 0, $boxW, $boxH, $logoWidth, $logoHeight);
+        [$x, $y] = self::plateOrigin($width, $height, $boxW, $boxH, $place);
+        imagealphablending($photo, true);
+        imagecopy($photo, $scaled, $x, $y, 0, 0, $boxW, $boxH);
+        imagejpeg($photo, $jpegPath, 90);
+        imagedestroy($photo);
+        imagedestroy($logo);
+        imagedestroy($scaled);
+
+        return true;
+    }
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    private static function plateOrigin(int $width, int $height, int $boxW, int $boxH, string $place): array
+    {
+        $margin = (int) max(12, min($width, $height) * 0.04);
+        $x = match ($place) {
+            'tl', 'bl' => $margin,
+            'tr', 'br' => $width - $boxW - $margin,
+            default => (int) (($width - $boxW) / 2),
+        };
+        $y = match ($place) {
+            'tl', 'tr' => $margin,
+            'bl', 'br' => $height - $boxH - $margin,
+            default => (int) (($height - $boxH) / 2),
+        };
+
+        return [max(0, $x), max(0, $y)];
+    }
 }

@@ -143,6 +143,8 @@ final class PostRepository
             'scheduled_at',
             'creative',
             'destination',
+            'video_job_id',
+            'video_seconds',
         ];
         $set = [];
         $values = [];
@@ -182,6 +184,31 @@ final class PostRepository
         $stmt->execute([$userId, PostStatus::Published->value, $monthStart, $nextMonthStart]);
 
         return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function pendingVideoJobs(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT * FROM posts
+             WHERE status = 'GENERATING' AND video_job_id IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM post_media pm WHERE pm.post_id = posts.id)
+             ORDER BY id ASC LIMIT 3"
+        );
+
+        return $stmt === false ? [] : $stmt->fetchAll();
+    }
+
+    public function generatingVideoForUser(int $userId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT 1 FROM posts WHERE user_id = ? AND status = 'GENERATING' AND video_job_id IS NOT NULL LIMIT 1"
+        );
+        $stmt->execute([$userId]);
+
+        return $stmt->fetchColumn() !== false;
     }
 
     public function recordAiUsage(int $userId, ?int $postId, string $model, int $inputTokens, int $outputTokens): void

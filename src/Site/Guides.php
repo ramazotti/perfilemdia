@@ -51,7 +51,7 @@ final class Guides
             [
                 'id' => 'aprovar',
                 'title' => 'Publique só se a prévia estiver boa',
-                'body' => 'Publicar manda para o Instagram. Ajustar serve para dizer o que mudar. Outra versão pede um texto novo. Você também pode escrever a legenda do seu jeito. Nada sai sem esse toque. Nos planos Profissional e Estúdio, Texto na foto escreve uma frase curta em cima da imagem. Marca d\'água coloca a foto do Instagram em um círculo com borda, no canto que você escolher. Agendar marca o dia e a hora, e o bot publica sozinho. Dá para escolher um horário pronto ou escrever só a hora, ou o dia e a hora. O menu da prévia segue até o post sair. Tratar foto muda a imagem com IA, e a frase entre aspas também entra em cima da foto. O post criado pela IA segue a mesma regra: só publica quando você toca em Publicar, ou na hora agendada.',
+                'body' => 'Publicar manda para o Instagram. Ajustar serve para dizer o que mudar. Outra versão pede um texto novo. Você também pode escrever a legenda do seu jeito. Nada sai sem esse toque. Nos planos Profissional e Estúdio, Texto na foto escreve uma frase curta em cima da imagem, no estilo Cursiva, Clássica, Limpa ou Forte. Marca d\'água coloca a foto do Instagram em um círculo, ou a logo que você enviar, no canto que você escolher. Agendar marca o dia e a hora, e o bot publica sozinho. Dá para escolher um horário pronto ou escrever só a hora, ou o dia e a hora. O menu da prévia segue até o post sair. Tratar foto muda a imagem com IA, e a frase entre aspas também entra em cima da foto. O post criado pela IA segue a mesma regra: só publica quando você toca em Publicar, ou na hora agendada.',
                 'when' => 'O bot devolve o link do post publicado.',
             ],
             [
@@ -97,7 +97,7 @@ final class Guides
             [
                 'id' => 'planos',
                 'title' => 'Planos',
-                'body' => 'Nome, preço mensal, preço do teste, dias de teste, limite de posts e a lista de itens saem na página pública assim que você salva. Os posts do teste são a fração desses dias em um mês de 30, arredondada. O anual continua sendo 10 vezes o mensal, sem teste. Quem já assinou permanece no preço que estava no checkout. Estúdio é o plano com post criado pela IA. Vídeo curto e tratamento da foto ficam no Profissional e no Estúdio. Mudar o texto do item não muda essa regra: ela segue o plano.',
+                'body' => 'Nome, preço mensal, preço do teste, dias de teste, limite de posts e a lista de itens saem na página pública assim que você salva. Os posts do teste são a fração desses dias em um mês de 30, arredondada. O anual continua sendo 10 vezes o mensal, sem teste. Quem já assinou permanece no preço que estava no checkout. Estúdio é o plano com post criado pela IA. Vídeo curto e tratamento da foto ficam no Profissional e no Estúdio. Nos dias de teste, essas ferramentas ficam liberadas em todos os planos. Mudar o texto do item não muda essa regra.',
             ],
             [
                 'id' => 'cupons',

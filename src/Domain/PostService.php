@@ -16,6 +16,8 @@ use PerfilEmDia\Db;
 use PerfilEmDia\Growth\BenefitOrchestrator;
 use PerfilEmDia\Image\IdeaImage;
 use PerfilEmDia\Image\IdeaImageGenerator;
+use PerfilEmDia\Image\IdeaVideo;
+use PerfilEmDia\Image\IdeaVideoGenerator;
 use PerfilEmDia\Image\ImageEditException;
 use PerfilEmDia\Image\ImageEditRequest;
 use PerfilEmDia\Image\ImageEditorInterface;
@@ -23,6 +25,7 @@ use PerfilEmDia\Image\ImageNormalizerInterface;
 use PerfilEmDia\Image\OpenRouterImageEditor;
 use PerfilEmDia\Image\PhotoMark;
 use PerfilEmDia\Image\PhotoPhrase;
+use PerfilEmDia\Image\PhraseStyle;
 use PerfilEmDia\Image\VideoFrame;
 use PerfilEmDia\Instagram\InstagramApiException;
 use PerfilEmDia\Instagram\InstagramClient;
@@ -48,6 +51,7 @@ class PostService
         private readonly ?PlanAccess $access = null,
         private readonly ?ImageEditorInterface $images = null,
         private readonly ?IdeaImageGenerator $ideas = null,
+        private readonly ?IdeaVideoGenerator $videos = null,
     ) {
     }
 
@@ -57,11 +61,24 @@ class PostService
      */
     public function handleIncomingMedia(array $user, int $chatId, array $message): void
     {
+        $logoPending = (string) ($user['pending_action'] ?? '');
+        if (str_starts_with($logoPending, 'logo:')) {
+            $this->receiveLogo($user, $chatId, $message, (int) substr($logoPending, 5));
+
+            return;
+        }
+
         if (!$this->guardsPass($user, $chatId)) {
             return;
         }
 
         $userPending = (string) ($user['pending_action'] ?? '');
+        if (preg_match('/^aiv:(5|8|15)$/', $userPending, $videoSeconds) === 1) {
+            $idea = trim((string) ($this->extractTheme($message) ?? ''));
+            $this->startAiVideo($user, $chatId, $idea, (int) $videoSeconds[1], $message);
+
+            return;
+        }
         if (str_starts_with($userPending, 'edit:')) {
             $this->users->update((int) $user['id'], ['pending_action' => null]);
             $user['pending_action'] = null;
@@ -87,7 +104,7 @@ class PostService
 
         $kind = $this->selectedKind($user);
         if ($kind === null) {
-            $this->askPostKind($chatId);
+            $this->askPostKind($chatId, $user);
 
             return;
         }
@@ -851,8 +868,31 @@ class PostService
 
             return;
         }
+        $style = $this->phraseStyleOf($user);
         $this->users->update((int) $user['id'], ['pending_action' => 'phrase:' . (int) $post['id']]);
-        $this->channel->sendText($chatId, Messages::askPhotoPhrase());
+        $this->channel->sendText(
+            $chatId,
+            Messages::askPhotoPhrase(PhraseStyle::label($style)),
+            Keyboards::phraseStyles((int) $post['id'], $style)
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function choosePhraseStyle(array $user, int $chatId, string $callbackId, string $style, int $postId): void
+    {
+        $this->channel->answerCallback($callbackId);
+        $style = PhraseStyle::normalize($style);
+        $this->users->update((int) $user['id'], ['phrase_style' => $style]);
+        $post = $this->posts->find($postId);
+        if ($post === null || (int) $post['user_id'] !== (int) $user['id'] || !$this->inMenu($post)) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => 'phrase:' . $postId]);
+        $this->channel->sendText($chatId, Messages::phraseStyleSaved(PhraseStyle::label($style)));
     }
 
     /**
@@ -873,7 +913,12 @@ class PostService
         }
         $phrase = trim(strip_tags($text));
         if ($phrase === '') {
-            $this->channel->sendText($chatId, Messages::askPhotoPhrase());
+            $style = $this->phraseStyleOf($user);
+            $this->channel->sendText(
+                $chatId,
+                Messages::askPhotoPhrase(PhraseStyle::label($style)),
+                Keyboards::phraseStyles($postId, $style)
+            );
 
             return true;
         }
@@ -908,7 +953,7 @@ class PostService
 
             return;
         }
-        PhotoPhrase::draw($dest, $phrase);
+        PhotoPhrase::draw($dest, $phrase, $this->phraseStyleOf($user));
         $this->posts->updateMedia((int) $first['id'], ['public_name' => $name]);
         $this->freezeEditedPhoto($first, $dest);
         if (is_file($current)) {
@@ -941,13 +986,169 @@ class PostService
 
             return;
         }
-        $this->channel->sendText($chatId, Messages::askMarkPlace(), Keyboards::markPlace((int) $post['id']));
+        $hasLogo = $this->logoFile($user) !== null;
+        $this->channel->sendText(
+            $chatId,
+            Messages::askMarkSource($hasLogo),
+            Keyboards::markSource((int) $post['id'], $hasLogo)
+        );
     }
 
     /**
      * @param array<string, mixed> $user
      */
-    public function placeMark(array $user, int $chatId, string $callbackId, string $place, int $postId): void
+    public function chooseMarkSource(array $user, int $chatId, string $callbackId, string $source, int $postId): void
+    {
+        $this->channel->answerCallback($callbackId);
+        $post = $this->posts->find($postId);
+        if ($post === null || (int) $post['user_id'] !== (int) $user['id'] || !$this->inMenu($post)) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        if ($source === 'up') {
+            $this->users->update((int) $user['id'], ['pending_action' => 'logo:' . $postId]);
+            $this->channel->sendText($chatId, Messages::askLogoUpload());
+
+            return;
+        }
+        if ($source === 'ok') {
+            if ($this->logoFile($user) === null) {
+                $this->users->update((int) $user['id'], ['pending_action' => 'logo:' . $postId]);
+                $this->channel->sendText($chatId, Messages::askLogoUpload());
+
+                return;
+            }
+            $this->channel->sendText($chatId, Messages::askMarkPlate(), Keyboards::markPlace($postId, 'lg'));
+
+            return;
+        }
+        $ig = $this->users->instagramAccount((int) $user['id']);
+        if (!is_array($ig) || ($ig['status'] ?? '') !== 'active' || empty($ig['access_token'])) {
+            $this->channel->sendText($chatId, Messages::markNeedsInstagram());
+
+            return;
+        }
+        $this->channel->sendText($chatId, Messages::askMarkPlace(), Keyboards::markPlace($postId, 'ig'));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function handleLogoWait(array $user, int $chatId): bool
+    {
+        if (!str_starts_with((string) ($user['pending_action'] ?? ''), 'logo:')) {
+            return false;
+        }
+        $this->channel->sendText($chatId, Messages::logoNeedImage());
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $message
+     */
+    private function receiveLogo(array $user, int $chatId, array $message, int $postId): void
+    {
+        $file = $this->extractFile($message);
+        if ($file === null || $file['kind'] !== 'image') {
+            $this->channel->sendText($chatId, Messages::logoNeedImage());
+
+            return;
+        }
+        $temp = tempnam(sys_get_temp_dir(), 'lg');
+        if ($temp === false) {
+            $this->channel->sendText($chatId, Messages::logoFailed());
+
+            return;
+        }
+        try {
+            $this->channel->download($file['file_id'], $temp);
+            $saved = $this->storeLogo((int) $user['id'], $temp);
+            if ($saved === null) {
+                $this->channel->sendText($chatId, Messages::logoFailed());
+
+                return;
+            }
+            $this->users->update((int) $user['id'], [
+                'logo_path' => $saved,
+                'pending_action' => null,
+            ]);
+            $post = $this->posts->find($postId);
+            if ($post === null || (int) $post['user_id'] !== (int) $user['id'] || !$this->inMenu($post)) {
+                $this->channel->sendText($chatId, Messages::logoSavedIdle());
+
+                return;
+            }
+            $this->channel->sendText($chatId, Messages::logoSaved(), Keyboards::markPlace($postId, 'lg'));
+        } catch (\Throwable) {
+            $this->channel->sendText($chatId, Messages::logoFailed());
+        } finally {
+            if (is_file($temp)) {
+                unlink($temp);
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function phraseStyleOf(array $user): string
+    {
+        $fresh = $this->users->find((int) $user['id']) ?? $user;
+
+        return PhraseStyle::normalize((string) ($fresh['phrase_style'] ?? ''));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function logoFile(array $user): ?string
+    {
+        $relative = trim((string) ($user['logo_path'] ?? ''));
+        if ($relative === '' || str_contains($relative, '..')) {
+            return null;
+        }
+        $path = Config::root() . '/' . ltrim($relative, '/');
+
+        return is_file($path) ? $path : null;
+    }
+
+    private function storeLogo(int $userId, string $source): ?string
+    {
+        $dir = Config::root() . '/storage/logos';
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            return null;
+        }
+        $dest = $dir . '/' . $userId . '.png';
+        if (extension_loaded('imagick') && class_exists(\Imagick::class)) {
+            try {
+                $image = new \Imagick($source);
+                $image->setImageFormat('png');
+                $image->writeImage($dest);
+                $image->clear();
+
+                return 'storage/logos/' . $userId . '.png';
+            } catch (\Throwable) {
+            }
+        }
+        $raw = file_get_contents($source);
+        $gd = is_string($raw) ? @imagecreatefromstring($raw) : false;
+        if ($gd === false) {
+            return null;
+        }
+        imagesavealpha($gd, true);
+        $ok = imagepng($gd, $dest);
+        imagedestroy($gd);
+
+        return $ok ? 'storage/logos/' . $userId . '.png' : null;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function placeMark(array $user, int $chatId, string $callbackId, string $place, string $source, int $postId): void
     {
         $this->channel->answerCallback($callbackId);
         $post = $this->posts->find($postId);
@@ -956,6 +1157,18 @@ class PostService
         }
         if (!$this->inMenu($post)) {
             $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        if ($source === 'lg') {
+            $path = $this->logoFile($this->users->find((int) $user['id']) ?? $user);
+            if ($path === null) {
+                $this->users->update((int) $user['id'], ['pending_action' => 'logo:' . $postId]);
+                $this->channel->sendText($chatId, Messages::askLogoUpload());
+
+                return;
+            }
+            $this->applyMark($user, $chatId, $post, $path, $place, true);
 
             return;
         }
@@ -991,7 +1204,7 @@ class PostService
      * @param array<string, mixed> $user
      * @param array<string, mixed> $post
      */
-    private function applyMark(array $user, int $chatId, array $post, string $logo, string $place): void
+    private function applyMark(array $user, int $chatId, array $post, string $logo, string $place, bool $plate = false): void
     {
         $postId = (int) $post['id'];
         $publicDir = Config::root() . '/public/m';
@@ -1006,7 +1219,13 @@ class PostService
             }
             $name = bin2hex(random_bytes(20));
             $dest = $publicDir . '/' . $name . '.jpg';
-            if (!copy($current, $dest) || !PhotoMark::stamp($dest, $logo, $place)) {
+            if (!copy($current, $dest)) {
+                continue;
+            }
+            $stampedFile = $plate
+                ? PhotoMark::stampPlate($dest, $logo, $place)
+                : PhotoMark::stamp($dest, $logo, $place);
+            if (!$stampedFile) {
                 if (is_file($dest)) {
                     unlink($dest);
                 }
@@ -1105,7 +1324,7 @@ class PostService
                 throw new ImageEditException('Normalizer returned no photo');
             }
             if ($request->phrase !== null) {
-                PhotoPhrase::draw($image->absolutePath, $request->phrase);
+                PhotoPhrase::draw($image->absolutePath, $request->phrase, $this->phraseStyleOf($user));
             }
             $oldName = (string) $first['public_name'];
             if ($oldName !== $image->publicName) {
@@ -1876,10 +2095,15 @@ class PostService
     public function askPostKind(int $chatId, ?array $user = null): void
     {
         $pending = is_array($user) ? (string) ($user['pending_action'] ?? '') : '';
-        if (str_starts_with($pending, 'kind:') || str_starts_with($pending, 'phrase:') || str_starts_with($pending, 'sched:')) {
+        if (
+            str_starts_with($pending, 'kind:')
+            || str_starts_with($pending, 'phrase:')
+            || str_starts_with($pending, 'sched:')
+            || str_starts_with($pending, 'aiv:')
+        ) {
             $this->users->update((int) $user['id'], ['pending_action' => null]);
         }
-        $this->channel->sendText($chatId, Messages::askPostKind(), Keyboards::postKind());
+        $this->channel->sendText($chatId, Messages::askPostKind(), Keyboards::postKind($this->aiVideoOn($user)));
     }
 
     /**
@@ -1887,8 +2111,18 @@ class PostService
      */
     public function choosePostKind(array $user, int $chatId, string $kind): void
     {
-        if (!in_array($kind, ['foto', 'album', 'video', 'ia'], true)) {
-            $this->askPostKind($chatId);
+        if (!in_array($kind, ['foto', 'album', 'video', 'ia', 'aivideo'], true)) {
+            $this->askPostKind($chatId, $user);
+
+            return;
+        }
+        if ($kind === 'aivideo') {
+            if (!$this->aiVideoOn($user)) {
+                $this->channel->sendText($chatId, Messages::aiVideoOff());
+
+                return;
+            }
+            $this->channel->sendText($chatId, Messages::askVideoSeconds(), Keyboards::videoSeconds());
 
             return;
         }
@@ -1910,6 +2144,190 @@ class PostService
             default => Messages::kindFoto(),
         };
         $this->channel->sendText($chatId, $text);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function chooseVideoSeconds(array $user, int $chatId, string $callbackId, int $seconds): void
+    {
+        $this->channel->answerCallback($callbackId);
+        if (!in_array($seconds, [5, 8, 15], true) || !$this->aiVideoOn($user)) {
+            $this->channel->sendText($chatId, Messages::aiVideoOff());
+
+            return;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => 'aiv:' . $seconds]);
+        $this->channel->sendText($chatId, Messages::askAiVideo($seconds));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function handleAiVideoText(array $user, int $chatId, string $text): bool
+    {
+        $pending = (string) ($user['pending_action'] ?? '');
+        if (preg_match('/^aiv:(5|8|15)$/', $pending, $seconds) !== 1) {
+            return false;
+        }
+        $idea = trim(strip_tags($text));
+        if ($idea === '') {
+            $this->channel->sendText($chatId, Messages::askAiVideo((int) $seconds[1]));
+
+            return true;
+        }
+        $this->startAiVideo($user, $chatId, mb_substr($idea, 0, 1000), (int) $seconds[1], null);
+
+        return true;
+    }
+
+    public function finishAiVideos(): void
+    {
+        foreach ($this->posts->pendingVideoJobs() as $post) {
+            $postId = (int) $post['id'];
+            $user = $this->users->find((int) $post['user_id']);
+            if ($user === null || empty($user['telegram_chat_id'])) {
+                continue;
+            }
+            $chatId = (int) $user['telegram_chat_id'];
+            try {
+                $job = $this->videoGenerator()->status((string) $post['video_job_id']);
+            } catch (\Throwable $e) {
+                Logger::get()->error('Video IA status falhou', ['post_id' => $postId, 'error' => $e->getMessage()]);
+                continue;
+            }
+            $status = $job['status'];
+            if ($status === 'pending' || $status === 'in_progress' || $status === '') {
+                $created = strtotime((string) ($post['created_at'] ?? ''));
+                if ($created !== false && $created < time() - 1200) {
+                    $this->failPost($postId, PostStatus::Generating, 'video_timeout', 'timeout');
+                    $this->channel->sendText($chatId, Messages::aiVideoFailed());
+                }
+                continue;
+            }
+            if ($status !== 'completed' || $job['url'] === null) {
+                Logger::get()->error('Video IA recusado', [
+                    'post_id' => $postId,
+                    'status' => $status,
+                    'error' => $job['error'] ?? '',
+                ]);
+                $this->failPost($postId, PostStatus::Generating, 'video_failed', $status);
+                $this->channel->sendText($chatId, Messages::aiVideoFailed());
+                continue;
+            }
+            try {
+                $binary = $this->videoGenerator()->download($job['url']);
+                $dest = Config::root() . '/storage/media/' . $postId . '_0.mp4';
+                $dir = dirname($dest);
+                if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+                    throw new \RuntimeException('Nao foi possivel criar storage/media');
+                }
+                if (file_put_contents($dest, $binary) === false) {
+                    throw new \RuntimeException('Nao foi possivel gravar o video');
+                }
+                $mediaId = $this->posts->addMedia($postId, 0, 'aivideo', 0, 'video');
+                $this->posts->updateMedia($mediaId, [
+                    'original_path' => $dest,
+                    'width' => 720,
+                    'height' => 1280,
+                ]);
+                $this->generateAndPreview((int) $user['id'], $chatId, $postId);
+            } catch (\Throwable $e) {
+                $tries = (int) ($post['attempts'] ?? 0) + 1;
+                $this->posts->update($postId, ['attempts' => $tries]);
+                Logger::get()->error('Video IA download falhou', ['post_id' => $postId, 'error' => $e->getMessage()]);
+                if ($tries >= 4) {
+                    $this->failPost($postId, PostStatus::Generating, 'video_download', 'download');
+                    $this->channel->sendText($chatId, Messages::aiVideoFailed());
+                }
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $message
+     */
+    private function startAiVideo(array $user, int $chatId, string $idea, int $seconds, ?array $message): void
+    {
+        if (!$this->aiVideoOn($user)) {
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+            $this->channel->sendText($chatId, Messages::aiVideoOff());
+
+            return;
+        }
+        if ($idea === '') {
+            $this->channel->sendText($chatId, Messages::askAiVideo($seconds));
+
+            return;
+        }
+        if (!$this->subscriptionAllows($user, $chatId)) {
+            return;
+        }
+        if ($this->posts->generatingVideoForUser((int) $user['id'])) {
+            $this->channel->sendText($chatId, Messages::aiVideoBusy());
+
+            return;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => null]);
+        $this->channel->sendText($chatId, Messages::aiVideoStarted($seconds));
+        $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea);
+        $this->posts->update($postId, ['creative' => 1, 'video_seconds' => $seconds]);
+        $reference = null;
+        if ($message !== null) {
+            $file = $this->extractFile($message);
+            if ($file !== null && $file['kind'] === 'image') {
+                $reference = Config::root() . '/storage/media/' . $postId . '_ref.jpg';
+                $dir = dirname($reference);
+                if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+                    $reference = null;
+                } else {
+                    try {
+                        $this->channel->download($file['file_id'], $reference);
+                    } catch (\Throwable) {
+                        $reference = null;
+                    }
+                }
+            }
+        }
+        try {
+            $prompt = 'Create one realistic vertical Instagram video. No text, letters, numbers, logos, or watermarks. Natural motion, steady and clear.';
+            $brand = trim(BenefitOrchestrator::brandBrief($user));
+            if ($brand !== '') {
+                $prompt .= ' ' . $brand;
+            }
+            if ($reference !== null) {
+                $prompt .= ' The attached image is the first frame. Keep the same subject and place.';
+            }
+            $prompt .= ' The idea: ' . $idea;
+            $jobId = $this->videoGenerator()->submit($prompt, $seconds, $reference);
+            $this->posts->update($postId, ['video_job_id' => $jobId]);
+        } catch (\Throwable $e) {
+            Logger::get()->error('Video IA pedido falhou', ['post_id' => $postId, 'error' => $e->getMessage()]);
+            $this->failPost($postId, PostStatus::Generating, 'video_submit', 'submit');
+            $this->channel->sendText($chatId, Messages::aiVideoFailed());
+        } finally {
+            if (is_string($reference) && is_file($reference)) {
+                unlink($reference);
+            }
+        }
+    }
+
+    private function videoGenerator(): IdeaVideoGenerator
+    {
+        return $this->videos ?? new IdeaVideo();
+    }
+
+    /**
+     * @param array<string, mixed>|null $user
+     */
+    private function aiVideoOn(?array $user): bool
+    {
+        if (!is_array($user) || empty($user['id'])) {
+            return false;
+        }
+
+        return $this->users->aiVideoEnabled((int) $user['id']);
     }
 
     /**

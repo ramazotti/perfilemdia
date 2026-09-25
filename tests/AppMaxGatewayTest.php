@@ -81,6 +81,23 @@ final class AppMaxGatewayTest extends TestCase
         $this->assertSame('2026-09-22 21:26:57', $pix['expires_at']);
     }
 
+    public function testSettlementReadsPartnerTotalAsCents(): void
+    {
+        $http = new ScriptedPoster([
+            ['status' => 200, 'body' => ['success' => true, 'data' => [
+                'total' => 2.99,
+                'partner_total' => 1.97,
+                'status' => 'aprovado',
+            ]]],
+        ]);
+        $gateway = new AppMaxGateway($this->pdo, $http, 'v3-token');
+
+        $settlement = $gateway->settlement('127513372');
+
+        $this->assertSame(['gross_cents' => 299, 'net_cents' => 197], $settlement);
+        $this->assertStringEndsWith('/order/127513372', $http->calls[0][1]);
+    }
+
     public function testCardChargeSendsTokenNotPan(): void
     {
         $http = new ScriptedPoster([

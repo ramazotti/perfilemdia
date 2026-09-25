@@ -128,6 +128,12 @@ final class UpdateHandler
             if ($this->postsService->handleScheduleText($user, $chatId, $text)) {
                 return;
             }
+            if ($this->postsService->handleLogoWait($user, $chatId)) {
+                return;
+            }
+            if ($this->postsService->handleAiVideoText($user, $chatId, $text)) {
+                return;
+            }
             if ($this->postsService->handlePhraseText($user, $chatId, $text)) {
                 return;
             }
@@ -304,6 +310,11 @@ final class UpdateHandler
 
             return;
         }
+        if (preg_match('/^vd:(5|8|15)$/', $data, $m) === 1) {
+            $this->postsService->chooseVideoSeconds($user, $chatId, $callbackId, (int) $m[1]);
+
+            return;
+        }
         if ($data === 'como:como') {
             $this->channel->answerCallback($callbackId);
             $this->channel->sendText($chatId, Messages::instagramHowTo());
@@ -342,8 +353,18 @@ final class UpdateHandler
 
             return;
         }
-        if (preg_match('/^w:(tl|tr|bl|br|c):(\d+)$/', $data, $m) === 1) {
-            $this->postsService->placeMark($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+        if (preg_match('/^f:(cursiva|classica|limpa|forte):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->choosePhraseStyle($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+
+            return;
+        }
+        if (preg_match('/^m:(ig|up|ok):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->chooseMarkSource($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+
+            return;
+        }
+        if (preg_match('/^w:(tl|tr|bl|br|c):(ig|lg):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->placeMark($user, $chatId, $callbackId, $m[1], $m[2], (int) $m[3]);
 
             return;
         }

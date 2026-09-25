@@ -47,10 +47,15 @@ final class InstagramClient
         ]);
 
         $body = $this->assertOk($response);
+        $token = $this->firstRecord($body, 'access_token');
+        $accessToken = (string) ($token['access_token'] ?? '');
+        if ($accessToken === '') {
+            throw new InstagramApiException('Instagram não devolveu o token.', null, null, false, 'oauth');
+        }
 
         return [
-            'access_token' => (string) ($body['access_token'] ?? ''),
-            'user_id' => (string) ($body['user_id'] ?? ''),
+            'access_token' => $accessToken,
+            'user_id' => (string) ($token['user_id'] ?? ''),
         ];
     }
 
@@ -92,11 +97,12 @@ final class InstagramClient
         );
 
         $body = $this->assertOk($response);
+        $profile = $this->firstRecord($body, 'username');
 
         return [
-            'user_id' => (string) ($body['user_id'] ?? ''),
-            'username' => (string) ($body['username'] ?? ''),
-            'account_type' => isset($body['account_type']) ? (string) $body['account_type'] : null,
+            'user_id' => (string) ($profile['user_id'] ?? ''),
+            'username' => (string) ($profile['username'] ?? ''),
+            'account_type' => isset($profile['account_type']) ? (string) $profile['account_type'] : null,
         ];
     }
 
@@ -366,6 +372,12 @@ final class InstagramClient
             throw new InstagramApiException($message, $code, $subcode, $retryable, $kind);
         }
 
+        if (is_array($body) && isset($body['error_message']) && is_string($body['error_message']) && !isset($body['access_token'])) {
+            $code = isset($body['code']) ? (int) $body['code'] : null;
+
+            throw new InstagramApiException($body['error_message'], $code, null, false, 'oauth');
+        }
+
         if ($status < 200 || $status >= 300) {
             throw new InstagramApiException(
                 'Instagram API HTTP ' . $status,
@@ -402,5 +414,24 @@ final class InstagramClient
         }
 
         return ['other', false];
+    }
+
+    /**
+     * A API devolve o token e o perfil na raiz ou dentro de data[0].
+     *
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function firstRecord(array $body, string $key): array
+    {
+        if (isset($body[$key])) {
+            return $body;
+        }
+        $data = $body['data'] ?? null;
+        if (is_array($data) && isset($data[0]) && is_array($data[0]) && isset($data[0][$key])) {
+            return $data[0];
+        }
+
+        return $body;
     }
 }

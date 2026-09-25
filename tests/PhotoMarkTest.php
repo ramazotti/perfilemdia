@@ -60,4 +60,50 @@ final class PhotoMarkTest extends TestCase
         unlink($photo);
         unlink($logo);
     }
+
+    public function testUploadedLogoStaysWideInsteadOfACircle(): void
+    {
+        $photo = tempnam(sys_get_temp_dir(), 'mkp');
+        $logo = tempnam(sys_get_temp_dir(), 'mkl');
+        $this->assertNotFalse($photo);
+        $this->assertNotFalse($logo);
+
+        $canvas = imagecreatetruecolor(480, 640);
+        $this->assertNotFalse($canvas);
+        $red = imagecolorallocate($canvas, 180, 40, 30);
+        imagefilledrectangle($canvas, 0, 0, 480, 640, $red);
+        imagejpeg($canvas, $photo, 90);
+        imagedestroy($canvas);
+
+        $badge = imagecreatetruecolor(220, 50);
+        $this->assertNotFalse($badge);
+        imagealphablending($badge, false);
+        imagesavealpha($badge, true);
+        $clear = imagecolorallocatealpha($badge, 0, 0, 0, 127);
+        imagefilledrectangle($badge, 0, 0, 220, 50, $clear);
+        $white = imagecolorallocatealpha($badge, 255, 255, 255, 0);
+        imagefilledrectangle($badge, 0, 10, 219, 40, $white);
+        imagepng($badge, $logo);
+        imagedestroy($badge);
+
+        $this->assertTrue(PhotoMark::stampPlate($photo, $logo, 'br'));
+        $result = imagecreatefromjpeg($photo);
+        $this->assertNotFalse($result);
+        $corner = imagecolorat($result, 4, 4);
+        $this->assertGreaterThan(140, ($corner >> 16) & 255);
+        $whiteXs = [];
+        for ($y = 560; $y < 630; $y += 2) {
+            for ($x = 300; $x < 470; $x += 2) {
+                $color = imagecolorat($result, $x, $y);
+                if ((($color >> 16) & 255) > 230 && (($color >> 8) & 255) > 230 && ($color & 255) > 230) {
+                    $whiteXs[] = $x;
+                }
+            }
+        }
+        $this->assertNotEmpty($whiteXs);
+        $this->assertGreaterThan(70, max($whiteXs) - min($whiteXs));
+        imagedestroy($result);
+        unlink($photo);
+        unlink($logo);
+    }
 }

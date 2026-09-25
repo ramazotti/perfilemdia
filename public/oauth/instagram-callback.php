@@ -8,8 +8,10 @@ use PerfilEmDia\Channel\TelegramChannel;
 use PerfilEmDia\Config;
 use PerfilEmDia\Db;
 use PerfilEmDia\Domain\UserRepository;
+use PerfilEmDia\Instagram\InstagramApiException;
 use PerfilEmDia\Instagram\InstagramClient;
 use PerfilEmDia\Instagram\InstagramOAuth;
+use PerfilEmDia\Logger;
 use PerfilEmDia\Messages;
 use PerfilEmDia\Security\Crypto;
 use PerfilEmDia\Telegram\TelegramClient;
@@ -63,8 +65,17 @@ try {
 
     header('Location: ' . perfilemdia_public() . '/conectado?conta=' . rawurlencode(ltrim((string) $username, '@')));
     exit;
-} catch (Throwable) {
-    header('Location: ' . perfilemdia_public() . '/erro-conexao?motivo=negado');
+} catch (Throwable $e) {
+    $motivo = $e instanceof InstagramApiException && $e->kind === 'personal' ? 'pessoal' : 'negado';
+    try {
+        $message = preg_replace('/[A-Za-z0-9_\-]{24,}/', '[redigido]', $e->getMessage()) ?? $e->getMessage();
+        Logger::get()->warning('Falha ao conectar Instagram', [
+            'tipo' => $e::class,
+            'mensagem' => mb_substr($message, 0, 300),
+        ]);
+    } catch (Throwable) {
+    }
+    header('Location: ' . perfilemdia_public() . '/erro-conexao?motivo=' . $motivo);
     exit;
 }
 

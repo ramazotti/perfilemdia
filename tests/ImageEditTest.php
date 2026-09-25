@@ -75,6 +75,32 @@ final class ImageEditTest extends TestCase
         unlink($path);
     }
 
+    public function testScriptStyleSitsApartFromTheClassicBand(): void
+    {
+        $classic = $this->blankJpeg();
+        $script = $this->blankJpeg();
+        PhotoPhrase::draw($classic, 'Kefir de agua', 'classica');
+        PhotoPhrase::draw($script, 'Kefir de agua', 'cursiva');
+        $this->assertNotSame(file_get_contents($classic), file_get_contents($script));
+        $classicImage = imagecreatefromjpeg($classic);
+        $scriptImage = imagecreatefromjpeg($script);
+        $this->assertNotFalse($classicImage);
+        $this->assertNotFalse($scriptImage);
+        $top = 0;
+        for ($y = 20; $y < 140; $y += 3) {
+            for ($x = 30; $x < 290; $x += 3) {
+                if (imagecolorat($classicImage, $x, $y) !== imagecolorat($scriptImage, $x, $y)) {
+                    $top++;
+                }
+            }
+        }
+        $this->assertGreaterThan(8, $top);
+        imagedestroy($classicImage);
+        imagedestroy($scriptImage);
+        unlink($classic);
+        unlink($script);
+    }
+
     public function testEditorDecodesJpegFromTheApi(): void
     {
         $jpeg = $this->tinyJpeg();
@@ -148,6 +174,54 @@ final class ImageEditTest extends TestCase
         $this->assertSame(2, (int) $posts->find($postId)['image_edit_count']);
         $this->assertNotContains('Tratar foto', $this->buttonLabels($channel));
         $this->assertContains('Texto na foto', $this->buttonLabels($channel));
+    }
+
+    public function testPhraseStyleIsSavedAndUsedOnTheNextText(): void
+    {
+        [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
+        $service->handleApprovalCallback($user, 930001, 'cb', 'txt', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $service->choosePhraseStyle($user, 930001, 'cb2', 'cursiva', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertSame('cursiva', $user['phrase_style']);
+        $this->assertTrue($service->handlePhraseText($user, 930001, 'Kefir de agua'));
+        $texts = implode("\n", array_column($channel->sent, 'text'));
+        $this->assertStringContainsString('Cursiva', $texts);
+        $this->assertSame(PostStatus::AwaitingApproval->value, $posts->find($postId)['status']);
+    }
+
+    public function testSendingALogoKeepsItForTheCorner(): void
+    {
+        [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
+        $userId = (int) $user['id'];
+        $badge = imagecreatetruecolor(80, 40);
+        $this->assertNotFalse($badge);
+        $white = imagecolorallocate($badge, 255, 255, 255);
+        imagefilledrectangle($badge, 0, 0, 80, 40, $white);
+        ob_start();
+        imagepng($badge);
+        $png = ob_get_clean();
+        imagedestroy($badge);
+        $this->assertIsString($png);
+        $channel->downloadBytes = $png;
+        $users->update($userId, ['pending_action' => 'logo:' . $postId]);
+        $user = $users->find($userId);
+        $this->assertIsArray($user);
+        $service->handleIncomingMedia($user, 930001, [
+            'photo' => [['file_id' => 'logo-file', 'width' => 80, 'height' => 40]],
+        ]);
+        $user = $users->find($userId);
+        $this->assertIsArray($user);
+        $this->assertSame('storage/logos/' . $userId . '.png', $user['logo_path']);
+        $this->assertNull($user['pending_action']);
+        $service->placeMark($user, 930001, 'cb', 'br', 'lg', $postId);
+        $this->assertSame(PostStatus::AwaitingApproval->value, $posts->find($postId)['status']);
+        $logo = dirname(__DIR__) . '/storage/logos/' . $userId . '.png';
+        if (is_file($logo)) {
+            unlink($logo);
+        }
     }
 
     public function testQuotedPhraseDoesNotSpendATreatment(): void
@@ -311,6 +385,20 @@ final class ImageEditTest extends TestCase
         )->execute([$customerId, (int) $planId, 'mensal', 'ativa', 4900, $end]);
     }
 
+    private function blankJpeg(): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'pdj');
+        $this->assertNotFalse($path);
+        $image = imagecreatetruecolor(320, 400);
+        $this->assertNotFalse($image);
+        $green = imagecolorallocate($image, 40, 90, 50);
+        imagefilledrectangle($image, 0, 0, 320, 400, $green);
+        imagejpeg($image, $path, 90);
+        imagedestroy($image);
+
+        return $path;
+    }
+
     private function tinyJpeg(): string
     {
         $image = imagecreatetruecolor(40, 30);
@@ -327,6 +415,8 @@ final class EditTestChannel implements \PerfilEmDia\Channel\ChannelInterface
 {
     /** @var list<array{type:string, chatId:int, text?:string}> */
     public array $sent = [];
+
+    public string $downloadBytes = '';
 
     public function sendText(int $chatId, string $text, ?array $buttons = null): int
     {
@@ -372,6 +462,9 @@ final class EditTestChannel implements \PerfilEmDia\Channel\ChannelInterface
 
     public function download(string $fileId, string $destPath): void
     {
+        if ($this->downloadBytes !== '') {
+            file_put_contents($destPath, $this->downloadBytes);
+        }
     }
 }
 

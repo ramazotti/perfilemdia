@@ -149,7 +149,7 @@ final class BillingTest extends TestCase
             'document' => '529.982.247-25',
         ];
         $first = $service->open($plan, 'mensal', $customer, null);
-        $this->assertSame(299, (int) $first['amount_cents']);
+        $this->assertSame(99, (int) $first['amount_cents']);
         $pix = $service->startPix($first['public_id']);
         $this->assertTrue($service->confirmExternal('fake', (string) $pix['external_id'], '{"ok":true}'));
         $sub = $this->pdo->query('SELECT period_kind, posts_limit, period_days, current_period_end, price_cents FROM subscriptions ORDER BY id DESC LIMIT 1')->fetch();

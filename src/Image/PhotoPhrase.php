@@ -6,26 +6,48 @@ namespace PerfilEmDia\Image;
 
 final class PhotoPhrase
 {
-    public static function draw(string $jpegPath, string $phrase): void
+    public static function draw(string $jpegPath, string $phrase, string $style = PhraseStyle::CLASSICA): void
     {
         $phrase = trim($phrase);
         if ($phrase === '' || !is_file($jpegPath)) {
             return;
         }
-        if (extension_loaded('imagick') && class_exists(\Imagick::class) && self::font() !== null) {
-            self::drawImagick($jpegPath, $phrase);
+        $style = PhraseStyle::normalize($style);
+        if ($style === PhraseStyle::FORTE) {
+            $phrase = mb_strtoupper($phrase, 'UTF-8');
+        }
+        $script = $style === PhraseStyle::CURSIVA;
+        $font = self::font($style);
+        if ($script && $font === null) {
+            $style = PhraseStyle::CLASSICA;
+            $script = false;
+            $font = self::font($style);
+        }
+        if (extension_loaded('imagick') && class_exists(\Imagick::class) && $font !== null) {
+            try {
+                if ($script) {
+                    self::drawScriptImagick($jpegPath, $phrase, $font);
+                } else {
+                    self::drawImagick($jpegPath, $phrase, $font);
+                }
+
+                return;
+            } catch (\Throwable) {
+            }
+        }
+        if ($script) {
+            self::drawScriptGd($jpegPath, $phrase, $font);
 
             return;
         }
-        self::drawGd($jpegPath, $phrase);
+        self::drawGd($jpegPath, $phrase, $font);
     }
 
-    private static function drawImagick(string $jpegPath, string $phrase): void
+    private static function drawImagick(string $jpegPath, string $phrase, string $font): void
     {
         $image = new \Imagick($jpegPath);
         $width = $image->getImageWidth();
         $height = $image->getImageHeight();
-        $font = self::font();
         $lines = self::lines($phrase, 22);
         $size = self::fitSize($width, $lines, 18);
         $band = (int) max($size * 2.6, $height * 0.30);
@@ -37,9 +59,7 @@ final class PhotoPhrase
         $start = $height - $bottomPad - $block + $size;
         $center = (int) ($width / 2);
         $probe = new \ImagickDraw();
-        if ($font !== null) {
-            $probe->setFont($font);
-        }
+        $probe->setFont($font);
         $probe->setFontSize($size);
         $metrics = $image->queryFontMetrics($probe, $lines[0]);
         $ascent = (int) ($metrics['ascender'] ?? (int) ($size * 0.8));
@@ -49,9 +69,7 @@ final class PhotoPhrase
         $shadow = new \ImagickDraw();
         $fill = new \ImagickDraw();
         foreach ([$shadow, $fill] as $draw) {
-            if ($font !== null) {
-                $draw->setFont($font);
-            }
+            $draw->setFont($font);
             $draw->setFontSize($size);
             $draw->setTextAlignment(\Imagick::ALIGN_CENTER);
         }
@@ -61,6 +79,38 @@ final class PhotoPhrase
             $y = $start + ($i * $lineHeight);
             $image->annotateImage($shadow, $center + 2, $y + 3, 0, $line);
             $image->annotateImage($fill, $center, $y, 0, $line);
+        }
+
+        $image->setImageFormat('jpeg');
+        $image->setImageCompressionQuality(90);
+        $image->writeImage($jpegPath);
+        $image->clear();
+    }
+
+    private static function drawScriptImagick(string $jpegPath, string $phrase, string $font): void
+    {
+        $image = new \Imagick($jpegPath);
+        $width = $image->getImageWidth();
+        $height = $image->getImageHeight();
+        $lines = self::lines($phrase, 18);
+        $size = self::fitSize($width, $lines, 12);
+        $lineHeight = (int) ($size * 1.35);
+        $center = (int) ($width / 2);
+        $y = (int) max($size + 8, $height * 0.18);
+
+        $shadow = new \ImagickDraw();
+        $fill = new \ImagickDraw();
+        foreach ([$shadow, $fill] as $draw) {
+            $draw->setFont($font);
+            $draw->setFontSize($size);
+            $draw->setTextAlignment(\Imagick::ALIGN_CENTER);
+        }
+        $shadow->setFillColor(new \ImagickPixel('rgba(20,12,8,0.55)'));
+        $fill->setFillColor(new \ImagickPixel('#FFFFFF'));
+        foreach ($lines as $line) {
+            $image->annotateImage($shadow, $center + 2, $y + 3, 0, $line);
+            $image->annotateImage($fill, $center, $y, 0, $line);
+            $y += $lineHeight;
         }
 
         $image->setImageFormat('jpeg');
@@ -88,7 +138,7 @@ final class PhotoPhrase
         $image->drawImage($draw);
     }
 
-    private static function drawGd(string $jpegPath, string $phrase): void
+    private static function drawGd(string $jpegPath, string $phrase, ?string $font): void
     {
         $image = @imagecreatefromjpeg($jpegPath);
         if ($image === false) {
@@ -97,7 +147,6 @@ final class PhotoPhrase
         imagealphablending($image, true);
         $width = imagesx($image);
         $height = imagesy($image);
-        $font = self::font();
         $lines = self::lines($phrase, 22);
         $size = $font !== null ? self::fitSize($width, $lines, 16) : 5;
         $band = (int) max(72, $height * 0.30);
@@ -146,6 +195,38 @@ final class PhotoPhrase
         imagedestroy($image);
     }
 
+    private static function drawScriptGd(string $jpegPath, string $phrase, ?string $font): void
+    {
+        if ($font === null) {
+            self::drawGd($jpegPath, $phrase, self::font(PhraseStyle::CLASSICA));
+
+            return;
+        }
+        $image = @imagecreatefromjpeg($jpegPath);
+        if ($image === false) {
+            return;
+        }
+        imagealphablending($image, true);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $lines = self::lines($phrase, 18);
+        $size = self::fitSize($width, $lines, 12);
+        $lineHeight = (int) ($size * 1.35);
+        $y = (int) max($size + 8, $height * 0.18);
+        $shadow = imagecolorallocatealpha($image, 20, 12, 8, 50);
+        $ink = imagecolorallocate($image, 255, 255, 255);
+        foreach ($lines as $line) {
+            $box = imagettfbbox($size, 0, $font, $line);
+            $textWidth = is_array($box) ? (int) ($box[2] - $box[0]) : 0;
+            $x = (int) (($width - $textWidth) / 2);
+            imagettftext($image, $size, 0, $x + 2, $y + 3, $shadow, $font, $line);
+            imagettftext($image, $size, 0, $x, $y, $ink, $font, $line);
+            $y += $lineHeight;
+        }
+        imagejpeg($image, $jpegPath, 90);
+        imagedestroy($image);
+    }
+
     /**
      * @param list<string> $lines
      */
@@ -184,20 +265,25 @@ final class PhotoPhrase
         return array_slice($lines, 0, 3);
     }
 
-    private static function font(): ?string
+    private static function font(string $style): ?string
     {
+        $file = match (PhraseStyle::normalize($style)) {
+            PhraseStyle::CURSIVA => 'GreatVibes-Regular.ttf',
+            PhraseStyle::LIMPA => 'SourceSans3-Bold.ttf',
+            PhraseStyle::FORTE => 'Anton-Regular.ttf',
+            default => 'LibreBaskerville-Bold.ttf',
+        };
+        $bundled = dirname(__DIR__, 2) . '/resources/fonts/' . $file;
+        if (is_file($bundled)) {
+            return $bundled;
+        }
         $paths = [
-            '/System/Library/Fonts/Supplemental/Georgia Bold.ttf',
-            '/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf',
-            '/usr/share/fonts/urw-base35/P052-Bold.otf',
-            '/usr/share/fonts/urw-base35/NimbusRoman-Bold.otf',
-            '/usr/share/fonts/open-sans/OpenSans-Bold.ttf',
             '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
             '/usr/share/fonts/dejavu/DejaVuSerif-Bold.ttf',
             '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
             '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf',
-            '/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf',
-            '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+            '/System/Library/Fonts/Supplemental/Georgia Bold.ttf',
+            '/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf',
             '/Library/Fonts/Arial.ttf',
         ];
         foreach ($paths as $path) {

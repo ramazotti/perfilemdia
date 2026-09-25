@@ -107,7 +107,13 @@ final class PlanAccess
     private function planAllows(int $userId, array $slugs): bool
     {
         $window = $this->window($userId);
+        if ($window === null || $window['blocked'] !== '') {
+            return false;
+        }
+        if ($window['scope'] === 'teste') {
+            return true;
+        }
 
-        return $window !== null && $window['blocked'] === '' && in_array($window['slug'], $slugs, true);
+        return in_array($window['slug'], $slugs, true);
     }
 }

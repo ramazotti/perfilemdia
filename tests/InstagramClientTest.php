@@ -63,6 +63,49 @@ final class InstagramClientTest extends TestCase
         $this->assertSame('auth-code-value', $fake->requests[0]['options']['form_params']['code']);
     }
 
+    public function testExchangeCodeReadsTokenInsideData(): void
+    {
+        $fake = new FakeHttpPoster([
+            [
+                'status' => 200,
+                'body' => [
+                    'data' => [[
+                        'access_token' => 'short-token',
+                        'user_id' => '1784',
+                        'permissions' => 'instagram_business_basic',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $result = (new InstagramClient($fake))->exchangeCode('auth-code');
+
+        $this->assertSame('short-token', $result['access_token']);
+        $this->assertSame('1784', $result['user_id']);
+    }
+
+    public function testOauthErrorMessageIsKept(): void
+    {
+        $fake = new FakeHttpPoster([
+            [
+                'status' => 400,
+                'body' => [
+                    'error_type' => 'OAuthException',
+                    'code' => 400,
+                    'error_message' => 'Matching code was not found or was already used',
+                ],
+            ],
+        ]);
+
+        try {
+            (new InstagramClient($fake))->exchangeCode('auth-code');
+            $this->fail('Expected InstagramApiException');
+        } catch (InstagramApiException $e) {
+            $this->assertSame('oauth', $e->kind);
+            $this->assertSame('Matching code was not found or was already used', $e->getMessage());
+        }
+    }
+
     public function testErrorCode190BecomesKindToken(): void
     {
         $fake = new FakeHttpPoster([

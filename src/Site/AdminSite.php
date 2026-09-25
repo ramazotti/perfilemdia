@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PerfilEmDia\Site;
 
+use PerfilEmDia\Billing\AppMaxGateway;
 use PerfilEmDia\Billing\PlanRepository;
 use PerfilEmDia\Billing\Settings;
 use PerfilEmDia\Channel\TelegramChannel;
@@ -121,7 +122,21 @@ final class AdminSite
     {
         $customers = (int) $this->pdo->query('SELECT COUNT(*) FROM customers WHERE status <> "excluido"')->fetchColumn();
         $waiting = (int) $this->pdo->query("SELECT COUNT(*) FROM customers WHERE status = 'aguardando_ativacao'")->fetchColumn();
+        $this->syncAppMaxNets();
         $paid = (int) $this->pdo->query("SELECT COALESCE(SUM(amount_cents),0) FROM payments WHERE status = 'pago' AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')")->fetchColumn();
+        $appmax = $this->pdo->query(
+            "SELECT COALESCE(SUM(amount_cents),0) AS gross, COALESCE(SUM(net_cents),0) AS net,
+                    SUM(net_cents IS NULL) AS missing
+             FROM payments
+             WHERE gateway = 'appmax' AND status = 'pago' AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')"
+        )->fetch() ?: ['gross' => 0, 'net' => 0, 'missing' => 0];
+        $gross = (int) $appmax['gross'];
+        $net = (int) $appmax['net'];
+        $missing = (int) $appmax['missing'];
+        $fee = max(0, $gross - $net);
+        $netHint = $missing > 0
+            ? 'falta o repasse de ' . $missing . ' pagamento' . ($missing === 1 ? '' : 's')
+            : 'a AppMax repassa. Taxa de ' . Layout::money($fee);
         $failed = (int) $this->pdo->query("SELECT COUNT(*) FROM posts WHERE status = 'FAILED'")->fetchColumn();
         $days = $this->pdo->query(
             "SELECT DATE(created_at) d, COUNT(*) c FROM posts WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY) GROUP BY DATE(created_at)"
@@ -158,7 +173,8 @@ final class AdminSite
         $html = '<div class="kpis">'
             . $this->kpi('Clientes', (string) $customers, 'exceto excluídos')
             . $this->kpi('Aguardando ativação', (string) $waiting, 'pagou e ainda não abriu o bot')
-            . $this->kpi('Recebido no mês', Layout::money($paid), 'pagamentos confirmados')
+            . $this->kpi('Cobrado no mês', Layout::money($paid), 'o que os clientes pagaram')
+            . $this->kpi('Líquido AppMax', Layout::money($net), $netHint)
             . $this->kpi('Posts com falha', (string) $failed, 'que não publicaram')
             . $this->kpi('Chamados abertos', (string) $this->pdo->query("SELECT COUNT(*) FROM tickets WHERE status <> 'encerrado'")->fetchColumn(), 'novos e em conversa')
             . '</div><div class="panel" style="margin-top:16px"><h2>Posts nos últimos 14 dias</h2><div style="display:flex;gap:8px;align-items:flex-end;height:180px">' . $bars . '</div></div>'
@@ -269,6 +285,10 @@ final class AdminSite
             if ($action === 'isentar_fim') {
                 $this->revokeExemption($id);
             }
+            if ($action === 'ai_video') {
+                $on = (string) ($_POST['ai_video'] ?? '') === '1' ? 1 : 0;
+                $this->pdo->prepare('UPDATE customers SET ai_video = ?, updated_at = NOW() WHERE id = ?')->execute([$on, $id]);
+            }
             if ($action === 'excluir') {
                 $this->erase($customer);
             }
@@ -313,7 +333,7 @@ final class AdminSite
             . '<form method="post">' . $this->csrf() . '<input type="hidden" name="action" value="plano"><select class="in" name="plan_id">' . $plans . '</select><button class="btn btn-ghost btn-sm" type="submit">Mudar plano</button></form>'
             . $this->actionForm('cancelar', 'Cancelar assinatura')
             . $this->actionForm('excluir', 'Excluir dados', 'Excluir os dados deste cliente? Isso não volta atrás.')
-            . '</div>' . $this->exemptionBox($id, $customer, $plans) . '</div>';
+            . '</div>' . $this->exemptionBox($id, $customer, $plans) . $this->aiVideoBox($id, $customer) . '</div>';
         $this->render((string) $customer['name'], $html, 'clientes');
 
         return true;
@@ -365,8 +385,9 @@ final class AdminSite
 
     private function payments(): bool
     {
+        $this->syncAppMaxNets();
         $status = (string) ($_GET['status'] ?? '');
-        $sql = 'SELECT pay.id, pay.method, pay.status, pay.amount_cents, pay.brand, pay.last4,
+        $sql = 'SELECT pay.id, pay.method, pay.status, pay.amount_cents, pay.net_cents, pay.brand, pay.last4,
                 COALESCE(cu.id, cu2.id) AS customer_id,
                 COALESCE(cu.name, cu2.name) AS customer_name,
                 COALESCE(cu.email, cu2.email) AS customer_email,
@@ -391,20 +412,49 @@ final class AdminSite
                 . '<td>' . $this->paymentClientCell($row) . '</td>'
                 . '<td class="keep">' . $card . '</td>'
                 . '<td class="keep">' . Layout::e(Layout::money((int) $row['amount_cents'])) . '</td>'
+                . '<td class="keep">' . ($row['net_cents'] === null ? '' : Layout::e(Layout::money((int) $row['net_cents']))) . '</td>'
                 . '<td>' . $this->pill((string) $row['status']) . '</td></tr>';
         }
         if ($rows === '') {
-            $rows = '<tr><td colspan="5" class="empty">Nenhum pagamento.</td></tr>';
+            $rows = '<tr><td colspan="6" class="empty">Nenhum pagamento.</td></tr>';
         }
         $html = '<form class="filters" method="get"><select class="in" name="status"><option value="">Todos</option>'
             . $this->option('pago', 'Pago', $status) . $this->option('pendente', 'Pendente', $status) . $this->option('recusado', 'Recusado', $status)
             . '</select><button class="btn btn-primary btn-sm" type="submit">Filtrar</button></form>'
-            . '<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Cliente</th><th>Meio</th><th>Valor</th><th>Status</th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
+            . '<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Cliente</th><th>Meio</th><th>Cobrado</th><th>Líquido</th><th>Status</th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
         $this->render('Pagamentos', $html, 'pagamentos');
 
         return true;
     }
 
+    private function syncAppMaxNets(): void
+    {
+        if (!AppMaxGateway::configured()) {
+            return;
+        }
+        $pending = $this->pdo->query(
+            "SELECT id, external_id FROM payments
+             WHERE gateway = 'appmax' AND status = 'pago' AND net_cents IS NULL
+               AND external_id IS NOT NULL
+             ORDER BY id DESC LIMIT 30"
+        )->fetchAll();
+        if ($pending === []) {
+            return;
+        }
+        $gateway = new AppMaxGateway($this->pdo);
+        $update = $this->pdo->prepare('UPDATE payments SET net_cents = ? WHERE id = ? AND net_cents IS NULL');
+        foreach ($pending as $row) {
+            try {
+                $settlement = $gateway->settlement((string) $row['external_id']);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($settlement === null) {
+                continue;
+            }
+            $update->execute([$settlement['net_cents'], (int) $row['id']]);
+        }
+    }
 
     private function coupons(): bool
     {
@@ -782,6 +832,25 @@ final class AdminSite
     /**
      * @param array<string, mixed> $customer
      */
+    /**
+     * @param array<string, mixed> $customer
+     */
+    private function aiVideoBox(int $customerId, array $customer): string
+    {
+        $on = (int) ($customer['ai_video'] ?? 0) === 1;
+        $state = $on ? 'Ligado. O bot mostra Vídeo com IA.' : 'Desligado.';
+        $pending = empty($customer['user_id']) ? ' Vale quando a pessoa abrir o bot.' : '';
+        $next = $on ? '0' : '1';
+        $label = $on ? 'Desligar' : 'Ligar';
+
+        return '<div class="box" style="margin-top:18px"><h2 style="font-size:18px;margin:0 0 8px">Vídeo com IA</h2>'
+            . '<p>' . Layout::e($state . $pending) . ' Não entra no plano. Cada vídeo tem 5, 8 ou 15 segundos e gera custo na OpenRouter.</p>'
+            . '<form method="post">' . $this->csrf()
+            . '<input type="hidden" name="action" value="ai_video">'
+            . '<input type="hidden" name="ai_video" value="' . $next . '">'
+            . '<button class="btn btn-primary btn-sm" type="submit">' . $label . '</button></form></div>';
+    }
+
     private function exemptionBox(int $customerId, array $customer, string $plans): string
     {
         $stmt = $this->pdo->prepare(
@@ -952,7 +1021,7 @@ final class AdminSite
     private function hint(string $active): string
     {
         $hints = [
-            'painel' => 'Os números do dia: quem pagou e ainda não abriu o bot, conexão perto de vencer e post que falhou.',
+            'painel' => 'Os números do dia: quem pagou e ainda não abriu o bot, o líquido que a AppMax repassa, conexão perto de vencer e post que falhou.',
             'clientes' => 'Aguardando ativação significa que o pagamento existe e o código ainda não foi enviado no Telegram. No detalhe do cliente, Isenção libera o plano para sempre ou até uma data, sem cobrança. A lista mostra o plano, a vigência, o Instagram e o celular.',
             'chamados' => 'A pessoa abre com /chamado no Telegram. Responder avisa na conversa. Encerrado fecha o chamado.',
             'posts' => 'Aqui está o que o bot tentou publicar. Uma falha não publica sozinha: o cliente tenta de novo no Telegram. A lista mostra o cliente e o @ do Instagram.',

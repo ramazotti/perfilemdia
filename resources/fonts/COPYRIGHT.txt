@@ -1,0 +1,7 @@
+These fonts are licensed under the SIL Open Font License, Version 1.1.
+The license text is OFL.txt in this folder.
+
+Great Vibes. Copyright 2010 The Great Vibes Project Authors.
+Libre Baskerville. Copyright 2012 The Libre Baskerville Project Authors.
+Source Sans 3. Copyright 2010-2023 Adobe.
+Anton. Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/Anton).

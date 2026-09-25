@@ -46,6 +46,10 @@ final class InstagramOAuth
         $short = $this->client->exchangeCode($code);
         $long = $this->client->exchangeLongLived($short['access_token']);
         $me = $this->client->me($long['access_token']);
+        $accountType = strtoupper(str_replace(' ', '_', (string) ($me['account_type'] ?? '')));
+        if (in_array($accountType, ['PERSONAL', 'MEDIA_PERSONAL'], true)) {
+            throw new InstagramApiException('A conta do Instagram ainda é pessoal.', null, null, false, 'personal');
+        }
 
         $expiresAt = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))
             ->modify('+' . (int) $long['expires_in'] . ' seconds');

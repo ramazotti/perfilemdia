@@ -402,10 +402,53 @@ final class Messages
         return 'Não consegui buscar a foto do perfil no Instagram. Tente de novo daqui a pouco.';
     }
 
-    public static function askPhotoPhrase(): string
+    public static function askPhotoPhrase(string $style): string
     {
-        return 'Qual texto quer na foto? Pode ser curto.
-Exemplo: Novidade do dia!';
+        return "Qual texto quer na foto? O estilo atual é {$style}.\n"
+            . "Escreva a frase, ou toque para trocar o estilo.\n"
+            . "Exemplo: Novidade do dia!";
+    }
+
+    public static function phraseStyleSaved(string $style): string
+    {
+        return "Pronto. Este texto e os próximos saem em {$style}. Escreva a frase.";
+    }
+
+    public static function askMarkSource(bool $hasLogo): string
+    {
+        $saved = $hasLogo ? ' Minha logo usa a imagem que você já enviou.' : '';
+
+        return 'Qual marca entra na foto? Foto do perfil fica redonda. A logo enviada entra inteira, no canto que você escolher.' . $saved;
+    }
+
+    public static function askMarkPlate(): string
+    {
+        return 'Onde quer a logo? Ela entra inteira, sem o círculo.';
+    }
+
+    public static function askLogoUpload(): string
+    {
+        return 'Manda a logo como arquivo. PNG com fundo transparente fica melhor. Ela fica salva para os próximos posts.';
+    }
+
+    public static function logoNeedImage(): string
+    {
+        return 'Manda a imagem da logo. PNG ou JPG.';
+    }
+
+    public static function logoSaved(): string
+    {
+        return 'Logo salva. Onde quer ela na foto?';
+    }
+
+    public static function logoSavedIdle(): string
+    {
+        return 'Logo salva. No próximo post, toque em Marca d\'água e escolha Minha logo.';
+    }
+
+    public static function logoFailed(): string
+    {
+        return 'Não consegui guardar essa logo. Manda a imagem de novo.';
     }
 
     public static function askPhotoEdit(bool $album): string
@@ -539,6 +582,36 @@ Exemplo: Novidade do dia!';
     public static function kindNotVideo(): string
     {
         return 'Esse envio é um vídeo. Escolha Vídeo curto, ou mande uma foto.';
+    }
+
+    public static function askVideoSeconds(): string
+    {
+        return 'Quantos segundos tem o vídeo? O máximo é 15.';
+    }
+
+    public static function askAiVideo(int $seconds): string
+    {
+        return "Manda a ideia do vídeo de {$seconds} segundos. Se quiser, manda uma foto junto: ela vira o primeiro quadro.";
+    }
+
+    public static function aiVideoOff(): string
+    {
+        return 'Vídeo com IA não está ligado nesta conta.';
+    }
+
+    public static function aiVideoStarted(int $seconds): string
+    {
+        return "Estou gerando o vídeo de {$seconds} segundos. Aviso quando ficar pronto. Nada é publicado antes de você aprovar.";
+    }
+
+    public static function aiVideoFailed(): string
+    {
+        return 'Não consegui gerar esse vídeo. Manda a ideia de novo, com outro pedido.';
+    }
+
+    public static function aiVideoBusy(): string
+    {
+        return 'Já tem um vídeo sendo gerado. Espera ele ficar pronto.';
     }
 
     public static function aiPlan(): string

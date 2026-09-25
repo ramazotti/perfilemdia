@@ -7,6 +7,7 @@ namespace PerfilEmDia\Domain;
 use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
+use PerfilEmDia\Config;
 use PerfilEmDia\Security\Crypto;
 
 final class UserRepository
@@ -35,6 +36,17 @@ final class UserRepository
         return $row === false ? null : $row;
     }
 
+    public function aiVideoEnabled(int $userId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT ai_video FROM customers WHERE user_id = ? AND status <> 'excluido' ORDER BY id DESC LIMIT 1"
+        );
+        $stmt->execute([$userId]);
+        $value = $stmt->fetchColumn();
+
+        return (int) $value === 1;
+    }
+
     public function create(int $telegramUserId, int $chatId, ?string $username): int
     {
         $stmt = $this->pdo->prepare(
@@ -58,6 +70,8 @@ final class UserRepository
             'fixed_hashtags',
             'about',
             'brand_style',
+            'phrase_style',
+            'logo_path',
             'idea_daily',
             'idea_sent_on',
             'idea_text',
@@ -207,6 +221,14 @@ final class UserRepository
     public function deleteAccount(int $userId): array
     {
         $paths = [];
+        $logo = $this->pdo->prepare('SELECT logo_path FROM users WHERE id = ?');
+        $logo->execute([$userId]);
+        $logoPath = $logo->fetchColumn();
+        if (is_string($logoPath) && $logoPath !== '' && !str_contains($logoPath, '..')) {
+            $paths[] = str_starts_with($logoPath, '/')
+                ? $logoPath
+                : Config::root() . '/' . ltrim($logoPath, '/');
+        }
         $media = $this->pdo->prepare(
             'SELECT pm.original_path, pm.public_name
              FROM post_media pm

@@ -257,6 +257,34 @@ final class PostServiceTest extends TestCase
         $this->assertTrue($access->canCreateWithAi($userId));
     }
 
+    public function testTrialUnlocksEveryToolOnEveryPlan(): void
+    {
+        $userId = $this->users->create(920012, 920012, 'testeplano');
+        $this->subscribe($userId, 'essencial');
+        $this->pdo->prepare(
+            'UPDATE subscriptions s
+             INNER JOIN customers c ON c.id = s.customer_id
+             SET s.period_kind = \'teste\', s.period_days = 3, s.period_started_at = NOW(), s.current_period_end = DATE_ADD(NOW(), INTERVAL 3 DAY)
+             WHERE c.user_id = ?'
+        )->execute([$userId]);
+        $access = new PlanAccess($this->pdo);
+
+        $this->assertTrue($access->canEditPhoto($userId));
+        $this->assertTrue($access->canPublishVideo($userId));
+        $this->assertTrue($access->canCreateWithAi($userId));
+
+        $this->pdo->prepare(
+            'UPDATE subscriptions s
+             INNER JOIN customers c ON c.id = s.customer_id
+             SET s.period_kind = \'cheio\'
+             WHERE c.user_id = ?'
+        )->execute([$userId]);
+
+        $this->assertFalse($access->canEditPhoto($userId));
+        $this->assertFalse($access->canPublishVideo($userId));
+        $this->assertFalse($access->canCreateWithAi($userId));
+    }
+
     private function subscribe(int $userId, string $slug): void
     {
         $plan = $this->pdo->prepare('SELECT id FROM plans WHERE slug = ?');

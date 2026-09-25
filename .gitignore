@@ -5,6 +5,8 @@ storage/logs/*
 !storage/logs/.gitkeep
 storage/media/*
 !storage/media/.gitkeep
+storage/logos/*
+!storage/logos/.gitkeep
 public/m/*
 !public/m/.htaccess
 !public/m/.gitkeep
