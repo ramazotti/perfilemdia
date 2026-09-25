@@ -75,30 +75,24 @@ final class ImageEditTest extends TestCase
         unlink($path);
     }
 
-    public function testScriptStyleSitsApartFromTheClassicBand(): void
+    public function testThePhraseSitsAtTheChosenPlace(): void
     {
-        $classic = $this->blankJpeg();
-        $script = $this->blankJpeg();
-        PhotoPhrase::draw($classic, 'Kefir de agua', 'classica');
-        PhotoPhrase::draw($script, 'Kefir de agua', 'cursiva');
-        $this->assertNotSame(file_get_contents($classic), file_get_contents($script));
-        $classicImage = imagecreatefromjpeg($classic);
-        $scriptImage = imagecreatefromjpeg($script);
-        $this->assertNotFalse($classicImage);
-        $this->assertNotFalse($scriptImage);
-        $top = 0;
-        for ($y = 20; $y < 140; $y += 3) {
-            for ($x = 30; $x < 290; $x += 3) {
-                if (imagecolorat($classicImage, $x, $y) !== imagecolorat($scriptImage, $x, $y)) {
-                    $top++;
-                }
-            }
-        }
-        $this->assertGreaterThan(8, $top);
-        imagedestroy($classicImage);
-        imagedestroy($scriptImage);
-        unlink($classic);
-        unlink($script);
+        $footer = $this->blankJpeg();
+        $top = $this->blankJpeg();
+        $middle = $this->blankJpeg();
+        $same = $this->blankJpeg();
+        PhotoPhrase::draw($footer, 'Kefir de agua', 'classica', 'branco', 'rodape');
+        PhotoPhrase::draw($same, 'Kefir de agua', 'classica', 'branco');
+        PhotoPhrase::draw($top, 'Kefir de agua', 'classica', 'branco', 'topo');
+        PhotoPhrase::draw($middle, 'Kefir de agua', 'cursiva', 'branco', 'meio');
+        $this->assertFileEquals($footer, $same);
+        $this->assertLessThan($this->bandLuma($footer, 'top'), $this->bandLuma($footer, 'bottom'));
+        $this->assertLessThan($this->bandLuma($top, 'bottom'), $this->bandLuma($top, 'top'));
+        $this->assertLessThan($this->bandLuma($middle, 'top'), $this->bandLuma($middle, 'middle'));
+        unlink($footer);
+        unlink($top);
+        unlink($middle);
+        unlink($same);
     }
 
     public function testEditorDecodesJpegFromTheApi(): void
@@ -186,10 +180,117 @@ final class ImageEditTest extends TestCase
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
         $this->assertSame('cursiva', $user['phrase_style']);
+        $service->choosePhraseColor($user, 930001, 'cb3', 'dourado', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertSame('dourado', $user['phrase_color']);
         $this->assertTrue($service->handlePhraseText($user, 930001, 'Kefir de agua'));
         $texts = implode("\n", array_column($channel->sent, 'text'));
         $this->assertStringContainsString('Cursiva', $texts);
+        $this->assertStringContainsString("rodap\u{00e9}", $texts);
         $this->assertSame(PostStatus::AwaitingApproval->value, $posts->find($postId)['status']);
+    }
+
+    public function testBubbleAndBoxUseTheirOwnPlate(): void
+    {
+        $bubble = $this->blankJpeg();
+        $box = $this->blankJpeg();
+        PhotoPhrase::draw($bubble, 'Excelente aula e troca de ideias na reuniao', 'balao', 'preto', 'meio');
+        PhotoPhrase::draw($box, 'Hoje um tio muito querido parte para Deus', 'caixa', 'branco', 'meio');
+        $bubbleScore = $this->platePixels($bubble);
+        $boxScore = $this->platePixels($box);
+        $this->assertGreaterThan($bubbleScore['dark'], $bubbleScore['light']);
+        $this->assertGreaterThan(40, $bubbleScore['light']);
+        $this->assertGreaterThan($boxScore['light'], $boxScore['dark']);
+        $this->assertGreaterThan(40, $boxScore['dark']);
+        unlink($bubble);
+        unlink($box);
+    }
+
+    public function testBubbleAndBoxSaveTheMatchingColor(): void
+    {
+        [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
+        $service->handleApprovalCallback($user, 930001, 'cb', 'txt', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $service->choosePhraseStyle($user, 930001, 'cb2', 'balao', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertSame('balao', $user['phrase_style']);
+        $this->assertSame('preto', $user['phrase_color']);
+        $service->choosePhraseStyle($user, 930001, 'cb3', 'caixa', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertSame('caixa', $user['phrase_style']);
+        $this->assertSame('branco', $user['phrase_color']);
+        $texts = implode("\n", array_column($channel->sent, 'text'));
+        $this->assertStringContainsString("Bal\u{00e3}o", $texts);
+        $this->assertStringContainsString('Caixa', $texts);
+    }
+
+    public function testPhrasePlaceIsAskedAndSaved(): void
+    {
+        [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
+        $service->handleApprovalCallback($user, 930001, 'cb', 'txt', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $asked = implode("\n", array_column($channel->sent, 'text'));
+        $this->assertStringContainsString('Onde quer o texto', $asked);
+        $this->assertStringContainsString("no rodap\u{00e9}", $asked);
+
+        $service->choosePhrasePlace($user, 930001, 'cb2', 'meio', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertSame('meio', $user['phrase_place']);
+        $saved = implode("\n", array_column($channel->sent, 'text'));
+        $this->assertStringContainsString('no meio', $saved);
+    }
+
+    public function testACorrectedPhraseReplacesThePreviousOne(): void
+    {
+        [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
+        $media = $posts->media($postId);
+        $public = dirname(__DIR__) . '/public/m/' . $media[0]['public_name'] . '.jpg';
+        $clean = $this->blankJpeg();
+        copy($clean, $public);
+
+        $service->handleApprovalCallback($user, 930001, 'cb', 'txt', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertTrue($service->handlePhraseText($user, 930001, 'Primeira frase da foto'));
+
+        $service->handleApprovalCallback($user, 930001, 'cb2', 'txt', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertTrue($service->handlePhraseText($user, 930001, 'Segunda frase da foto'));
+
+        $media = $posts->media($postId);
+        $result = dirname(__DIR__) . '/public/m/' . $media[0]['public_name'] . '.jpg';
+        $expected = $this->blankJpeg();
+        copy($clean, $expected);
+        PhotoPhrase::draw($expected, 'Segunda frase da foto', 'classica', 'branco');
+        $this->assertFileEquals($expected, $result);
+
+        $base = dirname(__DIR__) . '/storage/media/phrasebase_' . $media[0]['id'] . '.jpg';
+        if (is_file($base)) {
+            unlink($base);
+        }
+        unlink($clean);
+        unlink($expected);
+        if (is_file($result)) {
+            unlink($result);
+        }
+    }
+
+    public function testBlackTextSitsOnALightWash(): void
+    {
+        $gold = $this->blankJpeg();
+        $black = $this->blankJpeg();
+        PhotoPhrase::draw($gold, 'Kefir de agua', 'classica', 'dourado');
+        PhotoPhrase::draw($black, 'Kefir de agua', 'classica', 'preto');
+        $this->assertLessThan($this->bottomLuma($black), $this->bottomLuma($gold));
+        unlink($gold);
+        unlink($black);
     }
 
     public function testSendingALogoKeepsItForTheCorner(): void
@@ -383,6 +484,84 @@ final class ImageEditTest extends TestCase
             'INSERT INTO subscriptions (customer_id, plan_id, cycle, status, price_cents, current_period_end, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
         )->execute([$customerId, (int) $planId, 'mensal', 'ativa', 4900, $end]);
+    }
+
+    /**
+     * @return array{light:int,dark:int}
+     */
+    private function platePixels(string $path): array
+    {
+        $image = imagecreatefromjpeg($path);
+        $this->assertNotFalse($image);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $light = 0;
+        $dark = 0;
+        $x0 = (int) ($width * 0.2);
+        $x1 = (int) ($width * 0.8);
+        $y0 = (int) ($height * 0.28);
+        $y1 = (int) ($height * 0.72);
+        for ($y = $y0; $y < $y1; $y += 2) {
+            for ($x = $x0; $x < $x1; $x += 2) {
+                $rgb = imagecolorat($image, $x, $y);
+                $r = ($rgb >> 16) & 255;
+                $g = ($rgb >> 8) & 255;
+                $b = $rgb & 255;
+                if ($r > 230 && $g > 230 && $b > 230) {
+                    $light++;
+                } elseif ($r < 40 && $g < 40 && $b < 40) {
+                    $dark++;
+                }
+            }
+        }
+        imagedestroy($image);
+
+        return ['light' => $light, 'dark' => $dark];
+    }
+
+    private function bandLuma(string $path, string $band): int
+    {
+        $image = imagecreatefromjpeg($path);
+        $this->assertNotFalse($image);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        [$from, $to] = match ($band) {
+            'top' => [12, 48],
+            'middle' => [(int) ($height * 0.42), (int) ($height * 0.58)],
+            default => [$height - 48, $height - 12],
+        };
+        $total = 0;
+        $count = 0;
+        for ($y = $from; $y < $to; $y += 4) {
+            for ($x = 4; $x < 36; $x += 4) {
+                $rgb = imagecolorat($image, $x, $y);
+                $total += (($rgb >> 16) & 255) + (($rgb >> 8) & 255) + ($rgb & 255);
+                $count++;
+            }
+        }
+        imagedestroy($image);
+
+        return (int) ($total / max(1, $count));
+    }
+
+    private function bottomLuma(string $path): int
+    {
+        $image = imagecreatefromjpeg($path);
+        $this->assertNotFalse($image);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $total = 0;
+        $count = 0;
+        for ($y = $height - 36; $y < $height - 8; $y += 4) {
+            for ($x = (int) ($width * 0.3); $x < (int) ($width * 0.7); $x += 6) {
+                $rgb = imagecolorat($image, $x, $y);
+                $total += (($rgb >> 16) & 255) + (($rgb >> 8) & 255) + ($rgb & 255);
+                $count++;
+            }
+        }
+        imagedestroy($image);
+
+        return (int) ($total / max(1, $count));
     }
 
     private function blankJpeg(): string

@@ -202,6 +202,17 @@ final class PostRepository
         return $stmt === false ? [] : $stmt->fetchAll();
     }
 
+    public function lastPublishedAt(int $userId): ?string
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT MAX(published_at) FROM posts WHERE user_id = ? AND status = 'PUBLISHED' AND published_at IS NOT NULL"
+        );
+        $stmt->execute([$userId]);
+        $value = $stmt->fetchColumn();
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
     public function generatingVideoForUser(int $userId): bool
     {
         $stmt = $this->pdo->prepare(

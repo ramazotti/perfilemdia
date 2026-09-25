@@ -354,8 +354,18 @@ final class UpdateHandler
 
             return;
         }
-        if (preg_match('/^f:(cursiva|classica|limpa|forte):(\d+)$/', $data, $m) === 1) {
+        if (preg_match('/^f:(cursiva|classica|limpa|forte|balao|caixa):(\d+)$/', $data, $m) === 1) {
             $this->postsService->choosePhraseStyle($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+
+            return;
+        }
+        if (preg_match('/^pc:(dourado|branco|preto):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->choosePhraseColor($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+
+            return;
+        }
+        if (preg_match('/^pp:(topo|meio|rodape):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->choosePhrasePlace($user, $chatId, $callbackId, $m[1], (int) $m[2]);
 
             return;
         }
@@ -369,9 +379,11 @@ final class UpdateHandler
 
             return;
         }
-        if ($data === 'id:ia' || $data === 'id:on' || $data === 'id:off') {
+        if ($data === 'id:ia' || $data === 'id:on' || $data === 'id:off' || $data === 'id:sur') {
             $this->channel->answerCallback($callbackId);
-            if ($data === 'id:ia') {
+            if ($data === 'id:sur') {
+                $this->postsService->surprise($user, $chatId);
+            } elseif ($data === 'id:ia') {
                 $this->postsService->createFromStoredIdea($user, $chatId);
             } else {
                 $this->postsService->setDailyIdeas($user, $chatId, $data === 'id:on');

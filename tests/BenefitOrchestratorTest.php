@@ -29,6 +29,17 @@ final class BenefitOrchestratorTest extends TestCase
         $this->assertSame('Dia das crianças', $date['name']);
     }
 
+    public function testAQuietDayRemindsAndAProfessionGetsItsPhrase(): void
+    {
+        $now = new DateTimeImmutable('2026-09-23 09:00:00', new DateTimeZone('America/Sao_Paulo'));
+        $user = ['profession' => 'Nutricionista', 'city' => 'Curitiba'];
+        $nudge = BenefitOrchestrator::nudge($user, $now);
+        $this->assertStringContainsString('Faz mais de 1 dia', $nudge);
+        $this->assertStringContainsString('Nutricionista', $nudge);
+        $this->assertStringContainsString('prato', BenefitOrchestrator::photoPhrase($user));
+        $this->assertSame('Hoje, de perto.', BenefitOrchestrator::photoPhrase(['profession' => '']));
+    }
+
     public function testOrdinaryDayStillHasAnIdea(): void
     {
         $now = new DateTimeImmutable('2026-09-23 09:00:00', new DateTimeZone('America/Sao_Paulo'));

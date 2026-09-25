@@ -53,14 +53,49 @@ final class BenefitOrchestrator
     /**
      * @param array<string, mixed> $user
      */
-    public static function ideaMessage(array $user, DateTimeImmutable $now): string
+    public static function ideaMessage(array $user, DateTimeImmutable $now, bool $surprise = true): string
     {
         $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
         $date = self::commemorative($now);
         $head = $date !== null ? 'Hoje é ' . $date['name'] . '.' : 'Ideia para o post de hoje.';
+        $tail = $surprise
+            ? 'Toque em Surpreenda-me para eu montar a foto, o texto e a marca. Ou mande a sua foto com essa frase. Nada sai sem a sua aprovação.'
+            : 'Mande a foto com essa frase. Nada sai sem a sua aprovação.';
 
-        return $head . "\n\n" . self::suggestion($user, $now)
-            . "\n\nMande a foto com essa frase. No plano Estúdio, pode criar a imagem pela IA.";
+        return $head . "\n\n" . self::suggestion($user, $now) . "\n\n" . $tail;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public static function nudge(array $user, DateTimeImmutable $now, bool $surprise = true): string
+    {
+        $tail = $surprise
+            ? 'Toque em Surpreenda-me para eu montar a foto, o texto e a marca. Nada sai sem a sua aprovação.'
+            : 'Mande a foto com essa frase. Nada sai sem a sua aprovação.';
+
+        return "Oi! Faz mais de 1 dia que você não posta.\n\n"
+            . "Separei um pedido pronto, ligado ao que você faz:\n"
+            . self::suggestion($user, $now)
+            . "\n\n" . $tail;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public static function photoPhrase(array $user): string
+    {
+        $who = mb_strtolower(trim((string) ($user['profession'] ?? '')));
+        if ($who !== '') {
+            foreach (self::professions() as $job) {
+                $name = mb_strtolower($job['name']);
+                if ($who === $name || str_contains($who, $name)) {
+                    return mb_substr($job['phrase'], 0, 80);
+                }
+            }
+        }
+
+        return 'Hoje, de perto.';
     }
 
     public static function storyFits(int $mediaCount): bool

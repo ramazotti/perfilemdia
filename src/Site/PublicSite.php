@@ -117,7 +117,8 @@ final class PublicSite
             ['E se eu não gostar da legenda?', 'Toque em Ajustar e diga o que mudar, peça outra versão ou escreva o texto do seu jeito.'],
             ['Posso mandar mais de uma foto?', 'Pode. Mande um álbum com até 10 fotos e ele vira um carrossel.'],
             ['Posso publicar vídeo?', 'Nos planos Profissional e Estúdio, um vídeo de 3 a 90 segundos e até 20 MB. A legenda sai na prévia e só publica quando você aprova.'],
-            ['O post pode ser criado pela IA?', 'No plano Estúdio. Você manda a ideia e o Perfil em Dia cria a imagem e a legenda. O texto é o pedido. A prévia chega no Telegram e só publica quando você aprova.'],
+            ['O post pode ser criado pela IA?', 'No plano Estúdio. Você manda a ideia, ou toca em Surpreenda-me. Aí o Perfil em Dia monta a foto, o texto na imagem, a marca e a legenda. A prévia chega no Telegram e só publica quando você aprova.'],
+            ['O bot sugere o que postar?', 'Sim. A partir das 8h, uma vez por dia, chega uma ideia ligada ao que você faz. Se passar de 1 dia sem publicar, o aviso lembra e já traz um pedido pronto. Dá para parar no botão da mensagem.'],
             ['Por que Telegram e não WhatsApp?', 'Porque o Telegram deixa o Perfil em Dia separado das suas conversas de clientes e família, e funciona do mesmo jeito que o WhatsApp.'],
         ];
         $faq = $this->faq($questions);
@@ -165,7 +166,7 @@ final class PublicSite
             . '<button type="button" data-job="next" aria-label="Pr&#243;xima">&#8250;</button></div></div>'
             . '<div class="jobs">' . $cards . '</div></div></section>';
         $items = [
-            ['Ideia do dia', 'Peça com /ideia ou receba todo dia. Em data comemorativa, a sugestão já vem no tema.'],
+            ['Ideia do dia', 'A partir das 8h, uma vez por dia, chega um pedido pronto, ligado ao que você faz. Se passar de 1 dia sem postar, o aviso lembra. Em data comemorativa, a sugestão já vem no tema. Dá para pedir na hora com /ideia, ou parar no botão.'],
             ['Publicar no story', 'Uma foto ou um vídeo pode ir para o story. Carrossel segue no feed.'],
             ['Cor e estilo', 'No plano Estúdio, descreva a marca com /marca. A imagem criada pela IA segue essa descrição.'],
             ['Resultado da semana', 'O comando /resultado mostra alcance e visualizações dos últimos 7 dias, quando o Instagram libera.'],
@@ -612,7 +613,7 @@ final class PublicSite
             . '<li>Toque em Abrir o bot. O código já vai na conversa.</li>'
             . '<li>Responda as perguntas do perfil.</li>'
             . '<li>Mude o Instagram para conta profissional e conecte.</li>'
-            . '<li>No bot, escolha o tipo do post e mande a foto, o carrossel, o vídeo ou a ideia.</li>'
+            . '<li>No bot, escolha o tipo do post e mande a foto, o carrossel, o vídeo ou a ideia. No Estúdio, Surpreenda-me monta o post e você só aprova.</li>'
             . '</ol>'
             . '<p><a href="' . Layout::e(Layout::url('manual')) . '">Ver o passo a passo completo</a></p>'
             . '<p><a class="btn btn-primary" href="' . Layout::e($bot) . '">Abrir o bot</a></p></div></section>';

@@ -5,3 +5,4 @@ Great Vibes. Copyright 2010 The Great Vibes Project Authors.
 Libre Baskerville. Copyright 2012 The Libre Baskerville Project Authors.
 Source Sans 3. Copyright 2010-2023 Adobe.
 Anton. Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/Anton).
+Courier Prime. Copyright 2015 The Courier Prime Project Authors (https://github.com/quoteunquoteapps/CourierPrime).

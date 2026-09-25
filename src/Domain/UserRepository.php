@@ -71,6 +71,8 @@ final class UserRepository
             'about',
             'brand_style',
             'phrase_style',
+            'phrase_color',
+            'phrase_place',
             'logo_path',
             'idea_daily',
             'idea_sent_on',
@@ -230,7 +232,7 @@ final class UserRepository
                 : Config::root() . '/' . ltrim($logoPath, '/');
         }
         $media = $this->pdo->prepare(
-            'SELECT pm.original_path, pm.public_name
+            'SELECT pm.id, pm.original_path, pm.public_name
              FROM post_media pm
              INNER JOIN posts p ON p.id = pm.post_id
              WHERE p.user_id = ?'
@@ -242,6 +244,9 @@ final class UserRepository
             }
             if (!empty($row['public_name'])) {
                 $paths[] = (string) $row['public_name'];
+            }
+            if (!empty($row['id'])) {
+                $paths[] = Config::root() . '/storage/media/phrasebase_' . (int) $row['id'] . '.jpg';
             }
         }
 

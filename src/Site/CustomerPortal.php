@@ -341,7 +341,7 @@ final class CustomerPortal
             return '';
         }
         $html = '<div class="box" style="margin-top:20px"><h2>Plano e ciclo</h2>';
-        $html .= '<p class="meta">A troca de preço vale na próxima cobrança. Um plano com mais posts libera o limite na hora. Um plano com menos posts muda o limite só no próximo período. Estúdio inclui o post criado a partir de uma ideia. Vídeo curto, texto na foto, tratamento da foto e a marca d\'água ficam no Profissional e no Estúdio. Agendar vale em todos os planos.</p>';
+        $html .= '<p class="meta">A troca de preço vale na próxima cobrança. Um plano com mais posts libera o limite na hora. Um plano com menos posts muda o limite só no próximo período. Estúdio inclui o post criado a partir de uma ideia, com Surpreenda-me. A ideia do dia chega a partir das 8h, e um lembrete se passar de 1 dia sem postar. Vídeo curto, texto na foto, tratamento da foto e a marca d\'água ficam no Profissional e no Estúdio. Agendar vale em todos os planos.</p>';
         $options = '';
         foreach ($view['plans'] as $plan) {
             $selected = (int) $plan['id'] === (int) $sub['plan_id'] ? ' selected' : '';

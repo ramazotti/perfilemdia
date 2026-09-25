@@ -402,16 +402,23 @@ final class Messages
         return 'Não consegui buscar a foto do perfil no Instagram. Tente de novo daqui a pouco.';
     }
 
-    public static function askPhotoPhrase(string $style): string
+    public static function askPhotoPhrase(string $style, string $color, string $where): string
     {
-        return "Qual texto quer na foto? O estilo atual é {$style}.\n"
-            . "Escreva a frase, ou toque para trocar o estilo.\n"
+        return "Qual texto quer na foto?\n"
+            . "Onde quer o texto: no topo, no meio ou no rodapé? O padrão é o rodapé.\n"
+            . "Agora fica {$where}, no estilo {$style}, cor {$color}.\n"
+            . "Escreva a frase, ou toque para trocar.\n"
             . "Exemplo: Novidade do dia!";
     }
 
     public static function phraseStyleSaved(string $style): string
     {
         return "Pronto. Este texto e os próximos saem em {$style}. Escreva a frase.";
+    }
+
+    public static function phraseLookSaved(string $style, string $color, string $where): string
+    {
+        return "Pronto. Fica {$where}, estilo {$style}, cor {$color}. Escreva a frase.";
     }
 
     public static function askMarkSource(bool $hasLogo): string
@@ -566,7 +573,7 @@ final class Messages
 
     public static function kindIa(): string
     {
-        return 'Manda a ideia em uma mensagem. Esse texto é o pedido: a imagem e a legenda saem a partir dele. Se quiser, manda uma foto junto, só como referência.';
+        return 'Manda a ideia em uma mensagem. Esse texto é o pedido: a imagem e a legenda saem a partir dele. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me, que eu monto a foto, o texto e a marca.';
     }
 
     public static function kindIaNeedText(): string
@@ -653,6 +660,22 @@ final class Messages
     public static function ideaImageRetryFailed(): string
     {
         return 'Não consegui criar outra foto agora. A legenda segue para uma nova versão.';
+    }
+
+
+    public static function surpriseStarted(): string
+    {
+        return 'Vou montar a ideia, a foto, o texto na imagem e a marca. Aviso quando a prévia ficar pronta.';
+    }
+
+    public static function surpriseReady(): string
+    {
+        return 'Pronto. A ideia, a foto, o texto e a marca estão na prévia. Nada é publicado antes de você aprovar.';
+    }
+
+    public static function surpriseReadyPlain(): string
+    {
+        return 'Pronto. A ideia e a foto estão na prévia. A marca entra se você enviar a logo ou conectar o Instagram. Nada é publicado antes de você aprovar.';
     }
 
     public static function ideaFailed(): string

@@ -96,13 +96,15 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function phraseStyles(int $postId, string $current): array
+    public static function phraseStyles(int $postId, string $current, string $color = 'branco', string $place = 'rodape'): array
     {
         $labels = [
             'cursiva' => 'Cursiva',
             'classica' => "Cl\u{00e1}ssica",
             'limpa' => 'Limpa',
             'forte' => 'Forte',
+            'balao' => "Bal\u{00e3}o",
+            'caixa' => 'Caixa',
         ];
         $button = static function (string $style) use ($postId, $current, $labels): array {
             $text = $labels[$style];
@@ -112,10 +114,37 @@ final class Keyboards
 
             return ['text' => $text, 'callback_data' => 'f:' . $style . ':' . $postId];
         };
+        $colors = [
+            'dourado' => 'Dourado',
+            'branco' => 'Branco',
+            'preto' => 'Preto',
+        ];
+        $colorRow = [];
+        foreach ($colors as $key => $label) {
+            if ($key === $color) {
+                $label .= " \u{2713}";
+            }
+            $colorRow[] = ['text' => $label, 'callback_data' => 'pc:' . $key . ':' . $postId];
+        }
+        $places = [
+            'topo' => 'Topo',
+            'meio' => 'Meio',
+            'rodape' => "Rodap\u{00e9}",
+        ];
+        $placeRow = [];
+        foreach ($places as $key => $label) {
+            if ($key === $place) {
+                $label .= " \u{2713}";
+            }
+            $placeRow[] = ['text' => $label, 'callback_data' => 'pp:' . $key . ':' . $postId];
+        }
 
         return [
             [$button('cursiva'), $button('classica')],
             [$button('limpa'), $button('forte')],
+            [$button('balao'), $button('caixa')],
+            $colorRow,
+            $placeRow,
         ];
     }
 
@@ -311,14 +340,26 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function ideaActions(): array
+    public static function ideaActions(bool $surprise = true): array
     {
-        return [
-            [['text' => 'Criar pela IA', 'callback_data' => 'id:ia']],
-            [
-                ['text' => 'Receber todo dia', 'callback_data' => 'id:on'],
-                ['text' => 'Parar', 'callback_data' => 'id:off'],
-            ],
+        $rows = [];
+        if ($surprise) {
+            $rows[] = [['text' => 'Surpreenda-me', 'callback_data' => 'id:sur']];
+            $rows[] = [['text' => 'Criar pela IA', 'callback_data' => 'id:ia']];
+        }
+        $rows[] = [
+            ['text' => 'Receber todo dia', 'callback_data' => 'id:on'],
+            ['text' => 'Parar', 'callback_data' => 'id:off'],
         ];
+
+        return $rows;
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
+    public static function surpriseMe(): array
+    {
+        return [[['text' => 'Surpreenda-me', 'callback_data' => 'pk:surpresa']]];
     }
 }
