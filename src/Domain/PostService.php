@@ -73,9 +73,9 @@ class PostService
         }
 
         $userPending = (string) ($user['pending_action'] ?? '');
-        if (preg_match('/^aiv:(5|8|15)$/', $userPending, $videoSeconds) === 1) {
+        if (preg_match('/^aiv:(4|5|6|8|15)$/', $userPending, $videoSeconds) === 1) {
             $idea = trim((string) ($this->extractTheme($message) ?? ''));
-            $this->startAiVideo($user, $chatId, $idea, (int) $videoSeconds[1], $message);
+            $this->startAiVideo($user, $chatId, $idea, IdeaVideo::duration((int) $videoSeconds[1]), $message);
 
             return;
         }
@@ -2152,11 +2152,12 @@ class PostService
     public function chooseVideoSeconds(array $user, int $chatId, string $callbackId, int $seconds): void
     {
         $this->channel->answerCallback($callbackId);
-        if (!in_array($seconds, [5, 8, 15], true) || !$this->aiVideoOn($user)) {
+        if (!in_array($seconds, [4, 5, 6, 8, 15], true) || !$this->aiVideoOn($user)) {
             $this->channel->sendText($chatId, Messages::aiVideoOff());
 
             return;
         }
+        $seconds = IdeaVideo::duration($seconds);
         $this->users->update((int) $user['id'], ['pending_action' => 'aiv:' . $seconds]);
         $this->channel->sendText($chatId, Messages::askAiVideo($seconds));
     }
@@ -2167,7 +2168,7 @@ class PostService
     public function handleAiVideoText(array $user, int $chatId, string $text): bool
     {
         $pending = (string) ($user['pending_action'] ?? '');
-        if (preg_match('/^aiv:(5|8|15)$/', $pending, $seconds) !== 1) {
+        if (preg_match('/^aiv:(4|5|6|8|15)$/', $pending, $seconds) !== 1) {
             return false;
         }
         $idea = trim(strip_tags($text));
@@ -2176,9 +2177,40 @@ class PostService
 
             return true;
         }
-        $this->startAiVideo($user, $chatId, mb_substr($idea, 0, 1000), (int) $seconds[1], null);
+        $this->startAiVideo($user, $chatId, mb_substr($idea, 0, 1000), IdeaVideo::duration((int) $seconds[1]), null);
 
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function replyWhenIdle(array $user, int $chatId): void
+    {
+        $pending = (string) ($user['pending_action'] ?? '');
+        if (str_starts_with($pending, 'kind:')) {
+            $kind = substr($pending, 5);
+            $text = match ($kind) {
+                'album' => Messages::kindAlbum(),
+                'video' => Messages::kindVideo(),
+                'ia' => Messages::kindIaNeedText(),
+                default => Messages::kindFoto(),
+            };
+            $this->channel->sendText($chatId, $text);
+
+            return;
+        }
+        if ($this->posts->findPendingForUser((int) $user['id']) !== null) {
+            $this->channel->sendText($chatId, Messages::useOpenButtons());
+
+            return;
+        }
+        if ($this->posts->generatingVideoForUser((int) $user['id'])) {
+            $this->channel->sendText($chatId, Messages::aiVideoBusy());
+
+            return;
+        }
+        $this->channel->sendText($chatId, Messages::textWithoutStep($this->aiVideoOn($user)));
     }
 
     public function finishAiVideos(): void
@@ -2194,6 +2226,7 @@ class PostService
                 $job = $this->videoGenerator()->status((string) $post['video_job_id']);
             } catch (\Throwable $e) {
                 Logger::get()->error('Video IA status falhou', ['post_id' => $postId, 'error' => $e->getMessage()]);
+                $this->pingVideoWait($post, $chatId);
                 continue;
             }
             $status = $job['status'];
@@ -2323,7 +2356,7 @@ class PostService
             return;
         }
         $seconds = (int) ($post['video_seconds'] ?? 0);
-        $this->channel->sendText($chatId, Messages::aiVideoWaiting($seconds > 0 ? $seconds : 15));
+        $this->channel->sendText($chatId, Messages::aiVideoWaiting($seconds > 0 ? $seconds : 8));
         $this->posts->update((int) $post['id'], [
             'video_ping_at' => (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s'),
         ]);
@@ -2332,7 +2365,7 @@ class PostService
     private function videoPrompt(string $idea, string $brand, bool $hasReference): string
     {
         $prompt = 'Create one realistic vertical Instagram video. Natural motion, steady and clear. ';
-        $prompt .= 'Audio is one original soft instrumental melody. No voice, no singing, no spoken words, no lyrics, and no known song. ';
+        $prompt .= 'Silent video. No audio, no music, no soundtrack, no voice, no singing, and no sound effects. If the scene mentions music or sound, ignore it. ';
         $phrase = $this->onScreenPhrase($idea);
         if ($phrase !== null) {
             $prompt .= 'Show only this exact sentence on screen, spelled as written: "' . $phrase . '". Do not speak it. No other text, letters, numbers, logos, or watermarks. ';

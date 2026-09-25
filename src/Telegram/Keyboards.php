@@ -297,9 +297,9 @@ final class Keyboards
     public static function videoSeconds(): array
     {
         return [[
-            ['text' => '5 segundos', 'callback_data' => 'vd:5'],
+            ['text' => '4 segundos', 'callback_data' => 'vd:4'],
+            ['text' => '6 segundos', 'callback_data' => 'vd:6'],
             ['text' => '8 segundos', 'callback_data' => 'vd:8'],
-            ['text' => '15 segundos', 'callback_data' => 'vd:15'],
         ]];
     }
 

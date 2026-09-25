@@ -143,6 +143,7 @@ final class UpdateHandler
             if ($this->postsService->handleThemeText($user, $chatId, $text)) {
                 return;
             }
+            $this->postsService->replyWhenIdle($user, $chatId);
         }
     }
 
@@ -310,7 +311,7 @@ final class UpdateHandler
 
             return;
         }
-        if (preg_match('/^vd:(5|8|15)$/', $data, $m) === 1) {
+        if (preg_match('/^vd:(4|5|6|8|15)$/', $data, $m) === 1) {
             $this->postsService->chooseVideoSeconds($user, $chatId, $callbackId, (int) $m[1]);
 
             return;

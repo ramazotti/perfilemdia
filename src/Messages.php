@@ -586,7 +586,7 @@ final class Messages
 
     public static function askVideoSeconds(): string
     {
-        return 'Quantos segundos tem o vídeo? O máximo é 15.';
+        return 'Quantos segundos tem o vídeo? O máximo é 8.';
     }
 
     public static function askAiVideo(int $seconds): string
@@ -612,17 +612,32 @@ final class Messages
 
     public static function aiVideoAudioRefused(): string
     {
-        return 'A geração recusou o áudio. Peça uma melodia original e suave, sem voz e sem música conhecida. A frase pode ficar escrita na imagem.';
+        return 'A geração recusou o áudio. Comece de novo em /novo, escolha Vídeo com IA e peça uma melodia original e suave, sem voz e sem música conhecida. A frase pode ficar escrita na imagem.';
     }
 
     public static function aiVideoFailed(): string
     {
-        return 'Não consegui gerar esse vídeo. Manda a ideia de novo, com outro pedido.';
+        return 'Não consegui gerar esse vídeo. Comece de novo: envie /novo, escolha Vídeo com IA e os segundos, e manda a ideia.';
     }
 
     public static function aiVideoBusy(): string
     {
         return 'Já tem um vídeo sendo gerado. Espera ele ficar pronto.';
+    }
+
+
+    public static function textWithoutStep(bool $video): string
+    {
+        if ($video) {
+            return 'Esse texto chegou fora do passo do vídeo. Para gerar, comece de novo: envie /novo, escolha Vídeo com IA e os segundos. Depois manda a ideia.';
+        }
+
+        return 'Para postar, comece de novo: envie /novo e escolha o tipo.';
+    }
+
+    public static function useOpenButtons(): string
+    {
+        return 'Use os botões da mensagem anterior. Para outro post, envie /novo.';
     }
 
     public static function aiPlan(): string

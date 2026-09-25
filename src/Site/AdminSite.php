@@ -844,7 +844,7 @@ final class AdminSite
         $label = $on ? 'Desligar' : 'Ligar';
 
         return '<div class="box" style="margin-top:18px"><h2 style="font-size:18px;margin:0 0 8px">Vídeo com IA</h2>'
-            . '<p>' . Layout::e($state . $pending) . ' Não entra no plano. Cada vídeo tem 5, 8 ou 15 segundos e gera custo na OpenRouter.</p>'
+            . '<p>' . Layout::e($state . $pending) . ' Não entra no plano. Cada vídeo tem 4, 6 ou 8 segundos e gera custo na OpenRouter.</p>'
             . '<form method="post">' . $this->csrf()
             . '<input type="hidden" name="action" value="ai_video">'
             . '<input type="hidden" name="ai_video" value="' . $next . '">'

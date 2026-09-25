@@ -30,6 +30,11 @@ if (PHP_SAPI !== 'cli') {
 
 Config::load();
 
+$lock = fopen(dirname(__DIR__) . '/storage/worker.lock', 'c');
+if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
+    exit(0);
+}
+
 $pdo = Db::pdo();
 BillingFactory::service($pdo)->renewDue();
 $store = new UpdateStore($pdo);

@@ -23,9 +23,11 @@ final class IdeaVideoTest extends TestCase
 
         $this->assertSame('job-15', $id);
         $json = $http->calls[0]['options']['json'];
-        $this->assertSame(15, $json['duration']);
+        $this->assertSame(8, $json['duration']);
+        $this->assertSame('google/veo-3.1-lite', $json['model']);
         $this->assertSame('9:16', $json['aspect_ratio']);
         $this->assertSame('720p', $json['resolution']);
+        $this->assertFalse($json['generate_audio']);
         $this->assertSame('first_frame', $json['frame_images'][0]['frame_type']);
         $this->assertStringStartsWith('data:image/jpeg;base64,', $json['frame_images'][0]['image_url']['url']);
         unlink($frame);

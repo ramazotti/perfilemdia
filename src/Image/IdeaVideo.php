@@ -18,13 +18,14 @@ final class IdeaVideo implements IdeaVideoGenerator
 
     public function submit(string $prompt, int $seconds, ?string $referencePath = null): string
     {
-        $seconds = max(1, min(15, $seconds));
+        $seconds = self::duration($seconds);
         $payload = [
-            'model' => Config::get('OPENROUTER_VIDEO_MODEL', 'bytedance/seedance-2.0-mini'),
+            'model' => Config::get('OPENROUTER_VIDEO_MODEL', 'google/veo-3.1-lite'),
             'prompt' => $prompt,
             'duration' => $seconds,
             'resolution' => '720p',
             'aspect_ratio' => '9:16',
+            'generate_audio' => false,
         ];
         $frame = $this->frameImage($referencePath);
         if ($frame !== null) {
@@ -38,6 +39,15 @@ final class IdeaVideo implements IdeaVideoGenerator
         }
 
         return $id;
+    }
+
+    public static function duration(int $seconds): int
+    {
+        if (in_array($seconds, [4, 6, 8], true)) {
+            return $seconds;
+        }
+
+        return 8;
     }
 
     public function status(string $jobId): array
