@@ -2202,17 +2202,21 @@ class PostService
                 if ($created !== false && $created < time() - 1200) {
                     $this->failPost($postId, PostStatus::Generating, 'video_timeout', 'timeout');
                     $this->channel->sendText($chatId, Messages::aiVideoFailed());
+                } else {
+                    $this->pingVideoWait($post, $chatId);
                 }
                 continue;
             }
             if ($status !== 'completed' || $job['url'] === null) {
+                $error = (string) ($job['error'] ?? '');
                 Logger::get()->error('Video IA recusado', [
                     'post_id' => $postId,
                     'status' => $status,
-                    'error' => $job['error'] ?? '',
+                    'error' => $error,
                 ]);
                 $this->failPost($postId, PostStatus::Generating, 'video_failed', $status);
-                $this->channel->sendText($chatId, Messages::aiVideoFailed());
+                $audio = stripos($error, 'copyright') !== false;
+                $this->channel->sendText($chatId, $audio ? Messages::aiVideoAudioRefused() : Messages::aiVideoFailed());
                 continue;
             }
             try {
@@ -2291,15 +2295,7 @@ class PostService
             }
         }
         try {
-            $prompt = 'Create one realistic vertical Instagram video. No text, letters, numbers, logos, or watermarks. Natural motion, steady and clear.';
-            $brand = trim(BenefitOrchestrator::brandBrief($user));
-            if ($brand !== '') {
-                $prompt .= ' ' . $brand;
-            }
-            if ($reference !== null) {
-                $prompt .= ' The attached image is the first frame. Keep the same subject and place.';
-            }
-            $prompt .= ' The idea: ' . $idea;
+            $prompt = $this->videoPrompt($idea, trim(BenefitOrchestrator::brandBrief($user)), $reference !== null);
             $jobId = $this->videoGenerator()->submit($prompt, $seconds, $reference);
             $this->posts->update($postId, ['video_job_id' => $jobId]);
         } catch (\Throwable $e) {
@@ -2311,6 +2307,61 @@ class PostService
                 unlink($reference);
             }
         }
+    }
+
+    /**
+     * @param array<string, mixed> $post
+     */
+    private function pingVideoWait(array $post, int $chatId): void
+    {
+        $created = strtotime((string) ($post['created_at'] ?? ''));
+        if ($created === false || $created > time() - 45) {
+            return;
+        }
+        $last = strtotime((string) ($post['video_ping_at'] ?? ''));
+        if ($last !== false && $last > time() - 50) {
+            return;
+        }
+        $seconds = (int) ($post['video_seconds'] ?? 0);
+        $this->channel->sendText($chatId, Messages::aiVideoWaiting($seconds > 0 ? $seconds : 15));
+        $this->posts->update((int) $post['id'], [
+            'video_ping_at' => (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s'),
+        ]);
+    }
+
+    private function videoPrompt(string $idea, string $brand, bool $hasReference): string
+    {
+        $prompt = 'Create one realistic vertical Instagram video. Natural motion, steady and clear. ';
+        $prompt .= 'Audio is one original soft instrumental melody. No voice, no singing, no spoken words, no lyrics, and no known song. ';
+        $phrase = $this->onScreenPhrase($idea);
+        if ($phrase !== null) {
+            $prompt .= 'Show only this exact sentence on screen, spelled as written: "' . $phrase . '". Do not speak it. No other text, letters, numbers, logos, or watermarks. ';
+        } else {
+            $prompt .= 'No text, letters, numbers, logos, or watermarks. ';
+        }
+        if ($brand !== '') {
+            $prompt .= $brand . ' ';
+        }
+        if ($hasReference) {
+            $prompt .= 'The attached image is the first frame. Keep the same subject and place. ';
+        }
+        $prompt .= 'The scene: ' . $idea;
+
+        return $prompt;
+    }
+
+    private function onScreenPhrase(string $idea): ?string
+    {
+        if (preg_match('/\bfrase\b\s*[:\-]?\s*(.+)$/us', $idea, $matches) !== 1) {
+            return null;
+        }
+        $phrase = trim($matches[1], " \t\n\r\"'");
+        $phrase = trim((string) preg_replace('/\s+/u', ' ', $phrase));
+        if (mb_strlen($phrase) < 8 || mb_strlen($phrase) > 160) {
+            return null;
+        }
+
+        return $phrase;
     }
 
     private function videoGenerator(): IdeaVideoGenerator

@@ -145,6 +145,7 @@ final class PostRepository
             'destination',
             'video_job_id',
             'video_seconds',
+            'video_ping_at',
         ];
         $set = [];
         $values = [];

@@ -70,6 +70,8 @@ final class AiVideoFlowTest extends TestCase
         $this->assertTrue($service->handleAiVideoText($user, 940001, 'kefir em cima da mesa'));
         $this->assertSame(8, $video->seconds);
         $this->assertStringContainsString('kefir em cima da mesa', $video->prompt);
+        $this->assertStringContainsString('instrumental', $video->prompt);
+        $this->assertStringContainsString('No voice', $video->prompt);
 
         $posts = new PostRepository($this->pdo);
         $row = $this->pdo->query("SELECT id, status, video_job_id, video_seconds FROM posts ORDER BY id DESC LIMIT 1")->fetch();
@@ -81,6 +83,10 @@ final class AiVideoFlowTest extends TestCase
         $video->state = 'pending';
         $service->finishAiVideos();
         $this->assertSame(PostStatus::Generating->value, $posts->find((int) $row['id'])['status']);
+        $this->pdo->prepare('UPDATE posts SET created_at = DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE id = ?')->execute([(int) $row['id']]);
+        $service->finishAiVideos();
+        $waiting = implode("\n", array_column($channel->sent, 'text'));
+        $this->assertStringContainsString('Ainda estou gerando', $waiting);
 
         $video->state = 'completed';
         $service->finishAiVideos();
@@ -97,6 +103,21 @@ final class AiVideoFlowTest extends TestCase
         }
         $texts = implode("\n", array_column($channel->sent, 'text'));
         $this->assertStringContainsString('8 segundos', $texts);
+    }
+
+    public function testARequestedSentenceIsKeptOnScreen(): void
+    {
+        $video = new QuietVideo("\x00\x00\x00\x18ftypisom");
+        [$service, $channel, $users, $user] = $this->service($video);
+        $this->pdo->prepare('UPDATE customers SET ai_video = 1 WHERE user_id = ?')->execute([(int) $user['id']]);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $service->chooseVideoSeconds($user, 940001, 'cb', 15);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $service->handleAiVideoText($user, 940001, 'Cena na igreja e no final uma frase A lei do Senhor Deus e perfeita, conforto para alma.');
+        $this->assertStringContainsString('A lei do Senhor Deus e perfeita', $video->prompt);
+        $this->assertStringContainsString('Do not speak it', $video->prompt);
     }
 
     /**

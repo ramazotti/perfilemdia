@@ -601,7 +601,18 @@ final class Messages
 
     public static function aiVideoStarted(int $seconds): string
     {
-        return "Estou gerando o vídeo de {$seconds} segundos. Aviso quando ficar pronto. Nada é publicado antes de você aprovar.";
+        return "Estou gerando o vídeo de {$seconds} segundos. Aviso a cada minuto até ficar pronto. Nada é publicado antes de você aprovar.";
+    }
+
+
+    public static function aiVideoWaiting(int $seconds): string
+    {
+        return "Ainda estou gerando o vídeo de {$seconds} segundos. Sigo nisso.";
+    }
+
+    public static function aiVideoAudioRefused(): string
+    {
+        return 'A geração recusou o áudio. Peça uma melodia original e suave, sem voz e sem música conhecida. A frase pode ficar escrita na imagem.';
     }
 
     public static function aiVideoFailed(): string
