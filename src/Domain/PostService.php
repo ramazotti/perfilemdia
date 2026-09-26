@@ -29,7 +29,10 @@ use PerfilEmDia\Image\PhotoMark;
 use PerfilEmDia\Image\PhraseColor;
 use PerfilEmDia\Image\PhrasePlace;
 use PerfilEmDia\Image\PhotoPhrase;
+use PerfilEmDia\Image\PhraseSize;
 use PerfilEmDia\Image\PhraseStyle;
+use PerfilEmDia\Image\StoryCard;
+use PerfilEmDia\Image\StoryScript;
 use PerfilEmDia\Image\VideoFrame;
 use PerfilEmDia\Instagram\InstagramApiException;
 use PerfilEmDia\Instagram\InstagramClient;
@@ -108,7 +111,7 @@ class PostService
 
         $kind = $this->selectedKind($user);
         if ($kind === null) {
-            $this->askPostKind($chatId, $user);
+            $this->askWhere($chatId, $user);
 
             return;
         }
@@ -255,6 +258,16 @@ class PostService
             if (!$this->returnToMenu($postId, PostStatus::AwaitingManualEdit)) {
                 return true;
             }
+            if ((string) ($pending['destination'] ?? 'feed') === 'story') {
+                $media = $this->posts->media($postId);
+                $first = $media[0] ?? null;
+                $photo = is_array($first) && !empty($first['public_name'])
+                    ? Config::root() . '/public/m/' . $first['public_name'] . '.jpg'
+                    : '';
+                if ($photo !== '' && is_file($photo) && ($first['kind'] ?? 'image') !== 'video') {
+                    $this->paintStoryCaption($user, $postId, $photo, $caption);
+                }
+            }
             $this->sendPreview($user, $chatId, $postId);
 
             return true;
@@ -292,13 +305,21 @@ class PostService
         }
 
         match ($action) {
-            'pub' => $this->publish($user, $chatId, $post, 'feed'),
+            'pub' => $this->publish(
+                $user,
+                $chatId,
+                $post,
+                (string) ($post['destination'] ?? 'feed') === 'story' ? 'story' : 'feed',
+            ),
             'sty' => $this->publish($user, $chatId, $post, 'story'),
             'sch' => $this->askSchedule($user, $chatId, $post),
             'uns' => $this->unschedule($user, $chatId, $post),
             'txt' => $this->askPhotoPhrase($user, $chatId, $post),
             'wm' => $this->askMark($user, $chatId, $post),
             'img' => $this->askPhotoEdit($user, $chatId, $post),
+            'mor' => $this->showAdjustMenu($user, $chatId, $post),
+            'back' => $this->showApprovalMenu($chatId, $post),
+            'look' => $this->showStoryLookMenu($chatId, $post),
             'can' => (string) $post['status'] === PostStatus::Scheduled->value
                 ? $this->unschedule($user, $chatId, $post)
                 : $this->handleApprovalAction($user, $chatId, $action, $post),
@@ -475,6 +496,7 @@ class PostService
         $theme = $this->extractTheme($message);
         $mediaGroupId = isset($message['media_group_id']) ? (string) $message['media_group_id'] : null;
         $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId);
+        $this->rememberDestination($user, $postId);
         $file = $this->extractFile($message);
         if ($file !== null) {
             $this->rememberMedia($postId, 0, $file, (int) ($message['message_id'] ?? 0));
@@ -500,6 +522,7 @@ class PostService
         $status = ($theme === null || $theme === '') ? PostStatus::AwaitingTheme : PostStatus::Generating;
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $postId = $this->posts->create((int) $user['id'], $status, $theme);
+        $this->rememberDestination($user, $postId);
         $this->rememberMedia($postId, 0, $file, (int) ($message['message_id'] ?? 0));
 
         if ($status === PostStatus::AwaitingTheme) {
@@ -527,6 +550,7 @@ class PostService
 
         if ($existing === null) {
             $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId);
+            $this->rememberDestination($user, $postId);
             $this->rememberMedia($postId, 0, $file, $messageId);
             $this->waitForAlbum();
             $this->tryFinalizeAlbum($postId, $messageId);
@@ -623,7 +647,8 @@ class PostService
                     throw new RuntimeException('Nao foi possivel criar public/m');
                 }
 
-                $normalized = $this->normalizer->normalize($sourcePaths, $publicDir);
+                $canvas = (string) ($post['destination'] ?? 'feed') === 'story' ? 'story' : 'feed';
+                $normalized = $this->normalizer->normalize($sourcePaths, $publicDir, $canvas);
                 foreach ($normalized as $i => $image) {
                     $mediaId = (int) ($mediaRows[$i]['id'] ?? 0);
                     if ($mediaId > 0) {
@@ -652,6 +677,9 @@ class PostService
             if ((int) ($post['creative'] ?? 0) === 1) {
                 $theme = "[[criacao]]\n" . $theme;
             }
+            if ((string) ($post['destination'] ?? 'feed') === 'story') {
+                $theme = "[[story]]\n" . $theme;
+            }
             if ($isVideo && $jpegPaths === []) {
                 $theme .= "\nIsto é um vídeo curto. Escreva a legenda só com o que a pessoa contou, sem inventar o que aparece.";
             }
@@ -676,6 +704,9 @@ class PostService
                 $result->inputTokens,
                 $result->outputTokens,
             );
+            if (!$isVideo && (string) ($post['destination'] ?? 'feed') === 'story' && isset($jpegPaths[0])) {
+                $this->paintStoryCaption($user, $postId, (string) $jpegPaths[0], $result->caption);
+            }
 
             if (!$this->returnToMenu($postId, PostStatus::Generating)) {
                 return;
@@ -903,6 +934,9 @@ class PostService
         }
         $this->users->update((int) $user['id'], ['pending_action' => 'phrase:' . $postId]);
         $user = $this->users->find((int) $user['id']) ?? $user;
+        if ($this->refreshPhrasePreview($user, $chatId, $post)) {
+            return;
+        }
         $this->sendPhrasePrompt($user, $chatId, $postId, true);
     }
 
@@ -922,6 +956,9 @@ class PostService
         }
         $this->users->update((int) $user['id'], ['pending_action' => 'phrase:' . $postId]);
         $user = $this->users->find((int) $user['id']) ?? $user;
+        if ($this->refreshPhrasePreview($user, $chatId, $post)) {
+            return;
+        }
         $this->sendPhrasePrompt($user, $chatId, $postId, true);
     }
 
@@ -941,7 +978,70 @@ class PostService
         }
         $this->users->update((int) $user['id'], ['pending_action' => 'phrase:' . $postId]);
         $user = $this->users->find((int) $user['id']) ?? $user;
+        if ($this->refreshPhrasePreview($user, $chatId, $post)) {
+            return;
+        }
         $this->sendPhrasePrompt($user, $chatId, $postId, true);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function choosePhraseSize(array $user, int $chatId, string $callbackId, string $size, int $postId): void
+    {
+        $this->channel->answerCallback($callbackId);
+        $this->users->update((int) $user['id'], ['phrase_size' => PhraseSize::normalize($size)]);
+        $post = $this->posts->find($postId);
+        if ($post === null || (int) $post['user_id'] !== (int) $user['id'] || !$this->inMenu($post)) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => 'phrase:' . $postId]);
+        $user = $this->users->find((int) $user['id']) ?? $user;
+        if ($this->refreshPhrasePreview($user, $chatId, $post)) {
+            return;
+        }
+        $this->sendPhrasePrompt($user, $chatId, $postId, true);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function clearPhrase(array $user, int $chatId, string $callbackId, int $postId): void
+    {
+        $this->channel->answerCallback($callbackId);
+        $post = $this->posts->find($postId);
+        if ($post === null || (int) $post['user_id'] !== (int) $user['id'] || !$this->inMenu($post)) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        $media = $this->posts->media($postId);
+        $first = $media[0] ?? null;
+        $base = is_array($first) ? $this->phraseBasePath((int) $first['id']) : '';
+        $publicDir = Config::root() . '/public/m';
+        if (!is_array($first) || !is_file($base)) {
+            $this->channel->sendText($chatId, Messages::photoEditFailed());
+
+            return;
+        }
+        $name = bin2hex(random_bytes(20));
+        $dest = $publicDir . '/' . $name . '.jpg';
+        $current = !empty($first['public_name']) ? $publicDir . '/' . $first['public_name'] . '.jpg' : '';
+        if (!copy($base, $dest)) {
+            $this->channel->sendText($chatId, Messages::photoEditFailed());
+
+            return;
+        }
+        $this->posts->updateMedia((int) $first['id'], ['public_name' => $name]);
+        $this->posts->update($postId, ['photo_phrase' => null]);
+        $this->freezeEditedPhoto($first, $dest);
+        if ($current !== '' && is_file($current)) {
+            unlink($current);
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => null]);
+        $this->sendPreview($user, $chatId, $postId);
     }
 
     /**
@@ -966,7 +1066,8 @@ class PostService
 
             return true;
         }
-        $this->applyPhrase($user, $chatId, $post, mb_substr($phrase, 0, 80));
+        $limit = (string) ($post['destination'] ?? '') === 'story' ? 180 : 80;
+        $this->applyPhrase($user, $chatId, $post, mb_substr($phrase, 0, $limit));
 
         return true;
     }
@@ -1001,8 +1102,9 @@ class PostService
 
             return;
         }
-        PhotoPhrase::draw($dest, $phrase, $this->phraseStyleOf($user), $this->phraseColorOf($user), $this->phrasePlaceOf($user));
+        $this->drawPhrase($user, $post, $dest, $phrase);
         $this->posts->updateMedia((int) $first['id'], ['public_name' => $name]);
+        $this->posts->update($postId, ['photo_phrase' => $phrase]);
         $this->freezeEditedPhoto($first, $dest);
         if (is_file($current)) {
             unlink($current);
@@ -1172,15 +1274,82 @@ class PostService
     /**
      * @param array<string, mixed> $user
      */
+    private function phraseSizeOf(array $user): string
+    {
+        $fresh = $this->users->find((int) $user['id']) ?? $user;
+
+        return PhraseSize::normalize((string) ($fresh['phrase_size'] ?? ''));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $post
+     */
+    private function refreshPhrasePreview(array $user, int $chatId, array $post): bool
+    {
+        $phrase = trim((string) ($post['photo_phrase'] ?? ''));
+        if ($phrase === '') {
+            return false;
+        }
+        $this->applyPhrase($user, $chatId, $post, $phrase);
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $post
+     */
+    private function drawPhrase(array $user, array $post, string $dest, string $phrase): void
+    {
+        $style = $this->phraseStyleOf($user);
+        $color = $this->phraseColorOf($user);
+        $place = $this->phrasePlaceOf($user);
+        $size = $this->phraseSizeOf($user);
+        if ((string) ($post['destination'] ?? 'feed') === 'story') {
+            StoryCard::draw($dest, $phrase, $color, $place, $size, PhraseStyle::storyChoice($style));
+
+            return;
+        }
+        PhotoPhrase::draw($dest, $phrase, $style, $color, $place, $size);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function paintStoryCaption(array $user, int $postId, string $jpeg, string $caption): void
+    {
+        $parts = StoryScript::parts($caption, (string) ($user['contact_cta'] ?? ''));
+        $text = $parts[0] ?? '';
+        if ($text === '' || !is_file($jpeg)) {
+            return;
+        }
+        $media = $this->posts->media($postId);
+        $first = $media[0] ?? null;
+        if (!is_array($first)) {
+            return;
+        }
+        $this->rememberPhraseBase((int) $first['id'], $jpeg);
+        $post = $this->posts->find($postId) ?? ['destination' => 'story'];
+        $this->drawPhrase($user, $post, $jpeg, $text);
+        $this->posts->update($postId, ['photo_phrase' => $text]);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
     private function sendPhrasePrompt(array $user, int $chatId, int $postId, bool $saved): void
     {
         $style = $this->phraseStyleOf($user);
         $color = $this->phraseColorOf($user);
         $place = $this->phrasePlaceOf($user);
+        $size = $this->phraseSizeOf($user);
         $text = $saved
             ? Messages::phraseLookSaved(PhraseStyle::label($style), PhraseColor::label($color), PhrasePlace::where($place))
             : Messages::askPhotoPhrase(PhraseStyle::label($style), PhraseColor::label($color), PhrasePlace::where($place));
-        $this->channel->sendText($chatId, $text, Keyboards::phraseStyles($postId, $style, $color, $place));
+        $post = $this->posts->find($postId);
+        $canRemove = is_array($post) && trim((string) ($post['photo_phrase'] ?? '')) !== '';
+        $this->channel->sendText($chatId, $text, Keyboards::phraseStyles($postId, $style, $color, $place, $size, $canRemove));
     }
 
     private function phraseBasePath(int $mediaId): string
@@ -1443,7 +1612,8 @@ class PostService
             }
             $this->rememberPhraseBase((int) $first['id'], $image->absolutePath);
             if ($request->phrase !== null) {
-                PhotoPhrase::draw($image->absolutePath, $request->phrase, $this->phraseStyleOf($user), $this->phraseColorOf($user), $this->phrasePlaceOf($user));
+                $this->drawPhrase($user, $post, $image->absolutePath, $request->phrase);
+                $this->posts->update($postId, ['photo_phrase' => $request->phrase]);
             }
             $oldName = (string) $first['public_name'];
             if ($oldName !== $image->publicName) {
@@ -1596,10 +1766,12 @@ class PostService
         $savedRef = IdeaReference::postPath($postId);
         $reference = is_file($savedRef) ? $savedRef : (is_file($path) ? $path : null);
         try {
+            $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '';
             $jpeg = ($this->ideas ?? new IdeaImage())->create(
                 (string) ($post['theme_text'] ?? ''),
                 $reference,
                 IdeaLook::brief($user),
+                $aspect,
             );
             $dir = dirname($path);
             if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
@@ -1655,13 +1827,9 @@ class PostService
         if (!$allowRegen) {
             $this->channel->sendText($chatId, Messages::regenLimit());
         }
-        $usedEdits = (int) ($post['image_edit_count'] ?? 0);
-        $canPhoto = !$isVideo && $this->photoEditAllowed((int) $user['id']);
-        $allowTreat = $canPhoto && $usedEdits < $this->photoEditLimit();
-        $allowStory = BenefitOrchestrator::storyFits(count($media));
-        $allowIdea = (int) ($post['creative'] ?? 0) === 1
-            && (int) ($post['idea_regen_count'] ?? 0) < $this->ideaImageLimit();
-        $buttons = Keyboards::approval($postId, $allowRegen, $allowTreat, $canPhoto, $allowStory, $allowIdea, $canPhoto);
+        $isStory = (string) ($post['destination'] ?? 'feed') === 'story';
+        $allowStory = !$isStory && !$isVideo && BenefitOrchestrator::storyFits(count($media));
+        $buttons = Keyboards::approval($postId, $allowStory);
         if ((string) $post['status'] === PostStatus::Scheduled->value && !empty($post['scheduled_at'])) {
             $at = DateTimeImmutable::createFromFormat(
                 'Y-m-d H:i:s',
@@ -1676,6 +1844,99 @@ class PostService
             ? $this->channel->sendVideo($chatId, $path, $caption, $buttons)
             : $this->channel->sendPhoto($chatId, $path, $caption, $buttons);
         $this->posts->update($postId, ['preview_message_id' => $previewId]);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $post
+     * @return array{
+     *     allowRegen: bool,
+     *     allowPhoto: bool,
+     *     allowMark: bool,
+     *     allowIdea: bool,
+     *     allowPhrase: bool,
+     *     storyLook: bool,
+     * }
+     */
+    private function previewAdjustFlags(array $user, array $post): array
+    {
+        $media = $this->posts->media((int) $post['id']);
+        $first = $media[0] ?? null;
+        $isVideo = ($first['kind'] ?? 'image') === 'video';
+        $limit = (int) Config::get('LIMIT_REGENERATIONS_PER_POST', '5');
+        $allowRegen = ((int) $post['regen_count']) < $limit;
+        $canPhoto = !$isVideo && $this->photoEditAllowed((int) $user['id']);
+        $usedEdits = (int) ($post['image_edit_count'] ?? 0);
+        $allowTreat = $canPhoto && $usedEdits < $this->photoEditLimit();
+        $allowIdea = (int) ($post['creative'] ?? 0) === 1
+            && (int) ($post['idea_regen_count'] ?? 0) < $this->ideaImageLimit();
+
+        return [
+            'allowRegen' => $allowRegen,
+            'allowPhoto' => $allowTreat,
+            'allowMark' => $canPhoto,
+            'allowIdea' => $allowIdea,
+            'allowPhrase' => $canPhoto && (string) ($post['destination'] ?? 'feed') !== 'story',
+            'storyLook' => (string) ($post['destination'] ?? 'feed') === 'story',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $post
+     */
+    private function showAdjustMenu(array $user, int $chatId, array $post): void
+    {
+        $previewId = $post['preview_message_id'] !== null ? (int) $post['preview_message_id'] : null;
+        if ($previewId === null) {
+            return;
+        }
+        $flags = $this->previewAdjustFlags($user, $post);
+        $this->channel->editButtons(
+            $chatId,
+            $previewId,
+            Keyboards::adjustMenu(
+                (int) $post['id'],
+                $flags['storyLook'],
+                $flags['allowRegen'],
+                $flags['allowPhoto'],
+                $flags['allowMark'],
+                $flags['allowIdea'],
+                $flags['allowPhrase'],
+            ),
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $post
+     */
+    private function showApprovalMenu(int $chatId, array $post): void
+    {
+        $previewId = $post['preview_message_id'] !== null ? (int) $post['preview_message_id'] : null;
+        if ($previewId === null) {
+            return;
+        }
+        $this->channel->editButtons($chatId, $previewId, Keyboards::approval((int) $post['id']));
+    }
+
+    /**
+     * @param array<string, mixed> $post
+     */
+    private function showStoryLookMenu(int $chatId, array $post): void
+    {
+        $previewId = $post['preview_message_id'] !== null ? (int) $post['preview_message_id'] : null;
+        if ($previewId === null) {
+            return;
+        }
+        $owner = $this->users->find((int) $post['user_id']) ?? [];
+        $style = PhraseStyle::storyChoice($this->phraseStyleOf($owner));
+        $place = $this->phrasePlaceOf($owner);
+        $color = $this->phraseColorOf($owner);
+        $this->channel->editButtons(
+            $chatId,
+            $previewId,
+            Keyboards::storyLook((int) $post['id'], $style, $place, $color),
+        );
     }
 
     /**
@@ -2125,7 +2386,8 @@ class PostService
 
             return;
         }
-        $this->channel->sendText($chatId, Messages::askFeedback());
+        $story = (string) ($post['destination'] ?? 'feed') === 'story';
+        $this->channel->sendText($chatId, $story ? Messages::askStoryText() : Messages::askFeedback());
     }
 
     /**
@@ -2200,7 +2462,8 @@ class PostService
 
             return;
         }
-        $this->channel->sendText($chatId, Messages::askManual());
+        $story = (string) ($post['destination'] ?? 'feed') === 'story';
+        $this->channel->sendText($chatId, $story ? Messages::askStoryManual() : Messages::askManual());
     }
 
     /**
@@ -2248,16 +2511,55 @@ class PostService
     /**
      * @param array<string, mixed>|null $user
      */
-    public function askPostKind(int $chatId, ?array $user = null): void
+    public function askWhere(int $chatId, ?array $user = null): void
     {
         $pending = is_array($user) ? (string) ($user['pending_action'] ?? '') : '';
         if (
-            str_starts_with($pending, 'kind:')
-            || str_starts_with($pending, 'phrase:')
-            || str_starts_with($pending, 'sched:')
-            || str_starts_with($pending, 'aiv:')
+            is_array($user)
+            && (
+                str_starts_with($pending, 'kind:')
+                || str_starts_with($pending, 'where:')
+                || str_starts_with($pending, 'phrase:')
+                || str_starts_with($pending, 'sched:')
+                || str_starts_with($pending, 'aiv:')
+            )
         ) {
             $this->users->update((int) $user['id'], ['pending_action' => null]);
+        }
+        $this->channel->sendText($chatId, Messages::askWhere(), Keyboards::where());
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function chooseWhere(array $user, int $chatId, string $where): void
+    {
+        $where = $where === 'story' ? 'story' : 'feed';
+        $this->users->update((int) $user['id'], ['pending_action' => 'where:' . $where]);
+        $user['pending_action'] = 'where:' . $where;
+        $this->sendKindMenu($user, $chatId, $where);
+    }
+
+    public function askPostKind(int $chatId, ?array $user = null): void
+    {
+        $where = is_array($user) ? $this->chosenDestination($user) : 'feed';
+        if (is_array($user)) {
+            $this->sendKindMenu($user, $chatId, $where);
+
+            return;
+        }
+        $this->channel->sendText($chatId, Messages::askPostKind(), Keyboards::postKind(false));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function sendKindMenu(array $user, int $chatId, string $where): void
+    {
+        if ($where === 'story') {
+            $this->channel->sendText($chatId, Messages::askStoryKind(), Keyboards::storyKind());
+
+            return;
         }
         $this->channel->sendText($chatId, Messages::askPostKind(), Keyboards::postKind($this->aiVideoOn($user)));
     }
@@ -2300,12 +2602,19 @@ class PostService
         if ($kind !== 'ia') {
             IdeaReference::clearStash((int) $user['id']);
         }
-        $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind]);
+        $where = $this->chosenDestination($user);
+        if ($where === 'story' && in_array($kind, ['album', 'aivideo'], true)) {
+            $this->sendKindMenu($user, $chatId, 'story');
+
+            return;
+        }
+        $mark = $where === 'story' ? '@story' : '';
+        $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind . $mark]);
         $text = match ($kind) {
             'album' => Messages::kindAlbum(),
-            'video' => Messages::kindVideo(),
-            'ia' => Messages::kindIa(),
-            default => Messages::kindFoto(),
+            'video' => $where === 'story' ? Messages::kindStoryVideo() : Messages::kindVideo(),
+            'ia' => $where === 'story' ? Messages::kindStoryIa() : Messages::kindIa(),
+            default => $where === 'story' ? Messages::kindStoryFoto() : Messages::kindFoto(),
         };
         $this->channel->sendText($chatId, $text, $kind === 'ia' ? Keyboards::surpriseMe() : null);
     }
@@ -2352,13 +2661,19 @@ class PostService
     public function replyWhenIdle(array $user, int $chatId): void
     {
         $pending = (string) ($user['pending_action'] ?? '');
+        if (str_starts_with($pending, 'where:')) {
+            $this->sendKindMenu($user, $chatId, substr($pending, 6) === 'story' ? 'story' : 'feed');
+
+            return;
+        }
         if (str_starts_with($pending, 'kind:')) {
-            $kind = substr($pending, 5);
+            $kind = explode('@', substr($pending, 5), 2)[0];
+            $where = $this->chosenDestination($user);
             $text = match ($kind) {
                 'album' => Messages::kindAlbum(),
-                'video' => Messages::kindVideo(),
-                'ia' => Messages::kindIaNeedText(),
-                default => Messages::kindFoto(),
+                'video' => $where === 'story' ? Messages::kindStoryVideo() : Messages::kindVideo(),
+                'ia' => $where === 'story' ? Messages::kindStoryIa() : Messages::kindIaNeedText(),
+                default => $where === 'story' ? Messages::kindStoryFoto() : Messages::kindFoto(),
             };
             $this->channel->sendText($chatId, $text);
 
@@ -2473,6 +2788,7 @@ class PostService
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $this->channel->sendText($chatId, Messages::aiVideoStarted($seconds));
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea);
+        $this->rememberDestination($user, $postId);
         $this->posts->update($postId, ['creative' => 1, 'video_seconds' => $seconds]);
         $reference = null;
         if ($message !== null) {
@@ -2611,12 +2927,14 @@ class PostService
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $this->channel->sendText($chatId, $surprisePhrase !== null ? Messages::surpriseStarted() : Messages::received());
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea);
+        $this->rememberDestination($user, $postId);
         $this->posts->update($postId, ['creative' => 1]);
 
         $reference = $this->resolveIdeaReference($user, $postId, $message);
 
         try {
-            $jpeg = ($this->ideas ?? new IdeaImage())->create($idea, $reference, IdeaLook::brief($user));
+            $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '';
+            $jpeg = ($this->ideas ?? new IdeaImage())->create($idea, $reference, IdeaLook::brief($user), $aspect);
             $dest = Config::root() . '/storage/media/' . $postId . '_0.jpg';
             $dir = dirname($dest);
             if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
@@ -2731,7 +3049,9 @@ class PostService
         if (!is_file($base) || !copy($base, $dest)) {
             return false;
         }
-        PhotoPhrase::draw($dest, $phrase, $this->phraseStyleOf($user), $this->phraseColorOf($user), $this->phrasePlaceOf($user));
+        $post = $this->posts->find($postId) ?? ['destination' => 'feed'];
+        $this->drawPhrase($user, $post, $dest, $phrase);
+        $this->posts->update($postId, ['photo_phrase' => $phrase]);
         $marked = $this->stampSurpriseMark($user, (int) $first['id'], $dest);
         $this->posts->updateMedia((int) $first['id'], ['public_name' => $name]);
         $this->freezeEditedPhoto($first, $dest);
@@ -2796,9 +3116,36 @@ class PostService
         if (!str_starts_with($pending, 'kind:')) {
             return null;
         }
-        $kind = substr($pending, 5);
+        $kind = explode('@', substr($pending, 5), 2)[0];
 
         return in_array($kind, ['foto', 'album', 'video', 'ia'], true) ? $kind : null;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function chosenDestination(array $user): string
+    {
+        $pending = (string) ($user['pending_action'] ?? '');
+        if (str_starts_with($pending, 'where:')) {
+            return substr($pending, 6) === 'story' ? 'story' : 'feed';
+        }
+        if (str_contains($pending, '@story')) {
+            return 'story';
+        }
+
+        return 'feed';
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function rememberDestination(array $user, int $postId): void
+    {
+        if ($this->chosenDestination($user) !== 'story') {
+            return;
+        }
+        $this->posts->update($postId, ['destination' => 'story']);
     }
 
     private function aiAllowed(int $userId): bool

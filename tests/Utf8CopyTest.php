@@ -12,7 +12,8 @@ final class Utf8CopyTest extends TestCase
     public function testKeyboardsSurviveJsonForTelegram(): void
     {
         $sets = [
-            Keyboards::approval(7, true),
+            Keyboards::approval(7),
+            Keyboards::adjustMenu(7, false, true, true, true, false, true),
             Keyboards::tone(),
             Keyboards::yesNoPending(),
             Keyboards::instagramConnect("https://exemplo"),
@@ -23,7 +24,7 @@ final class Utf8CopyTest extends TestCase
             $json = json_encode(["inline_keyboard" => $rows], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
             $this->assertNotSame("", $json);
         }
-        $this->assertSame("Outra vers\u{00e3}o", Keyboards::approval(7, true)[1][1]["text"]);
+        $this->assertSame("Outra vers\u{00e3}o", Keyboards::adjustMenu(7, false, true, true, true, false, true)[0][1]["text"]);
         $this->assertSame("Descontra\u{00ed}do", Keyboards::tone()[0][1]["text"]);
         $this->assertSame("T\u{00e9}cnico", Keyboards::tone()[1][0]["text"]);
         $this->assertSame("Sim, come\u{00e7}ar novo", Keyboards::yesNoPending()[0][0]["text"]);

@@ -8,6 +8,8 @@ final class PhotoPhrase
 {
     private static float $drawScale = 1.0;
 
+    private static string $sizeName = PhraseSize::NORMAL;
+
     public static function draw(string $jpegPath, string $phrase, string $style = PhraseStyle::CLASSICA, string $color = PhraseColor::BRANCO, string $place = PhrasePlace::RODAPE, string $size = PhraseSize::NORMAL): void
     {
         $phrase = trim($phrase);
@@ -17,27 +19,20 @@ final class PhotoPhrase
         $style = PhraseStyle::normalize($style);
         $color = PhraseColor::normalize($color);
         $place = PhrasePlace::normalize($place);
-        self::$drawScale = PhraseSize::factor($size);
+        self::$sizeName = PhraseSize::normalize($size);
+        self::$drawScale = PhraseSize::factor(self::$sizeName);
         try {
             self::paint($jpegPath, $phrase, $style, $color, $place);
         } finally {
             self::$drawScale = 1.0;
+            self::$sizeName = PhraseSize::NORMAL;
         }
     }
 
     private static function paint(string $jpegPath, string $phrase, string $style, string $color, string $place): void
     {
         if ($style === PhraseStyle::BALAO || $style === PhraseStyle::CAIXA) {
-            $font = self::font($style);
-            if (extension_loaded('imagick') && class_exists(\Imagick::class) && $font !== null) {
-                try {
-                    self::drawPlateImagick($jpegPath, $phrase, $font, $style, $color, $place);
-
-                    return;
-                } catch (\Throwable) {
-                }
-            }
-            self::drawPlateGd($jpegPath, $phrase, $font, $style, $color, $place);
+            StoryCard::draw($jpegPath, $phrase, $color, $place, self::$sizeName, $style);
 
             return;
         }

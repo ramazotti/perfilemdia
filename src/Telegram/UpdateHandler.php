@@ -161,7 +161,7 @@ final class UpdateHandler
 
         match ($command) {
             '/start' => $this->startCommand($user, $chatId, (string) ($parts[1] ?? '')),
-            '/novo' => $this->postsService->askPostKind($chatId, $user),
+            '/novo' => $this->postsService->askWhere($chatId, $user),
             '/perfil' => $this->channel->sendText($chatId, Messages::perfil($user), Keyboards::perfilFields()),
             '/conectar' => $this->cmdConectar($user, $chatId),
             '/status' => $this->cmdStatus($user, $chatId),

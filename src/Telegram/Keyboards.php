@@ -9,16 +9,21 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function approval(int $postId): array
+    public static function approval(int $postId, bool $allowStory = false): array
     {
-        return [
+        $rows = [
             [
                 ['text' => 'Publicar', 'callback_data' => 'a:pub:' . $postId],
                 ['text' => 'Agendar', 'callback_data' => 'a:sch:' . $postId],
             ],
             [['text' => 'Ajustar', 'callback_data' => 'a:mor:' . $postId]],
-            [['text' => 'Cancelar', 'callback_data' => 'a:can:' . $postId]],
         ];
+        if ($allowStory) {
+            $rows[] = [['text' => 'Publicar no story', 'callback_data' => 'a:sty:' . $postId]];
+        }
+        $rows[] = [['text' => 'Cancelar', 'callback_data' => 'a:can:' . $postId]];
+
+        return $rows;
     }
 
     /**
@@ -122,7 +127,12 @@ final class Keyboards
             $colorRow[] = ['text' => $label, 'callback_data' => 'pc:' . $key . ':' . $postId];
         }
 
-        return [$styleRow, $placeRow, $colorRow];
+        return [
+            $styleRow,
+            $placeRow,
+            $colorRow,
+            [['text' => 'Voltar', 'callback_data' => 'a:back:' . $postId]],
+        ];
     }
 
     public static function scheduleChoices(int $postId, bool $todayEvening): array

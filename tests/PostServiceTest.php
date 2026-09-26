@@ -221,7 +221,7 @@ final class PostServiceTest extends TestCase
         ]);
 
         $texts = array_map(static fn (array $row): string => (string) ($row['text'] ?? ''), $this->channel->sent);
-        $this->assertContains(Messages::askPostKind(), $texts);
+        $this->assertContains(Messages::askWhere(), $texts);
         $this->assertNull($this->posts->findPendingForUser($userId));
     }
 

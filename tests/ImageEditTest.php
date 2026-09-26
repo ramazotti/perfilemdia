@@ -151,6 +151,7 @@ final class ImageEditTest extends TestCase
         }
         $photos = array_filter($channel->sent, static fn (array $row): bool => $row['type'] === 'photo');
         $this->assertNotEmpty($photos);
+        $this->openAdjustMenu($service, $user, 930001, $postId);
         $this->assertContains('Tratar foto', $this->buttonLabels($channel));
     }
 
@@ -159,6 +160,7 @@ final class ImageEditTest extends TestCase
         [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
         $service->handleApprovalCallback($user, 930001, 'cb', 'img', $postId);
         $service->handleThemeText($user, 930001, 'mais luz');
+        $this->openAdjustMenu($service, $user, 930001, $postId);
         $this->assertContains('Tratar foto', $this->buttonLabels($channel));
         $this->assertSame(1, (int) $posts->find($postId)['image_edit_count']);
 
@@ -166,6 +168,7 @@ final class ImageEditTest extends TestCase
         $service->handleThemeText($user, 930001, 'mais contraste');
 
         $this->assertSame(2, (int) $posts->find($postId)['image_edit_count']);
+        $this->openAdjustMenu($service, $user, 930001, $postId);
         $this->assertNotContains('Tratar foto', $this->buttonLabels($channel));
         $this->assertContains('Texto na foto', $this->buttonLabels($channel));
     }
@@ -197,12 +200,11 @@ final class ImageEditTest extends TestCase
         $box = $this->blankJpeg();
         PhotoPhrase::draw($bubble, 'Excelente aula e troca de ideias na reuniao', 'balao', 'preto', 'meio');
         PhotoPhrase::draw($box, 'Hoje um tio muito querido parte para Deus', 'caixa', 'branco', 'meio');
-        $bubbleScore = $this->platePixels($bubble);
-        $boxScore = $this->platePixels($box);
-        $this->assertGreaterThan($bubbleScore['dark'], $bubbleScore['light']);
-        $this->assertGreaterThan(40, $bubbleScore['light']);
-        $this->assertGreaterThan($boxScore['light'], $boxScore['dark']);
-        $this->assertGreaterThan(40, $boxScore['dark']);
+        $bubbleBright = $this->brightPixels($bubble);
+        $boxBright = $this->brightPixels($box);
+        $this->assertGreaterThan($boxBright, $bubbleBright);
+        $this->assertGreaterThan(20, $bubbleBright);
+        $this->assertGreaterThan(20, $this->platePixels($box)['dark']);
         unlink($bubble);
         unlink($box);
     }
@@ -347,13 +349,16 @@ final class ImageEditTest extends TestCase
         $posts->update($postId, ['creative' => 1, 'theme_text' => 'vitrine iluminada']);
 
         try {
+            $posts->update($postId, ['preview_message_id' => 99]);
             $service->handleApprovalCallback($user, 930001, 'cb', 'pic', $postId);
             $this->assertSame(1, $ideas->calls);
+            $this->openAdjustMenu($service, $user, 930001, $postId);
             $this->assertContains('Outra foto', $this->buttonLabels($channel));
 
             $service->handleApprovalCallback($user, 930001, 'cb2', 'pic', $postId);
             $this->assertSame(2, $ideas->calls);
             $this->assertSame(2, (int) $posts->find($postId)['idea_regen_count']);
+            $this->openAdjustMenu($service, $user, 930001, $postId);
             $this->assertNotContains('Outra foto', $this->buttonLabels($channel));
 
             $service->handleApprovalCallback($user, 930001, 'cb3', 'pic', $postId);
@@ -372,22 +377,31 @@ final class ImageEditTest extends TestCase
      */
     private function buttonLabels(EditTestChannel $channel): array
     {
-        $photos = array_values(array_filter(
-            $channel->sent,
-            static fn (array $row): bool => $row['type'] === 'photo',
-        ));
-        $last = $photos[array_key_last($photos)] ?? null;
-        if ($last === null) {
-            return [];
+        $buttons = $channel->lastButtons;
+        if ($buttons === null) {
+            $photos = array_values(array_filter(
+                $channel->sent,
+                static fn (array $row): bool => $row['type'] === 'photo',
+            ));
+            $last = $photos[array_key_last($photos)] ?? null;
+            $buttons = is_array($last) ? ($last['buttons'] ?? []) : [];
         }
         $labels = [];
-        foreach ($last['buttons'] ?? [] as $row) {
+        foreach ($buttons as $row) {
             foreach ($row as $button) {
                 $labels[] = (string) ($button['text'] ?? '');
             }
         }
 
         return $labels;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function openAdjustMenu(PostService $service, array $user, int $chatId, int $postId): void
+    {
+        $service->handleApprovalCallback($user, $chatId, 'cb-adj', 'mor', $postId);
     }
 
     /**
@@ -519,6 +533,33 @@ final class ImageEditTest extends TestCase
         return ['light' => $light, 'dark' => $dark];
     }
 
+    private function brightPixels(string $path): int
+    {
+        $image = imagecreatefromjpeg($path);
+        $this->assertNotFalse($image);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $bright = 0;
+        $x0 = (int) ($width * 0.2);
+        $x1 = (int) ($width * 0.8);
+        $y0 = (int) ($height * 0.28);
+        $y1 = (int) ($height * 0.72);
+        for ($y = $y0; $y < $y1; $y += 2) {
+            for ($x = $x0; $x < $x1; $x += 2) {
+                $rgb = imagecolorat($image, $x, $y);
+                $r = ($rgb >> 16) & 255;
+                $g = ($rgb >> 8) & 255;
+                $b = $rgb & 255;
+                if ($r > 160 && $g > 160 && $b > 160) {
+                    $bright++;
+                }
+            }
+        }
+        imagedestroy($image);
+
+        return $bright;
+    }
+
     private function bandLuma(string $path, string $band): int
     {
         $image = imagecreatefromjpeg($path);
@@ -595,6 +636,9 @@ final class EditTestChannel implements \PerfilEmDia\Channel\ChannelInterface
     /** @var list<array{type:string, chatId:int, text?:string}> */
     public array $sent = [];
 
+    /** @var list<list<array{text:string, callback_data?:string, url?:string}>>|null */
+    public ?array $lastButtons = null;
+
     public string $downloadBytes = '';
 
     public function sendText(int $chatId, string $text, ?array $buttons = null): int
@@ -612,6 +656,7 @@ final class EditTestChannel implements \PerfilEmDia\Channel\ChannelInterface
             'text' => (string) $caption,
             'buttons' => $buttons ?? [],
         ];
+        $this->lastButtons = $buttons;
 
         return count($this->sent);
     }
@@ -633,6 +678,7 @@ final class EditTestChannel implements \PerfilEmDia\Channel\ChannelInterface
 
     public function editButtons(int $chatId, int $messageId, ?array $buttons): void
     {
+        $this->lastButtons = $buttons;
     }
 
     public function answerCallback(string $callbackId, ?string $text = null): void

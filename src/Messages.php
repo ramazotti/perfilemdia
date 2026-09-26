@@ -131,9 +131,19 @@ final class Messages
         return "O que quer mudar na legenda? Pode ser um trecho ou o texto inteiro. Ex.: 'mais curto', 'tira os emojis', 'reescreve o final'.";
     }
 
+    public static function askStoryText(): string
+    {
+        return "O que quer mudar no texto do story? Pode pedir mais curto, outro tom, ou mandar a frase nova.";
+    }
+
     public static function askManual(): string
     {
         return 'Manda o texto do jeito que você quer que saia.';
+    }
+
+    public static function askStoryManual(): string
+    {
+        return 'Manda o texto que entra na foto do story. Sem hashtag.';
     }
 
     public static function cancelled(): string
@@ -551,6 +561,16 @@ final class Messages
 
 
 
+    public static function askWhere(): string
+    {
+        return 'Onde vai essa publicação? No feed ou no story?';
+    }
+
+    public static function askStoryKind(): string
+    {
+        return 'O story leva uma foto, um vídeo ou uma imagem criada pela IA. O que você manda?';
+    }
+
     public static function askPostKind(): string
     {
         return 'O que você quer postar?';
@@ -559,6 +579,21 @@ final class Messages
     public static function kindFoto(): string
     {
         return 'Manda uma foto e, na mesma mensagem, uma frase sobre ela.';
+    }
+
+    public static function kindStoryFoto(): string
+    {
+        return 'Manda a foto e, na mesma mensagem, a frase que entra nela. Sem hashtag.';
+    }
+
+    public static function kindStoryVideo(): string
+    {
+        return 'Manda um vídeo de 3 a 90 segundos e, na mesma mensagem, a frase do story.';
+    }
+
+    public static function kindStoryIa(): string
+    {
+        return 'Manda a ideia em uma mensagem. A imagem sai em tela cheia e o texto entra na foto, sem hashtag. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me.';
     }
 
     public static function kindAlbum(): string
