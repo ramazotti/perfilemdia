@@ -17,21 +17,25 @@ final class ImageNormalizer implements ImageNormalizerInterface
     private const PORTRAIT_CROP_RATIO = 4 / 5;
     private const LANDSCAPE_CROP_RATIO = 1.91;
     private const TARGET_WIDTH = 1080;
+    private const STORY_WIDTH = 1080;
+    private const STORY_HEIGHT = 1920;
+    private const STORY_RATIO = 9 / 16;
     private const MIN_UPSCALE_WIDTH = 320;
     private const MAX_FILE_BYTES = 8 * 1024 * 1024;
     private const JPEG_QUALITY_START = 90;
     private const JPEG_QUALITY_STEP = 5;
     private const JPEG_QUALITY_FLOOR = 40;
 
-    public function normalize(array $sourcePaths, string $publicDirectory): array
+    public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array
     {
         $this->ensureDirectory($publicDirectory);
+        $canvas = $canvas === 'story' ? 'story' : 'feed';
 
         $results = [];
         $carouselRatio = null;
 
         foreach ($sourcePaths as $sourcePath) {
-            [$normalized, $usedCropRatio] = $this->normalizeOne($sourcePath, $publicDirectory, $carouselRatio);
+            [$normalized, $usedCropRatio] = $this->normalizeOne($sourcePath, $publicDirectory, $carouselRatio, $canvas);
             $carouselRatio ??= $usedCropRatio;
             $results[] = $normalized;
         }
@@ -46,16 +50,17 @@ final class ImageNormalizer implements ImageNormalizerInterface
         string $sourcePath,
         string $publicDirectory,
         ?float $carouselRatio,
+        string $canvas,
     ): array {
         if (!is_file($sourcePath) || !is_readable($sourcePath)) {
             throw new ImageUnsupportedException(sprintf('Cannot read image: %s', $sourcePath));
         }
 
         if ($this->preferImagick()) {
-            return $this->normalizeWithImagick($sourcePath, $publicDirectory, $carouselRatio);
+            return $this->normalizeWithImagick($sourcePath, $publicDirectory, $carouselRatio, $canvas);
         }
 
-        return $this->normalizeWithGd($sourcePath, $publicDirectory, $carouselRatio);
+        return $this->normalizeWithGd($sourcePath, $publicDirectory, $carouselRatio, $canvas);
     }
 
     private function preferImagick(): bool
@@ -74,8 +79,12 @@ final class ImageNormalizer implements ImageNormalizerInterface
         }
     }
 
-    private function resolveCropRatio(float $ratio, ?float $carouselRatio): float
+    private function resolveCropRatio(float $ratio, ?float $carouselRatio, string $canvas): float
     {
+        if ($canvas === 'story') {
+            return self::STORY_RATIO;
+        }
+
         if ($carouselRatio !== null) {
             return $carouselRatio;
         }
@@ -135,8 +144,12 @@ final class ImageNormalizer implements ImageNormalizerInterface
     /**
      * @return array{0: int, 1: int}
      */
-    private function computeOutputSize(int $width, int $height): array
+    private function computeOutputSize(int $width, int $height, string $canvas): array
     {
+        if ($canvas === 'story') {
+            return [self::STORY_WIDTH, self::STORY_HEIGHT];
+        }
+
         $outputWidth = $this->resolveOutputWidth($width);
         $outputHeight = max(1, (int) round($height * ($outputWidth / $width)));
 
@@ -174,6 +187,7 @@ final class ImageNormalizer implements ImageNormalizerInterface
         string $sourcePath,
         string $publicDirectory,
         ?float $carouselRatio,
+        string $canvas,
     ): array {
         try {
             $image = new Imagick($sourcePath);
@@ -213,12 +227,12 @@ final class ImageNormalizer implements ImageNormalizerInterface
                 throw new ImageUnsupportedException('Image has invalid dimensions');
             }
 
-            $cropRatio = $this->resolveCropRatio($width / $height, $carouselRatio);
+            $cropRatio = $this->resolveCropRatio($width / $height, $carouselRatio, $canvas);
             $this->cropImagickToRatio($image, $cropRatio);
 
             $width = $image->getImageWidth();
             $height = $image->getImageHeight();
-            [$outputWidth, $outputHeight] = $this->computeOutputSize($width, $height);
+            [$outputWidth, $outputHeight] = $this->computeOutputSize($width, $height, $canvas);
             if ($outputWidth !== $width || $outputHeight !== $height) {
                 $image->resizeImage($outputWidth, $outputHeight, Imagick::FILTER_LANCZOS, 1.0);
             }
@@ -339,6 +353,7 @@ final class ImageNormalizer implements ImageNormalizerInterface
         string $sourcePath,
         string $publicDirectory,
         ?float $carouselRatio,
+        string $canvas,
     ): array {
         $image = $this->loadGdImage($sourcePath);
         $image = $this->applyGdExifOrientation($image, $sourcePath);
@@ -350,9 +365,9 @@ final class ImageNormalizer implements ImageNormalizerInterface
             throw new ImageUnsupportedException('Image has invalid dimensions');
         }
 
-        $cropRatio = $this->resolveCropRatio($width / $height, $carouselRatio);
+        $cropRatio = $this->resolveCropRatio($width / $height, $carouselRatio, $canvas);
         $image = $this->cropGdToRatio($image, $cropRatio);
-        $image = $this->resizeGd($image);
+        $image = $this->resizeGd($image, $canvas);
 
         [$publicName, $absolutePath] = $this->destinationPaths($publicDirectory);
         $this->writeGdJpeg($image, $absolutePath);
@@ -510,11 +525,11 @@ final class ImageNormalizer implements ImageNormalizerInterface
         return $cropped;
     }
 
-    private function resizeGd(GdImage $image): GdImage
+    private function resizeGd(GdImage $image, string $canvas): GdImage
     {
         $width = imagesx($image);
         $height = imagesy($image);
-        [$outputWidth, $outputHeight] = $this->computeOutputSize($width, $height);
+        [$outputWidth, $outputHeight] = $this->computeOutputSize($width, $height, $canvas);
 
         if ($outputWidth === $width && $outputHeight === $height) {
             return $image;

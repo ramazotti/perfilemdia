@@ -305,6 +305,12 @@ final class UpdateHandler
 
             return;
         }
+        if ($data === 'wh:feed' || $data === 'wh:story') {
+            $this->channel->answerCallback($callbackId);
+            $this->postsService->chooseWhere($user, $chatId, substr($data, 3));
+
+            return;
+        }
         if (str_starts_with($data, 'pk:')) {
             $this->channel->answerCallback($callbackId);
             $this->postsService->choosePostKind($user, $chatId, substr($data, 3));
@@ -369,6 +375,16 @@ final class UpdateHandler
 
             return;
         }
+        if (preg_match('/^ps:(menor|normal|maior):(\d+)$/', $data, $m) === 1) {
+            $this->postsService->choosePhraseSize($user, $chatId, $callbackId, $m[1], (int) $m[2]);
+
+            return;
+        }
+        if (preg_match('/^px:(\d+)$/', $data, $m) === 1) {
+            $this->postsService->clearPhrase($user, $chatId, $callbackId, (int) $m[1]);
+
+            return;
+        }
         if (preg_match('/^m:(ig|up|ok):(\d+)$/', $data, $m) === 1) {
             $this->postsService->chooseMarkSource($user, $chatId, $callbackId, $m[1], (int) $m[2]);
 
@@ -391,7 +407,7 @@ final class UpdateHandler
 
             return;
         }
-        if (preg_match('/^a:(pub|adj|reg|man|can|img|txt|wm|sch|uns|sty|pic):(\d+)$/', $data, $m) === 1) {
+        if (preg_match('/^a:(pub|adj|reg|man|can|img|txt|wm|sch|uns|sty|pic|mor|look|back):(\d+)$/', $data, $m) === 1) {
             $this->postsService->handleApprovalCallback($user, $chatId, $callbackId, $m[1], (int) $m[2]);
 
             return;

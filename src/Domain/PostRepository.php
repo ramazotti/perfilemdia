@@ -124,6 +124,7 @@ final class PostRepository
     {
         $allowed = [
             'theme_text',
+            'photo_phrase',
             'caption',
             'alt_text',
             'caption_version',
@@ -143,6 +144,7 @@ final class PostRepository
             'scheduled_at',
             'creative',
             'destination',
+            'story_sent',
             'video_job_id',
             'video_seconds',
             'video_ping_at',

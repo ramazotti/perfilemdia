@@ -167,7 +167,7 @@ final class PublicSite
             . '<div class="jobs">' . $cards . '</div></div></section>';
         $items = [
             ['Ideia do dia', 'A partir das 8h, uma vez por dia, chega um pedido pronto, ligado ao que você faz. Se passar de 1 dia sem postar, o aviso lembra. Em data comemorativa, a sugestão já vem no tema. Dá para pedir na hora com /ideia, ou parar no botão.'],
-            ['Publicar no story', 'Uma foto ou um vídeo pode ir para o story. Carrossel segue no feed.'],
+            ['Publicar no story', 'No /novo, a primeira pergunta é se vai para o feed ou para o story. No story, a foto sai em tela cheia, 1080 × 1920, com o texto em cima, sem hashtag e sem o acesse. O texto ocupa um terço da foto. Se não cabe em uma, continua na seguinte, em até 3 fotos, com no máximo 180 caracteres em cada. Dá para escolher o estilo (Limpa, Caixa ou Balão) e o lugar: topo, centro ou rodapé. O vídeo segue inteiro. Carrossel continua no feed.'],
             ['Cor e estilo', 'No plano Estúdio, descreva a marca com /marca. A imagem criada pela IA segue essa descrição.'],
             ['Resultado da semana', 'O comando /resultado mostra alcance e visualizações dos últimos 7 dias, quando o Instagram libera.'],
         ];
@@ -261,7 +261,7 @@ final class PublicSite
     {
         Layout::page('Privacidade', $this->legal(
             'Política de privacidade',
-            '<h2>Quem trata os dados</h2><p>O responsável pelo tratamento é [RAZÃO SOCIAL], CNPJ [CNPJ]. O encarregado é [ENCARREGADO], pelo e-mail ' . Layout::e(Settings::get('support_email', 'ajuda@perfilemdia.com.br')) . '.</p>'
+            '<h2>Quem trata os dados</h2><p>O responsável pelo tratamento é ADESIG ASSESSORIA E DESENVOLVIMENTO DE SISTEMAS INTEGRADOS DE GESTAO LTDA, CNPJ 47.681.244/0001-40, com sede na Av. Cerro Azul, 1335, sala 06, Maringá, PR, CEP 87010-055. O contato do encarregado é contato@adesig.com.br.</p>'
             . '<h2>O que coletamos</h2><ul><li>Nome, e-mail, celular e CPF ou CNPJ, para a contratação.</li><li>Identificador do Telegram e as fotos que você envia para publicar.</li><li>Token de acesso do Instagram, guardado criptografado, para publicar em seu nome.</li><li>Registros de pagamento: valor, status, bandeira e os 4 últimos dígitos. O número completo do cartão não fica aqui.</li></ul>'
             . '<h2>Para que usamos</h2><p>Para prestar o serviço, cobrar a assinatura, publicar no Instagram depois da sua aprovação, na hora ou no horário agendado, e cumprir a lei.</p>'
             . '<h2>Por quanto tempo</h2><p>As fotos públicas saem do ar em algumas horas. Os dados da conta ficam enquanto a assinatura existir. Pagamentos são guardados pelo prazo fiscal, mesmo depois da exclusão da conta.</p>'
@@ -273,11 +273,11 @@ final class PublicSite
     {
         Layout::page('Termos de uso', $this->legal(
             'Termos de uso',
-            '<h2>O serviço</h2><p>[RAZÃO SOCIAL], CNPJ [CNPJ], oferece um bot no Telegram que escreve a legenda de uma foto real, do seu trabalho ou do seu produto, e publica no Instagram depois que você aprova.</p>'
+            '<h2>O serviço</h2><p>ADESIG ASSESSORIA E DESENVOLVIMENTO DE SISTEMAS INTEGRADOS DE GESTAO LTDA, CNPJ 47.681.244/0001-40, oferece um bot no Telegram que escreve a legenda de uma foto real, do seu trabalho ou do seu produto, e publica no Instagram depois que você aprova.</p>'
             . '<h2>Sua conta</h2><p>Você precisa de uma conta profissional do Instagram e autorizar a publicação. A conexão expira e pode ser renovada pelo bot.</p>'
             . '<h2>Assinatura</h2><p>Os planos e os limites de posts estão na página de planos. O plano anual cobra o valor de 10 meses. Não há fidelidade: o cancelamento vale até o fim do período já pago.</p>'
             . '<h2>O que não fazemos</h2><p>Não publicamos sem a sua aprovação e não inventamos fatos que não estejam na foto ou no tema que você escreveu.</p>'
-            . '<h2>Foro</h2><p>Fica eleito o foro de [FORO].</p>'
+            . '<h2>Foro</h2><p>Fica eleito o foro da comarca de Maringá, Paraná.</p>'
         ));
     }
 
@@ -965,7 +965,6 @@ final class PublicSite
     private function legal(string $title, string $body): string
     {
         return '<section class="page"><div class="wrap"><h1>' . Layout::e($title) . '</h1>'
-            . '<p class="notice">Modelo para revisão jurídica. Faltam a razão social, o CNPJ, o encarregado e o foro. Um advogado precisa revisar antes de publicar como texto definitivo.</p>'
             . '<div class="prose">' . $body . '</div></div></section>';
     }
 

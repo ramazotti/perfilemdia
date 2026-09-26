@@ -9,41 +9,85 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function approval(int $postId, bool $allowRegen, bool $allowPhoto = false, bool $allowMark = false, bool $allowStory = false, bool $allowIdea = false, bool $allowPhrase = false): array
+    public static function approval(int $postId): array
     {
-        $rows = [
+        return [
             [
                 ['text' => 'Publicar', 'callback_data' => 'a:pub:' . $postId],
                 ['text' => 'Agendar', 'callback_data' => 'a:sch:' . $postId],
             ],
+            [['text' => 'Ajustar', 'callback_data' => 'a:mor:' . $postId]],
+            [['text' => 'Cancelar', 'callback_data' => 'a:can:' . $postId]],
         ];
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
+    public static function where(): array
+    {
+        return [[
+            ['text' => 'Post no feed', 'callback_data' => 'wh:feed'],
+            ['text' => 'Story', 'callback_data' => 'wh:story'],
+        ]];
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
+    public static function storyKind(): array
+    {
+        return [
+            [
+                ['text' => 'Foto', 'callback_data' => 'pk:foto'],
+                ['text' => 'Vídeo', 'callback_data' => 'pk:video'],
+            ],
+            [['text' => 'Criado pela IA', 'callback_data' => 'pk:ia']],
+        ];
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
+    public static function adjustMenu(
+        int $postId,
+        bool $storyLook,
+        bool $allowRegen,
+        bool $allowPhoto,
+        bool $allowMark,
+        bool $allowIdea,
+        bool $allowPhrase,
+    ): array {
+        $rows = [];
+        $textRow = [[
+            'text' => $storyLook ? 'Mudar o texto' : 'Mudar a legenda',
+            'callback_data' => 'a:adj:' . $postId,
+        ]];
         if ($allowRegen) {
-            $rows[] = [
-                ['text' => 'Ajustar', 'callback_data' => 'a:adj:' . $postId],
-                ['text' => 'Outra versão', 'callback_data' => 'a:reg:' . $postId],
-            ];
+            $textRow[] = ['text' => 'Outra versão', 'callback_data' => 'a:reg:' . $postId];
+        }
+        $rows[] = $textRow;
+        $rows[] = [['text' => 'Escrever eu mesmo', 'callback_data' => 'a:man:' . $postId]];
+        if ($storyLook) {
+            $rows[] = [['text' => 'Estilo e lugar', 'callback_data' => 'a:look:' . $postId]];
+        }
+        $photoRow = [];
+        if ($allowPhrase) {
+            $photoRow[] = ['text' => 'Texto na foto', 'callback_data' => 'a:txt:' . $postId];
+        }
+        if ($allowPhoto) {
+            $photoRow[] = ['text' => 'Tratar foto', 'callback_data' => 'a:img:' . $postId];
+        }
+        if ($photoRow !== []) {
+            $rows[] = $photoRow;
+        }
+        if ($allowMark) {
+            $rows[] = [['text' => "Marca d'água", 'callback_data' => 'a:wm:' . $postId]];
         }
         if ($allowIdea) {
             $rows[] = [['text' => 'Outra foto', 'callback_data' => 'a:pic:' . $postId]];
         }
-        $rows[] = [['text' => 'Escrever eu mesmo', 'callback_data' => 'a:man:' . $postId]];
-        if ($allowPhrase || $allowPhoto) {
-            $photoRow = [];
-            if ($allowPhrase) {
-                $photoRow[] = ['text' => 'Texto na foto', 'callback_data' => 'a:txt:' . $postId];
-            }
-            if ($allowPhoto) {
-                $photoRow[] = ['text' => 'Tratar foto', 'callback_data' => 'a:img:' . $postId];
-            }
-            $rows[] = $photoRow;
-        }
-        if ($allowMark) {
-            $rows[] = [['text' => 'Marca d\'água', 'callback_data' => 'a:wm:' . $postId]];
-        }
-        if ($allowStory) {
-            $rows[] = [['text' => 'Publicar no story', 'callback_data' => 'a:sty:' . $postId]];
-        }
-        $rows[] = [['text' => 'Cancelar', 'callback_data' => 'a:can:' . $postId]];
+        $rows[] = [['text' => 'Voltar', 'callback_data' => 'a:back:' . $postId]];
 
         return $rows;
     }
@@ -51,6 +95,36 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
+    public static function storyLook(int $postId, string $style, string $place, string $color): array
+    {
+        $styles = ['limpa' => 'Limpa', 'caixa' => 'Caixa', 'balao' => 'Balão'];
+        $styleRow = [];
+        foreach ($styles as $key => $label) {
+            if ($key === $style) {
+                $label .= " \u{2713}";
+            }
+            $styleRow[] = ['text' => $label, 'callback_data' => 'f:' . $key . ':' . $postId];
+        }
+        $places = ['topo' => 'Topo', 'meio' => 'Centro', 'rodape' => 'Rodapé'];
+        $placeRow = [];
+        foreach ($places as $key => $label) {
+            if ($key === $place) {
+                $label .= " \u{2713}";
+            }
+            $placeRow[] = ['text' => $label, 'callback_data' => 'pp:' . $key . ':' . $postId];
+        }
+        $colors = ['dourado' => 'Dourado', 'branco' => 'Branco', 'preto' => 'Preto'];
+        $colorRow = [];
+        foreach ($colors as $key => $label) {
+            if ($key === $color) {
+                $label .= " \u{2713}";
+            }
+            $colorRow[] = ['text' => $label, 'callback_data' => 'pc:' . $key . ':' . $postId];
+        }
+
+        return [$styleRow, $placeRow, $colorRow];
+    }
+
     public static function scheduleChoices(int $postId, bool $todayEvening): array
     {
         $rows = [];
@@ -96,7 +170,7 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function phraseStyles(int $postId, string $current, string $color = 'branco', string $place = 'rodape'): array
+    public static function phraseStyles(int $postId, string $current, string $color = 'branco', string $place = 'rodape', string $size = 'normal', bool $canRemove = false): array
     {
         $labels = [
             'cursiva' => 'Cursiva',
@@ -138,14 +212,31 @@ final class Keyboards
             }
             $placeRow[] = ['text' => $label, 'callback_data' => 'pp:' . $key . ':' . $postId];
         }
-
-        return [
+        $sizes = [
+            'menor' => 'Menor',
+            'normal' => 'Normal',
+            'maior' => 'Maior',
+        ];
+        $sizeRow = [];
+        foreach ($sizes as $key => $label) {
+            if ($key === $size) {
+                $label .= " \u{2713}";
+            }
+            $sizeRow[] = ['text' => $label, 'callback_data' => 'ps:' . $key . ':' . $postId];
+        }
+        $rows = [
             [$button('cursiva'), $button('classica')],
             [$button('limpa'), $button('forte')],
             [$button('balao'), $button('caixa')],
             $colorRow,
             $placeRow,
+            $sizeRow,
         ];
+        if ($canRemove) {
+            $rows[] = [['text' => 'Tirar texto', 'callback_data' => 'px:' . $postId]];
+        }
+
+        return $rows;
     }
 
     /**

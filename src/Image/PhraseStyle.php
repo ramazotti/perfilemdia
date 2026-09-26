@@ -39,6 +39,13 @@ final class PhraseStyle
         };
     }
 
+    public static function storyChoice(string $style): string
+    {
+        $style = self::normalize($style);
+
+        return in_array($style, [self::LIMPA, self::CAIXA, self::BALAO], true) ? $style : self::LIMPA;
+    }
+
     public static function pairedColor(string $style): ?string
     {
         return match (self::normalize($style)) {

@@ -16,7 +16,7 @@ final class OpenRouterImageEditor implements ImageEditorInterface
     {
     }
 
-    public function edit(string $jpegPath, string $instruction): string
+    public function edit(string $jpegPath, string $instruction, string $aspect = ''): string
     {
         Config::load();
         $key = trim(Config::get('OPENROUTER_API_KEY', ''));
@@ -37,15 +37,7 @@ final class OpenRouterImageEditor implements ImageEditorInterface
                 'X-Title' => Config::get('OPENROUTER_APP_TITLE', 'Perfil em Dia'),
                 'Content-Type' => 'application/json',
             ],
-            'json' => [
-                'model' => Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
-                'prompt' => 'Edit this photo. Do not add words, letters, numbers, logos, or watermarks. Keep the same people, objects, and place. Apply only this change: ' . $instruction,
-                'input_references' => [[
-                    'type' => 'image_url',
-                    'image_url' => ['url' => 'data:image/jpeg;base64,' . base64_encode($bytes)],
-                ]],
-                'output_format' => 'jpeg',
-            ],
+            'json' => $this->editPayload($instruction, $bytes, $aspect),
         ]);
 
         $status = (int) $response['status'];
@@ -60,6 +52,32 @@ final class OpenRouterImageEditor implements ImageEditorInterface
         }
 
         return $this->toJpeg($binary);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function editPayload(string $instruction, string $bytes, string $aspect): array
+    {
+        $story = $aspect === '9:16';
+        $prompt = $story
+            ? 'Edit this vertical full-screen photo and keep the 9:16 frame. Do not add words, letters, numbers, logos, or watermarks. Keep the same people, objects, and place. Apply only this change: ' . $instruction
+            : 'Edit this photo. Do not add words, letters, numbers, logos, or watermarks. Keep the same people, objects, and place. Apply only this change: ' . $instruction;
+        $payload = [
+            'model' => Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
+            'prompt' => $prompt,
+            'input_references' => [[
+                'type' => 'image_url',
+                'image_url' => ['url' => 'data:image/jpeg;base64,' . base64_encode($bytes)],
+            ]],
+            'output_format' => 'jpeg',
+        ];
+        if ($story) {
+            $payload['aspect_ratio'] = '9:16';
+            $payload['resolution'] = '2K';
+        }
+
+        return $payload;
     }
 
     private function toJpeg(string $binary): string

@@ -33,21 +33,27 @@ final class BenefitOrchestrator
         $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
         $date = self::commemorative($now);
         $base = $date['hint'] ?? self::weekdayHint($now);
-        $who = trim((string) ($user['profession'] ?? ''));
-        $where = trim((string) ($user['city'] ?? ''));
-        $brand = trim((string) ($user['brand_style'] ?? ''));
-        $line = $base;
-        if ($who !== '') {
-            $line .= ' Para ' . $who . '.';
-        }
-        if ($where !== '' && mb_strtolower($where) !== 'online') {
-            $line .= ' Em ' . $where . '.';
-        }
-        if ($brand !== '') {
-            $line .= ' Visual: ' . $brand . '.';
-        }
 
-        return mb_substr($line, 0, 240);
+        return self::withPlace($user, $base);
+    }
+
+    /**
+     * Uma cena nova a cada pedido. A ideia do dia continua fixa.
+     *
+     * @param array<string, mixed> $user
+     * @return array{idea:string, phrase:string}
+     */
+    public static function surpriseBrief(array $user, DateTimeImmutable $now, ?int $roll = null): array
+    {
+        $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
+        $scenes = self::surpriseScenes($now);
+        $index = ($roll ?? random_int(0, PHP_INT_MAX)) % count($scenes);
+        $scene = $scenes[$index];
+
+        return [
+            'idea' => self::withPlace($user, $scene[0]),
+            'phrase' => $scene[1],
+        ];
     }
 
     /**
@@ -231,6 +237,57 @@ final class BenefitOrchestrator
             'photo' => 'Uma boa foto aqui é ' . $photo . '.',
             'phrase' => $phrase,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private static function withPlace(array $user, string $base): string
+    {
+        $who = trim((string) ($user['profession'] ?? ''));
+        $where = trim((string) ($user['city'] ?? ''));
+        $brand = trim((string) ($user['brand_style'] ?? ''));
+        $line = $base;
+        if ($who !== '') {
+            $line .= ' Para ' . $who . '.';
+        }
+        if ($where !== '' && mb_strtolower($where) !== 'online') {
+            $line .= ' Em ' . $where . '.';
+        }
+        if ($brand !== '') {
+            $line .= ' Visual: ' . $brand . '.';
+        }
+
+        return mb_substr($line, 0, 240);
+    }
+
+    /**
+     * @return list<array{0:string,1:string}>
+     */
+    private static function surpriseScenes(DateTimeImmutable $now): array
+    {
+        $scenes = [
+            ['Mostre o começo do dia, com o espaço ainda quieto.', 'O dia começa assim.'],
+            ['Mostre um detalhe de perto do que foi feito agora.', 'De perto, agora.'],
+            ['Mostre o bastidor, antes de ficar pronto.', 'Antes de ficar pronto.'],
+            ['Mostre a ferramenta ou o material em uso, sem gente identificável.', 'A ferramenta do dia.'],
+            ['Mostre o que mudou no serviço ou no produto nesta semana.', 'O que mudou.'],
+            ['Mostre o espaço pronto para o próximo horário.', 'Pronto para o próximo.'],
+            ['Mostre o resultado acabado, sem prometer milagre.', 'Ficou pronto.'],
+            ['Mostre um cuidado pequeno que costuma passar despercebido.', 'O detalhe que passa.'],
+            ['Mostre a mesa ou a bancada no meio do trabalho.', 'No meio do trabalho.'],
+            ['Mostre o que saiu hoje, ainda quente ou recém-terminado.', 'Saiu agora.'],
+            ['Mostre uma cena da pergunta que o cliente faz toda semana.', 'A pergunta da semana.'],
+            ['Mostre o fim do expediente e o que ficou pronto.', 'Fim do expediente.'],
+            ['Mostre um canto do espaço que o cliente quase não vê.', 'Por dentro.'],
+            ['Mostre o preparo, o passo anterior ao resultado.', 'O passo anterior.'],
+        ];
+        $date = self::commemorative($now);
+        if ($date !== null) {
+            $scenes[] = [$date['hint'], 'Hoje, neste tema.'];
+        }
+
+        return $scenes;
     }
 
     private static function weekdayHint(DateTimeImmutable $now): string

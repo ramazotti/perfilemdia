@@ -407,7 +407,7 @@ final class CountingPublisher implements InstagramPublisherInterface
 
 final class FakeNormalizer implements ImageNormalizerInterface
 {
-    public function normalize(array $sourcePaths, string $publicDirectory): array
+    public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array
     {
         $out = [];
         foreach ($sourcePaths as $i => $path) {

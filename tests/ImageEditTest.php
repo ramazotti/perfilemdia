@@ -443,7 +443,7 @@ final class ImageEditTest extends TestCase
             },
             new PlanAccess($this->pdo),
             new class implements ImageEditorInterface {
-                public function edit(string $jpegPath, string $instruction): string
+                public function edit(string $jpegPath, string $instruction, string $aspect = ''): string
                 {
                     $image = imagecreatetruecolor(80, 60);
                     ob_start();
@@ -665,7 +665,7 @@ final class CountingIdea implements IdeaImageGenerator
 
 final class CopyJpegNormalizer implements ImageNormalizerInterface
 {
-    public function normalize(array $sourcePaths, string $publicDirectory): array
+    public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array
     {
         $name = str_repeat('b', 40);
         $abs = rtrim($publicDirectory, '/') . '/' . $name . '.jpg';

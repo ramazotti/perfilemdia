@@ -73,6 +73,7 @@ final class UserRepository
             'phrase_style',
             'phrase_color',
             'phrase_place',
+            'phrase_size',
             'logo_path',
             'idea_daily',
             'idea_sent_on',

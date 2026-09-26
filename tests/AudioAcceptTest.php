@@ -285,7 +285,7 @@ final class AudioTestChannel implements \PerfilEmDia\Channel\ChannelInterface
 
 final class EmptyNormalizer implements ImageNormalizerInterface
 {
-    public function normalize(array $sourcePaths, string $publicDirectory): array
+    public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array
     {
         return [];
     }

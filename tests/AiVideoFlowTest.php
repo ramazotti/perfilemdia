@@ -153,7 +153,7 @@ final class AiVideoFlowTest extends TestCase
             $posts,
             $channel,
             new class implements ImageNormalizerInterface {
-                public function normalize(array $sourcePaths, string $publicDirectory): array
+                public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array
                 {
                     return [];
                 }
