@@ -581,6 +581,11 @@ final class Messages
         return 'Para criar pela IA, escreva a ideia. A foto, se for junto, é só referência.';
     }
 
+    public static function kindIaNeedTextWithPhoto(): string
+    {
+        return 'Guardei a foto como referência. Agora mande a ideia em texto ou áudio.';
+    }
+
     public static function kindUseAlbum(): string
     {
         return 'Você escolheu foto única. Para várias fotos, escolha Carrossel.';

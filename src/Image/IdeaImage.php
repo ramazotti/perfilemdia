@@ -16,7 +16,30 @@ final class IdeaImage implements IdeaImageGenerator
     {
     }
 
-    public function create(string $idea, ?string $referenceJpeg = null, string $brand = ''): string
+    public static function promptFor(string $idea, bool $hasReference, string $brand, string $aspect): string
+    {
+        $story = $aspect === '9:16';
+        $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
+        $clean = ' No text, letters, numbers, logos, or watermarks.';
+        if ($hasReference) {
+            $frame = $story
+                ? ' Photorealistic, natural color, shot on a camera, vertical full screen, 9:16.'
+                : ' Photorealistic, natural color, shot on a camera.';
+
+            return 'The attached photo is the real scene. Keep the same people, their ages, faces, clothing, uniforms, objects, and the same place. Keep the same level of care: do not replace the scene with a different school, courtyard, building, poorer, generic, or neglected location. If the idea mentions sky or looking up, show that mood with these same people in this same place, not a new wide shot of another school. You may adjust framing, light, and sky so the feeling matches the idea.'
+                . $frame . $clean . $look
+                . ' The idea describes the feeling, not a new place: ' . $idea;
+        }
+
+        $open = $story
+            ? 'Create one photorealistic vertical photo, full screen, 9:16, as if shot on a camera in a real, cared-for place.'
+            : 'Create one photorealistic photo, as if shot on a camera in a real, cared-for place.';
+
+        return $open . ' Natural color and real materials. Do not invent a rundown, neglected, or generic stock setting.'
+            . $clean . $look . ' The idea: ' . $idea;
+    }
+
+    public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): string
     {
         Config::load();
         $key = trim(Config::get('OPENROUTER_API_KEY', ''));
@@ -24,22 +47,30 @@ final class IdeaImage implements IdeaImageGenerator
             throw new ImageEditException('OpenRouter key missing');
         }
 
-        $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
-        $prompt = 'Create one realistic Instagram photo. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea;
-        $payload = [
-            'model' => Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
-            'prompt' => $prompt,
-            'output_format' => 'jpeg',
-        ];
+        $hasReference = false;
+        $referenceUrl = null;
         if ($referenceJpeg !== null && is_file($referenceJpeg)) {
             $bytes = file_get_contents($referenceJpeg);
             if ($bytes !== false && $bytes !== '') {
-                $payload['prompt'] = 'Use the photo only as a reference. Create a new image. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea;
-                $payload['input_references'] = [[
-                    'type' => 'image_url',
-                    'image_url' => ['url' => 'data:image/jpeg;base64,' . base64_encode($bytes)],
-                ]];
+                $hasReference = true;
+                $referenceUrl = 'data:image/jpeg;base64,' . base64_encode($bytes);
             }
+        }
+
+        $payload = [
+            'model' => Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
+            'prompt' => self::promptFor($idea, $hasReference, $brand, $aspect),
+            'output_format' => 'jpeg',
+        ];
+        if ($aspect === '9:16') {
+            $payload['aspect_ratio'] = '9:16';
+            $payload['resolution'] = '2K';
+        }
+        if ($referenceUrl !== null) {
+            $payload['input_references'] = [[
+                'type' => 'image_url',
+                'image_url' => ['url' => $referenceUrl],
+            ]];
         }
 
         $http = $this->http ?? new GuzzleHttpPoster();

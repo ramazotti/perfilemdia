@@ -15,7 +15,9 @@ use PerfilEmDia\Config;
 use PerfilEmDia\Db;
 use PerfilEmDia\Growth\BenefitOrchestrator;
 use PerfilEmDia\Image\IdeaImage;
+use PerfilEmDia\Image\IdeaLook;
 use PerfilEmDia\Image\IdeaImageGenerator;
+use PerfilEmDia\Image\IdeaReference;
 use PerfilEmDia\Image\IdeaVideo;
 use PerfilEmDia\Image\IdeaVideoGenerator;
 use PerfilEmDia\Image\ImageEditException;
@@ -114,7 +116,11 @@ class PostService
         if ($kind === 'ia') {
             $idea = $this->extractTheme($message);
             if ($idea === null || $idea === '') {
-                $this->channel->sendText($chatId, Messages::kindIaNeedText());
+                $stashed = $this->stashIdeaReference($user, $message);
+                $this->channel->sendText(
+                    $chatId,
+                    $stashed ? Messages::kindIaNeedTextWithPhoto() : Messages::kindIaNeedText(),
+                );
 
                 return;
             }
@@ -1587,11 +1593,13 @@ class PostService
         if ($path === '') {
             $path = Config::root() . '/storage/media/' . $postId . '_0.jpg';
         }
+        $savedRef = IdeaReference::postPath($postId);
+        $reference = is_file($savedRef) ? $savedRef : (is_file($path) ? $path : null);
         try {
             $jpeg = ($this->ideas ?? new IdeaImage())->create(
                 (string) ($post['theme_text'] ?? ''),
-                is_file($path) ? $path : null,
-                BenefitOrchestrator::brandBrief($user),
+                $reference,
+                IdeaLook::brief($user),
             );
             $dir = dirname($path);
             if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
@@ -2289,6 +2297,9 @@ class PostService
 
             return;
         }
+        if ($kind !== 'ia') {
+            IdeaReference::clearStash((int) $user['id']);
+        }
         $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind]);
         $text = match ($kind) {
             'album' => Messages::kindAlbum(),
@@ -2602,26 +2613,10 @@ class PostService
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea);
         $this->posts->update($postId, ['creative' => 1]);
 
-        $reference = null;
-        if ($message !== null) {
-            $file = $this->extractFile($message);
-            if ($file !== null && $file['kind'] === 'image') {
-                $reference = Config::root() . '/storage/media/' . $postId . '_ref.jpg';
-                $dir = dirname($reference);
-                if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
-                    $reference = null;
-                } else {
-                    try {
-                        $this->channel->download($file['file_id'], $reference);
-                    } catch (\Throwable) {
-                        $reference = null;
-                    }
-                }
-            }
-        }
+        $reference = $this->resolveIdeaReference($user, $postId, $message);
 
         try {
-            $jpeg = ($this->ideas ?? new IdeaImage())->create($idea, $reference, BenefitOrchestrator::brandBrief($user));
+            $jpeg = ($this->ideas ?? new IdeaImage())->create($idea, $reference, IdeaLook::brief($user));
             $dest = Config::root() . '/storage/media/' . $postId . '_0.jpg';
             $dir = dirname($dest);
             if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
@@ -2641,10 +2636,60 @@ class PostService
             $this->failPost($postId, PostStatus::Generating, 'idea_image', $e->getMessage());
             $this->channel->sendText($chatId, Messages::ideaFailed());
         } finally {
-            if (is_string($reference) && is_file($reference)) {
-                unlink($reference);
+            IdeaReference::clearStash((int) $user['id']);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $message
+     */
+    private function resolveIdeaReference(array $user, int $postId, ?array $message): ?string
+    {
+        if ($message !== null) {
+            $file = $this->extractFile($message);
+            if ($file !== null && $file['kind'] === 'image') {
+                $reference = IdeaReference::postPath($postId);
+                $dir = dirname($reference);
+                if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+                    return IdeaReference::adoptStash((int) $user['id'], $postId);
+                }
+                try {
+                    $this->channel->download($file['file_id'], $reference);
+                    IdeaReference::clearStash((int) $user['id']);
+
+                    return $reference;
+                } catch (\Throwable) {
+                    return IdeaReference::adoptStash((int) $user['id'], $postId);
+                }
             }
         }
+
+        return IdeaReference::adoptStash((int) $user['id'], $postId);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $message
+     */
+    private function stashIdeaReference(array $user, array $message): bool
+    {
+        $file = $this->extractFile($message);
+        if ($file === null || $file['kind'] !== 'image') {
+            return false;
+        }
+        $path = IdeaReference::stashPath((int) $user['id']);
+        $dir = dirname($path);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return false;
+        }
+        try {
+            $this->channel->download($file['file_id'], $path);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return is_file($path) && filesize($path) > 0;
     }
 
     /**
