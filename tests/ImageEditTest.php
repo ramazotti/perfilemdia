@@ -151,6 +151,7 @@ final class ImageEditTest extends TestCase
         }
         $photos = array_filter($channel->sent, static fn (array $row): bool => $row['type'] === 'photo');
         $this->assertNotEmpty($photos);
+        $service->handleApprovalCallback($user, 930001, 'menu', 'mor', $postId);
         $this->assertContains('Tratar foto', $this->buttonLabels($channel));
     }
 
@@ -159,6 +160,7 @@ final class ImageEditTest extends TestCase
         [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
         $service->handleApprovalCallback($user, 930001, 'cb', 'img', $postId);
         $service->handleThemeText($user, 930001, 'mais luz');
+        $service->handleApprovalCallback($user, 930001, 'menu', 'mor', $postId);
         $this->assertContains('Tratar foto', $this->buttonLabels($channel));
         $this->assertSame(1, (int) $posts->find($postId)['image_edit_count']);
 
@@ -166,6 +168,7 @@ final class ImageEditTest extends TestCase
         $service->handleThemeText($user, 930001, 'mais contraste');
 
         $this->assertSame(2, (int) $posts->find($postId)['image_edit_count']);
+        $service->handleApprovalCallback($user, 930001, 'menu2', 'mor', $postId);
         $this->assertNotContains('Tratar foto', $this->buttonLabels($channel));
         $this->assertContains('Texto na foto', $this->buttonLabels($channel));
     }
@@ -226,6 +229,79 @@ final class ImageEditTest extends TestCase
         $texts = implode("\n", array_column($channel->sent, 'text'));
         $this->assertStringContainsString("Bal\u{00e3}o", $texts);
         $this->assertStringContainsString('Caixa', $texts);
+    }
+
+    public function testAStoredPhraseMovesWithoutRetyping(): void
+    {
+        [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
+        $media = $posts->media($postId);
+        $public = dirname(__DIR__) . '/public/m/' . $media[0]['public_name'] . '.jpg';
+        $clean = $this->blankJpeg();
+        copy($clean, $public);
+
+        $service->handleApprovalCallback($user, 930001, 'cb', 'txt', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertTrue($service->handlePhraseText($user, 930001, 'Frase que fica na foto'));
+        $this->assertSame('Frase que fica na foto', $posts->find($postId)['photo_phrase']);
+
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $service->choosePhrasePlace($user, 930001, 'cb2', 'meio', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertSame('meio', $user['phrase_place']);
+
+        $media = $posts->media($postId);
+        $result = dirname(__DIR__) . '/public/m/' . $media[0]['public_name'] . '.jpg';
+        $expected = $this->blankJpeg();
+        copy($clean, $expected);
+        PhotoPhrase::draw($expected, 'Frase que fica na foto', 'classica', 'branco', 'meio');
+        $this->assertFileEquals($expected, $result);
+        $this->assertStringContainsString('Toque para mudar o estilo', implode("\n", array_column($channel->sent, 'text')));
+
+        $this->cleanupPhrase($media[0]['id'], $clean, $expected, $result);
+    }
+
+    public function testClearingThePhraseRestoresTheCleanPhoto(): void
+    {
+        [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');
+        $media = $posts->media($postId);
+        $public = dirname(__DIR__) . '/public/m/' . $media[0]['public_name'] . '.jpg';
+        $clean = $this->blankJpeg();
+        copy($clean, $public);
+
+        $service->handleApprovalCallback($user, 930001, 'cb', 'txt', $postId);
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $this->assertTrue($service->handlePhraseText($user, 930001, 'Frase para tirar'));
+
+        $user = $users->find((int) $user['id']);
+        $this->assertIsArray($user);
+        $service->clearPhrase($user, 930001, 'cb2', $postId);
+
+        $media = $posts->media($postId);
+        $result = dirname(__DIR__) . '/public/m/' . $media[0]['public_name'] . '.jpg';
+        $this->assertFileEquals($clean, $result);
+        $this->assertNull($posts->find($postId)['photo_phrase']);
+        $this->assertStringContainsString('Tirei o texto', implode("\n", array_column($channel->sent, 'text')));
+
+        $this->cleanupPhrase($media[0]['id'], $clean, $result);
+    }
+
+    public function testBiggerTextCoversMoreOfThePhoto(): void
+    {
+        $base = $this->blankJpeg();
+        $small = $this->blankJpeg();
+        $big = $this->blankJpeg();
+        copy($base, $small);
+        copy($base, $big);
+        PhotoPhrase::draw($small, 'Kefir de agua', 'classica', 'branco', 'rodape', 'menor');
+        PhotoPhrase::draw($big, 'Kefir de agua', 'classica', 'branco', 'rodape', 'maior');
+        $this->assertGreaterThan($this->changedPixels($small, $base), $this->changedPixels($big, $base));
+        unlink($base);
+        unlink($small);
+        unlink($big);
     }
 
     public function testPhrasePlaceIsAskedAndSaved(): void
@@ -349,11 +425,13 @@ final class ImageEditTest extends TestCase
         try {
             $service->handleApprovalCallback($user, 930001, 'cb', 'pic', $postId);
             $this->assertSame(1, $ideas->calls);
+            $service->handleApprovalCallback($user, 930001, 'menu', 'mor', $postId);
             $this->assertContains('Outra foto', $this->buttonLabels($channel));
 
             $service->handleApprovalCallback($user, 930001, 'cb2', 'pic', $postId);
             $this->assertSame(2, $ideas->calls);
             $this->assertSame(2, (int) $posts->find($postId)['idea_regen_count']);
+            $service->handleApprovalCallback($user, 930001, 'menu2', 'mor', $postId);
             $this->assertNotContains('Outra foto', $this->buttonLabels($channel));
 
             $service->handleApprovalCallback($user, 930001, 'cb3', 'pic', $postId);
@@ -372,11 +450,11 @@ final class ImageEditTest extends TestCase
      */
     private function buttonLabels(EditTestChannel $channel): array
     {
-        $photos = array_values(array_filter(
+        $withButtons = array_values(array_filter(
             $channel->sent,
-            static fn (array $row): bool => $row['type'] === 'photo',
+            static fn (array $row): bool => ($row['buttons'] ?? []) !== [],
         ));
-        $last = $photos[array_key_last($photos)] ?? null;
+        $last = $withButtons[array_key_last($withButtons)] ?? null;
         if ($last === null) {
             return [];
         }
@@ -443,7 +521,7 @@ final class ImageEditTest extends TestCase
             },
             new PlanAccess($this->pdo),
             new class implements ImageEditorInterface {
-                public function edit(string $jpegPath, string $instruction): string
+                public function edit(string $jpegPath, string $instruction, string $aspect = ''): string
                 {
                     $image = imagecreatetruecolor(80, 60);
                     ob_start();
@@ -484,6 +562,45 @@ final class ImageEditTest extends TestCase
             'INSERT INTO subscriptions (customer_id, plan_id, cycle, status, price_cents, current_period_end, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
         )->execute([$customerId, (int) $planId, 'mensal', 'ativa', 4900, $end]);
+    }
+
+    private function changedPixels(string $path, string $base): int
+    {
+        $image = imagecreatefromjpeg($path);
+        $original = imagecreatefromjpeg($base);
+        $this->assertNotFalse($image);
+        $this->assertNotFalse($original);
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $changed = 0;
+        for ($y = 0; $y < $height; $y += 2) {
+            for ($x = 0; $x < $width; $x += 2) {
+                $rgb = imagecolorat($image, $x, $y);
+                $was = imagecolorat($original, $x, $y);
+                $sum = (($rgb >> 16) & 255) + (($rgb >> 8) & 255) + ($rgb & 255);
+                $before = (($was >> 16) & 255) + (($was >> 8) & 255) + ($was & 255);
+                if (abs($sum - $before) > 40) {
+                    $changed++;
+                }
+            }
+        }
+        imagedestroy($image);
+        imagedestroy($original);
+
+        return $changed;
+    }
+
+    private function cleanupPhrase(int $mediaId, string ...$files): void
+    {
+        $base = dirname(__DIR__) . '/storage/media/phrasebase_' . $mediaId . '.jpg';
+        if (is_file($base)) {
+            unlink($base);
+        }
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
 
     /**
@@ -599,7 +716,7 @@ final class EditTestChannel implements \PerfilEmDia\Channel\ChannelInterface
 
     public function sendText(int $chatId, string $text, ?array $buttons = null): int
     {
-        $this->sent[] = ['type' => 'text', 'chatId' => $chatId, 'text' => $text];
+        $this->sent[] = ['type' => 'text', 'chatId' => $chatId, 'text' => $text, 'buttons' => $buttons ?? []];
 
         return count($this->sent);
     }
@@ -655,7 +772,7 @@ final class CountingIdea implements IdeaImageGenerator
     {
     }
 
-    public function create(string $idea, ?string $referenceJpeg = null, string $brand = ''): string
+    public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): string
     {
         $this->calls++;
 
@@ -665,7 +782,7 @@ final class CountingIdea implements IdeaImageGenerator
 
 final class CopyJpegNormalizer implements ImageNormalizerInterface
 {
-    public function normalize(array $sourcePaths, string $publicDirectory): array
+    public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array
     {
         $name = str_repeat('b', 40);
         $abs = rtrim($publicDirectory, '/') . '/' . $name . '.jpg';

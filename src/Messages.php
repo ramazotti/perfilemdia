@@ -87,7 +87,7 @@ final class Messages
             . "/excluirconta apagar seus dados e começar do zero\n"
             . "/chamado abrir ou ver um chamado\n/ideia ideia para o post de hoje\n/resultado alcance dos últimos dias\n/marca cor e estilo da marca\n"
             . "/ajuda esta lista\n\n"
-            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. /novo pergunta o tipo: foto única, carrossel, vídeo curto ou criado pela IA. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio.";
+            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. /novo pergunta primeiro se vai para o feed ou para o story. No feed: foto única, carrossel, vídeo curto ou criado pela IA. No story: uma foto ou um vídeo, e o texto entra na foto. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio.";
     }
 
     public static function status(string $ig, int $used, int $limit): string
@@ -149,6 +149,11 @@ final class Messages
     public static function published(): string
     {
         return 'Tá postado!';
+    }
+
+    public static function storiesPublished(int $count): string
+    {
+        return "Tá postado! Saíram {$count} stories, só com o texto na foto.";
     }
 
     public static function replacePending(): string
@@ -402,11 +407,11 @@ final class Messages
         return 'Não consegui buscar a foto do perfil no Instagram. Tente de novo daqui a pouco.';
     }
 
-    public static function askPhotoPhrase(string $style, string $color, string $where): string
+    public static function askPhotoPhrase(string $style, string $color, string $where, string $size): string
     {
         return "Qual texto quer na foto?\n"
             . "Onde quer o texto: no topo, no meio ou no rodapé? O padrão é o rodapé.\n"
-            . "Agora fica {$where}, no estilo {$style}, cor {$color}.\n"
+            . "Agora fica {$where}, no estilo {$style}, cor {$color}, tamanho {$size}.\n"
             . "Escreva a frase, ou toque para trocar.\n"
             . "Exemplo: Novidade do dia!";
     }
@@ -416,9 +421,19 @@ final class Messages
         return "Pronto. Este texto e os próximos saem em {$style}. Escreva a frase.";
     }
 
-    public static function phraseLookSaved(string $style, string $color, string $where): string
+    public static function phraseLookSaved(string $style, string $color, string $where, string $size): string
     {
-        return "Pronto. Fica {$where}, estilo {$style}, cor {$color}. Escreva a frase.";
+        return "Pronto. Fica {$where}, estilo {$style}, cor {$color}, tamanho {$size}. Escreva a frase.";
+    }
+
+    public static function adjustPhotoPhrase(): string
+    {
+        return "O texto está na foto. Toque para mudar o estilo, a cor, o lugar ou o tamanho. Ou escreva outra frase.";
+    }
+
+    public static function phraseCleared(): string
+    {
+        return "Tirei o texto. A foto voltou limpa.";
     }
 
     public static function askMarkSource(bool $hasLogo): string
@@ -553,7 +568,66 @@ final class Messages
 
     public static function askPostKind(): string
     {
+        return 'Isso vai para o feed ou para o story?';
+    }
+
+    public static function askFeedKind(): string
+    {
         return 'O que você quer postar?';
+    }
+
+    public static function askStoryKind(): string
+    {
+        return 'O story é uma foto ou um vídeo. Na foto, o texto entra na imagem, sem hashtag e sem o acesse.';
+    }
+
+    public static function kindStoryFoto(): string
+    {
+        return 'Manda uma foto e, na mesma mensagem, uma frase sobre ela. A foto sai em tela cheia, 1080 por 1920, e a frase vira o texto do story.';
+    }
+
+    public static function kindStoryVideo(): string
+    {
+        return 'Manda um vídeo de 3 a 90 segundos. Ele vai inteiro, sem texto por cima.';
+    }
+
+    public static function kindStoryIa(): string
+    {
+        return 'Manda a ideia em uma mensagem. A imagem sai em tela cheia, 1080 por 1920, com o texto em cima e sem hashtag. Ou toque em Surpreenda-me.';
+    }
+
+    public static function storyPreview(int $count): string
+    {
+        if ($count > 1) {
+            return "O texto entra em {$count} stories, no máximo 3, com até 180 caracteres em cada foto, sem hashtag e sem o acesse.";
+        }
+
+        return 'Assim fica o story. O texto ocupa um terço da foto, sem hashtag e sem o acesse.';
+    }
+
+    public static function storyNeedsText(): string
+    {
+        return 'Não sobrou texto para colocar na foto. Em Ajustar, escreva o que deve aparecer.';
+    }
+
+    public static function storyVideoPreview(): string
+    {
+        return 'O vídeo vai inteiro para o story, sem texto por cima.';
+    }
+
+    public static function askAdjustMenu(): string
+    {
+        return 'O que você quer ajustar?';
+    }
+
+    public static function storyLook(): string
+    {
+        return 'Escolha o estilo e o lugar. O fundo fica só atrás do texto, translúcido.';
+    }
+
+    public static function storyOnlyGeneratedText(): string
+    {
+        return 'No story entram só o texto gerado. A marca e a frase da foto ficam de fora.';
     }
 
     public static function kindFoto(): string
@@ -639,7 +713,7 @@ final class Messages
             return 'Esse texto chegou fora do passo do vídeo. Para gerar, comece de novo: envie /novo, escolha Vídeo com IA e os segundos. Depois manda a ideia.';
         }
 
-        return 'Para postar, comece de novo: envie /novo e escolha o tipo.';
+        return 'Para postar, comece de novo: envie /novo e escolha feed ou story.';
     }
 
     public static function useOpenButtons(): string

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PerfilEmDia\Ai;
 
 use PerfilEmDia\Billing\Settings;
+use PerfilEmDia\Image\StoryScript;
 use PerfilEmDia\Config;
 use PerfilEmDia\Support\GuzzleHttpPoster;
 use PerfilEmDia\Support\HttpPoster;
@@ -21,6 +22,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
     private HttpPoster $http;
     private bool $allowSleep;
     private bool $creative = false;
+    private bool $story = false;
 
     public function __construct(?HttpPoster $http = null)
     {
@@ -36,6 +38,10 @@ final class CaptionGenerator implements CaptionGeneratorInterface
         ?string $feedback = null,
     ): CaptionResult {
         Config::load();
+        $this->story = str_starts_with($theme, "[[story]]\n");
+        if ($this->story) {
+            $theme = substr($theme, strlen("[[story]]\n"));
+        }
         $this->creative = str_starts_with($theme, "[[criacao]]\n");
         if ($this->creative) {
             $theme = substr($theme, strlen("[[criacao]]\n"));
@@ -83,7 +89,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
             throw new CaptionException('Model returned invalid JSON. ' . $snippet, 'invalid_json');
         }
 
-        $legenda = $fields['legenda'];
+        $legenda = $this->story ? $this->fitStoryPages($fields['legenda']) : $fields['legenda'];
         $hashtags = $this->mergeHashtags($fields['hashtags'], (string) ($profile['fixed_hashtags'] ?? ''));
         $altText = $this->truncate($fields['alt_text'], self::MAX_ALT_TEXT_CHARS);
         $caption = $this->buildCaption($legenda, $hashtags, trim((string) ($profile['contact_cta'] ?? '')));
@@ -237,7 +243,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => $this->creative ? Prompts::creative() : Prompts::system(),
+                        'content' => $this->systemPrompt(),
                     ],
                     [
                         'role' => 'user',
@@ -246,6 +252,22 @@ final class CaptionGenerator implements CaptionGeneratorInterface
                 ],
             ],
         ]);
+    }
+
+
+    private function systemPrompt(): string
+    {
+        $prompt = $this->creative ? Prompts::creative() : Prompts::system();
+        if (!$this->story) {
+            return $prompt;
+        }
+
+        return $prompt . "\n\n" . 'Isto é um story. A legenda, sem hashtags e sem o contato, tem no máximo 540 caracteres. Ela cabe em até 3 blocos de 180 caracteres. Pode ser 1, 2 ou 3 blocos. Não passe de 3. Ignore a faixa de 250 a 900.';
+    }
+
+    private function fitStoryPages(string $legenda): string
+    {
+        return implode("\n\n", StoryScript::parts($legenda));
     }
 
     private static function model(string $setting, string $env, string $default): string

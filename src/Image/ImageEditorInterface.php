@@ -9,5 +9,5 @@ interface ImageEditorInterface
     /**
      * Returns JPEG bytes of the edited photo.
      */
-    public function edit(string $jpegPath, string $instruction): string;
+    public function edit(string $jpegPath, string $instruction, string $aspect = ''): string;
 }

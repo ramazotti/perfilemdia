@@ -6,7 +6,9 @@ namespace PerfilEmDia\Image;
 
 final class PhotoPhrase
 {
-    public static function draw(string $jpegPath, string $phrase, string $style = PhraseStyle::CLASSICA, string $color = PhraseColor::BRANCO, string $place = PhrasePlace::RODAPE): void
+    private static float $drawScale = 1.0;
+
+    public static function draw(string $jpegPath, string $phrase, string $style = PhraseStyle::CLASSICA, string $color = PhraseColor::BRANCO, string $place = PhrasePlace::RODAPE, string $size = PhraseSize::NORMAL): void
     {
         $phrase = trim($phrase);
         if ($phrase === '' || !is_file($jpegPath)) {
@@ -15,6 +17,16 @@ final class PhotoPhrase
         $style = PhraseStyle::normalize($style);
         $color = PhraseColor::normalize($color);
         $place = PhrasePlace::normalize($place);
+        self::$drawScale = PhraseSize::factor($size);
+        try {
+            self::paint($jpegPath, $phrase, $style, $color, $place);
+        } finally {
+            self::$drawScale = 1.0;
+        }
+    }
+
+    private static function paint(string $jpegPath, string $phrase, string $style, string $color, string $place): void
+    {
         if ($style === PhraseStyle::BALAO || $style === PhraseStyle::CAIXA) {
             $font = self::font($style);
             if (extension_loaded('imagick') && class_exists(\Imagick::class) && $font !== null) {
@@ -565,8 +577,15 @@ final class PhotoPhrase
             $longest = max($longest, mb_strlen($line));
         }
         $byWidth = (int) (($width * 0.86) / max(1, $longest * 0.55));
+        $fitted = (int) max(18, min((int) ($width / $divisor), $byWidth));
+        $scaled = (int) round($fitted * self::$drawScale);
+        if (self::$drawScale > 1) {
+            $cap = (int) (($width * 0.92) / max(1, $longest * 0.5));
 
-        return (int) max(18, min((int) ($width / $divisor), $byWidth));
+            return (int) max($fitted, min($cap, $scaled));
+        }
+
+        return (int) max(14, $scaled);
     }
 
     /**

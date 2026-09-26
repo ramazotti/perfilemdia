@@ -180,7 +180,7 @@ final class Layout
     {
         $e = [self::class, 'e'];
 
-        return '<footer class="site-foot"><div class="wrap"><span class="grow">© ' . date('Y') . ' Perfil em Dia. perfilemdia.com.br</span>'
+        return '<footer class="site-foot"><div class="wrap"><span class="grow">© ' . date('Y') . ' Perfil em Dia, serviço da ADESIG ASSESSORIA E DESENVOLVIMENTO DE SISTEMAS INTEGRADOS DE GESTAO LTDA, CNPJ 47.681.244/0001-40.</span>'
             . '<a href="' . $e(self::url('profissoes')) . '">Profissões</a>'
             . '<a href="' . $e(self::url('privacidade')) . '">Privacidade</a>'
             . '<a href="' . $e(self::url('termos')) . '">Termos de uso</a>'

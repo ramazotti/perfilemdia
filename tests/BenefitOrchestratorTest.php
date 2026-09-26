@@ -67,6 +67,36 @@ final class BenefitOrchestratorTest extends TestCase
         $this->assertStringContainsString('Visualizações: 40', $text);
     }
 
+    public function testEachSurprisePicksAnotherScene(): void
+    {
+        $now = new DateTimeImmutable('2026-09-23 09:00:00', new DateTimeZone('America/Sao_Paulo'));
+        $user = ['profession' => 'Nutricionista', 'city' => 'Curitiba', 'brand_style' => 'verde'];
+        $first = BenefitOrchestrator::surpriseBrief($user, $now, 0);
+        $second = BenefitOrchestrator::surpriseBrief($user, $now, 1);
+
+        $this->assertNotSame($first['idea'], $second['idea']);
+        $this->assertNotSame($first['phrase'], $second['phrase']);
+        $this->assertStringContainsString('Nutricionista', $first['idea']);
+        $this->assertStringContainsString('Curitiba', $first['idea']);
+        $this->assertStringContainsString('verde', $first['idea']);
+        $this->assertStringNotContainsString('prato que montei', $first['phrase']);
+    }
+
+    public function testAHolidayDoesNotLockEverySurprise(): void
+    {
+        $now = new DateTimeImmutable('2026-10-12 09:00:00', new DateTimeZone('America/Sao_Paulo'));
+        $user = ['profession' => 'loja', 'city' => 'Maringa'];
+        $hits = 0;
+        for ($roll = 0; $roll < 15; $roll++) {
+            $idea = BenefitOrchestrator::surpriseBrief($user, $now, $roll)['idea'];
+            if (str_contains($idea, 'crian')) {
+                $hits++;
+            }
+        }
+
+        $this->assertSame(1, $hits);
+    }
+
     public function testProfessionPagesStayOnKnownJobs(): void
     {
         $this->assertNotNull(BenefitOrchestrator::profession('dentista'));

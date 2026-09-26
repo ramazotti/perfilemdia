@@ -44,6 +44,29 @@ final class ImageNormalizerTest extends TestCase
         $this->assertLessThanOrEqual(1.91, $results[0]->ratio);
     }
 
+    public function testStoryCanvasIsFullScreenNineBySixteen(): void
+    {
+        $source = $this->createJpeg(1000, 1000);
+        $publicDir = $this->tempRoot . '/public';
+
+        $results = $this->normalizer->normalize([$source], $publicDir, 'story');
+
+        $this->assertCount(1, $results);
+        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
+        $this->assertSame(1080, $results[0]->width);
+        $this->assertSame(1920, $results[0]->height);
+        $this->assertEqualsWithDelta(1080 / 1920, $results[0]->ratio, 0.001);
+    }
+
+    public function testStoryCanvasKeepsAPortraitFrameFromAWidePhoto(): void
+    {
+        $source = $this->createJpeg(1600, 900);
+        $results = $this->normalizer->normalize([$source], $this->tempRoot . '/public', 'story');
+
+        $this->assertSame(1080, $results[0]->width);
+        $this->assertSame(1920, $results[0]->height);
+    }
+
     public function testTallNineBySixteenCropsToMinRatio(): void
     {
         $source = $this->createJpeg(900, 1600);

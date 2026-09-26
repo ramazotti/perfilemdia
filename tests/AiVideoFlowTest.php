@@ -43,7 +43,10 @@ final class AiVideoFlowTest extends TestCase
         $this->assertStringContainsString('nesta conta', implode("\n", array_column($channel->sent, 'text')));
 
         $this->pdo->prepare('UPDATE customers SET ai_video = 1 WHERE user_id = ?')->execute([(int) $user['id']]);
-        $service->askPostKind(940001, $users->find((int) $user['id']));
+        $fresh = $users->find((int) $user['id']);
+        $this->assertIsArray($fresh);
+        $service->askPostKind(940001, $fresh);
+        $service->chooseWhere($fresh, 940001, 'feed');
         $labels = [];
         foreach ($channel->sent as $row) {
             foreach ($row['buttons'] ?? [] as $line) {
@@ -153,7 +156,7 @@ final class AiVideoFlowTest extends TestCase
             $posts,
             $channel,
             new class implements ImageNormalizerInterface {
-                public function normalize(array $sourcePaths, string $publicDirectory): array
+                public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array
                 {
                     return [];
                 }

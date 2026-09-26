@@ -16,7 +16,7 @@ final class IdeaImage implements IdeaImageGenerator
     {
     }
 
-    public function create(string $idea, ?string $referenceJpeg = null, string $brand = ''): string
+    public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): string
     {
         Config::load();
         $key = trim(Config::get('OPENROUTER_API_KEY', ''));
@@ -24,17 +24,26 @@ final class IdeaImage implements IdeaImageGenerator
             throw new ImageEditException('OpenRouter key missing');
         }
 
+        $story = $aspect === '9:16';
         $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
-        $prompt = 'Create one realistic Instagram photo. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea;
+        $prompt = $story
+            ? 'Create one realistic vertical Instagram story photo, full screen, 9:16. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea
+            : 'Create one realistic Instagram photo. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea;
         $payload = [
             'model' => Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
             'prompt' => $prompt,
             'output_format' => 'jpeg',
         ];
+        if ($story) {
+            $payload['aspect_ratio'] = '9:16';
+            $payload['resolution'] = '2K';
+        }
         if ($referenceJpeg !== null && is_file($referenceJpeg)) {
             $bytes = file_get_contents($referenceJpeg);
             if ($bytes !== false && $bytes !== '') {
-                $payload['prompt'] = 'Use the photo only as a reference. Create a new image. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea;
+                $payload['prompt'] = $story
+                    ? 'Use the photo only as a reference. Create a new vertical full-screen image, 9:16. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea
+                    : 'Use the photo only as a reference. Create a new image. No text, letters, numbers, logos, or watermarks.' . $look . ' The idea: ' . $idea;
                 $payload['input_references'] = [[
                     'type' => 'image_url',
                     'image_url' => ['url' => 'data:image/jpeg;base64,' . base64_encode($bytes)],

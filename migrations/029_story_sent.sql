@@ -1,0 +1,2 @@
+ALTER TABLE posts
+    ADD COLUMN story_sent TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER destination;
