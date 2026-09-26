@@ -239,11 +239,12 @@ final class StoryCard
      */
     private static function bubble(array $layout, array $widths, int $size, int $lineCount, int $baseline, int $ascent): array
     {
-        $padX = (int) max(8, $size * 0.28);
-        $padY = (int) max(4, $size * 0.1);
+        $padX = (int) max(6, $size * 0.16);
+        $padY = (int) max(2, $size * 0.05);
         $textW = max(1, ...$widths);
         $w = $textW + ($padX * 2);
-        $h = ($layout['lineHeight'] * max(1, $lineCount)) + ($padY * 2);
+        $textH = $ascent + (int) max(2, $size * 0.2) + ($layout['lineHeight'] * max(0, $lineCount - 1));
+        $h = $textH + ($padY * 2);
         $x = (int) ($layout['x'] + (($layout['boxW'] - $w) / 2));
         $y = $baseline - $ascent - $padY;
 
@@ -252,7 +253,7 @@ final class StoryCard
             'y' => max(0, $y),
             'w' => $w,
             'h' => $h,
-            'radius' => (int) max(8, min((int) ($h / 2), (int) ($size * 0.65))),
+            'radius' => (int) max(6, min((int) ($h / 2), (int) ($size * 0.42))),
             'tail' => (int) max(8, $size * 0.32),
             'place' => $layout['place'],
         ];
@@ -485,7 +486,7 @@ final class StoryCard
 
     private static function bubbleOpacity(): float
     {
-        return 0.68;
+        return 0.62;
     }
 
     private static function font(): ?string

@@ -656,7 +656,12 @@ final class AdminSite
         if (!empty($customer['user_id'])) {
             try {
                 $users = new UserRepository($this->pdo, Crypto::fromConfig());
-                $users->deleteAccount((int) $customer['user_id']);
+                $paths = $users->deleteAccount((int) $customer['user_id']);
+                foreach ($paths as $path) {
+                    if (is_string($path) && $path !== '' && is_file($path)) {
+                        @unlink($path);
+                    }
+                }
             } catch (\Throwable) {
             }
         }

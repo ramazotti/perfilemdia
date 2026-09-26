@@ -93,6 +93,12 @@ final class PostRepository
         return $stmt->fetchAll();
     }
 
+    public function deleteMedia(int $mediaId): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM post_media WHERE id = ?');
+        $stmt->execute([$mediaId]);
+    }
+
     public function updateMedia(int $mediaId, array $fields): void
     {
         $allowed = ['original_path', 'public_name', 'width', 'height'];

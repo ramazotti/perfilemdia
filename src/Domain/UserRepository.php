@@ -208,8 +208,29 @@ final class UserRepository
 
     public function markInstagramRevokedByIgUserId(string $igUserId): void
     {
-        $stmt = $this->pdo->prepare("UPDATE instagram_accounts SET status = 'revoked' WHERE ig_user_id = ?");
+        $stmt = $this->pdo->prepare(
+            "UPDATE instagram_accounts SET status = 'revoked', access_token_enc = '' WHERE ig_user_id = ?"
+        );
         $stmt->execute([$igUserId]);
+    }
+
+    private function cancelBillingForUser(int $userId): void
+    {
+        $stmt = $this->pdo->prepare('SELECT id FROM customers WHERE user_id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $customerId = $stmt->fetchColumn();
+        if ($customerId === false) {
+            return;
+        }
+        $customerId = (int) $customerId;
+        $this->pdo->prepare(
+            "UPDATE subscriptions
+             SET status = 'cancelada', renew_token = NULL, gateway_subscription_id = NULL, cancel_at = NULL, updated_at = NOW()
+             WHERE customer_id = ? AND status IN ('ativa', 'inadimplente', 'pendente')"
+        )->execute([$customerId]);
+        $this->pdo->prepare(
+            "UPDATE customers SET status = 'excluido', user_id = NULL, name = 'Excluído', email = '', phone = '', updated_at = NOW() WHERE id = ?"
+        )->execute([$customerId]);
     }
 
     public function markInstagramStatus(int $userId, string $status): void
@@ -223,6 +244,7 @@ final class UserRepository
      */
     public function deleteAccount(int $userId): array
     {
+        $this->cancelBillingForUser($userId);
         $paths = [];
         $logo = $this->pdo->prepare('SELECT logo_path FROM users WHERE id = ?');
         $logo->execute([$userId]);
@@ -244,16 +266,25 @@ final class UserRepository
                 $paths[] = (string) $row['original_path'];
             }
             if (!empty($row['public_name'])) {
-                $paths[] = (string) $row['public_name'];
+                $name = (string) $row['public_name'];
+                $paths[] = Config::root() . '/public/m/' . $name . '.jpg';
+                $paths[] = Config::root() . '/public/m/' . $name . '.mp4';
             }
             if (!empty($row['id'])) {
-                $paths[] = Config::root() . '/storage/media/phrasebase_' . (int) $row['id'] . '.jpg';
+                $mediaId = (int) $row['id'];
+                $paths[] = Config::root() . '/storage/media/phrasebase_' . $mediaId . '.jpg';
+                $paths[] = Config::root() . '/storage/media/storyclean_' . $mediaId . '.jpg';
             }
         }
 
         $postIds = $this->pdo->prepare('SELECT id FROM posts WHERE user_id = ?');
         $postIds->execute([$userId]);
         $ids = array_map(static fn (array $row): int => (int) $row['id'], $postIds->fetchAll());
+        foreach ($ids as $postId) {
+            $paths[] = Config::root() . '/storage/media/' . $postId . '_0.jpg';
+            $paths[] = Config::root() . '/storage/media/' . $postId . '_ia_ref.jpg';
+        }
+        $paths[] = Config::root() . '/storage/media/u' . $userId . '_ia_ref.jpg';
         if ($ids !== []) {
             $in = implode(',', array_fill(0, count($ids), '?'));
             $this->pdo->prepare("DELETE FROM post_media WHERE post_id IN ($in)")->execute($ids);

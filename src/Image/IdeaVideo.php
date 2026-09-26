@@ -73,19 +73,25 @@ final class IdeaVideo implements IdeaVideoGenerator
 
     public function download(string $url): string
     {
-        Config::load();
-        $key = trim(Config::get('OPENROUTER_API_KEY', ''));
-        if ($key === '') {
-            throw new ImageEditException('OpenRouter key missing');
+        if (!$this->allowedDownloadUrl($url)) {
+            throw new ImageEditException('Video URL not allowed');
         }
+        Config::load();
         $http = $this->http ?? new GuzzleHttpPoster();
+        $headers = [
+            'HTTP-Referer' => Config::get('APP_URL', 'https://perfilemdia.com.br'),
+            'X-Title' => Config::get('OPENROUTER_APP_TITLE', 'Perfil em Dia'),
+        ];
+        if ($this->openRouterHost($url)) {
+            $key = trim(Config::get('OPENROUTER_API_KEY', ''));
+            if ($key === '') {
+                throw new ImageEditException('OpenRouter key missing');
+            }
+            $headers['Authorization'] = 'Bearer ' . $key;
+        }
         $response = $http->request('GET', $url, [
             'timeout' => 180,
-            'headers' => [
-                'Authorization' => 'Bearer ' . $key,
-                'HTTP-Referer' => Config::get('APP_URL', 'https://perfilemdia.com.br'),
-                'X-Title' => Config::get('OPENROUTER_APP_TITLE', 'Perfil em Dia'),
-            ],
+            'headers' => $headers,
         ]);
         $status = (int) $response['status'];
         $body = $response['body'];
@@ -100,6 +106,26 @@ final class IdeaVideo implements IdeaVideoGenerator
      * @param array<string, mixed>|null $payload
      * @return array<string, mixed>
      */
+    private function allowedDownloadUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+
+        return is_array($parts)
+            && ($parts['scheme'] ?? '') === 'https'
+            && ($parts['host'] ?? '') !== '';
+    }
+
+    private function openRouterHost(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+        $host = strtolower((string) ($parts['host'] ?? ''));
+
+        return $host === 'openrouter.ai' || str_ends_with($host, '.openrouter.ai');
+    }
+
     private function json(string $method, string $url, ?array $payload, int $timeout): array
     {
         Config::load();

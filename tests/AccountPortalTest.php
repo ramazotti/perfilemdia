@@ -114,7 +114,9 @@ final class AccountPortalTest extends TestCase
         $this->assertSame(4900, (int) $done['price_cents']);
         $this->assertSame(40, (int) $done['posts_limit']);
         $this->assertNull($done['next_plan_id']);
-        $paid = $this->pdo->prepare("SELECT amount_cents FROM payments WHERE subscription_id = ? AND status = 'pago' ORDER BY id DESC LIMIT 1");
+        $paid = $this->pdo->prepare(
+            "SELECT amount_cents FROM payments WHERE subscription_id = ? AND checkout_id IS NULL AND status = 'pago' ORDER BY id DESC LIMIT 1"
+        );
         $paid->execute([$subId]);
         $this->assertSame(4900, (int) $paid->fetchColumn());
     }
@@ -178,6 +180,11 @@ final class AccountPortalTest extends TestCase
         ], null);
         $pix = $this->service()->startPix($checkout['public_id']);
         $this->assertTrue($this->service()->confirmExternal('portal', (string) $pix['external_id'], '{}'));
+        $paid = $this->service()->findByPublicId($checkout['public_id']);
+        $this->assertNotNull($paid);
+        $users = new UserRepository($this->pdo, new Crypto(sodium_crypto_secretbox_keygen()));
+        $userId = $users->create(920000 + random_int(1, 99999), 920000, 'portal');
+        $this->assertTrue($this->service()->activate((string) $paid['activation_code'], $userId));
 
         return (int) $checkout['subscription_id'];
     }

@@ -209,6 +209,18 @@ final class ImageEditTest extends TestCase
         unlink($box);
     }
 
+    public function testBubbleHugsTheWords(): void
+    {
+        $path = $this->blankJpeg();
+        PhotoPhrase::draw($path, 'Oi', 'balao', 'preto', 'meio');
+        $image = imagecreatefromjpeg($path);
+        $this->assertNotFalse($image);
+        $edge = imagecolorat($image, 8, (int) (imagesy($image) / 2));
+        $this->assertLessThan(80, ($edge >> 16) & 255);
+        imagedestroy($image);
+        unlink($path);
+    }
+
     public function testBubbleAndBoxSaveTheMatchingColor(): void
     {
         [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('profissional');

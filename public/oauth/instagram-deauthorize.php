@@ -24,6 +24,10 @@ if ($signedRequest === '' || !str_contains($signedRequest, '.')) {
 
 [$encodedSig, $payload] = explode('.', $signedRequest, 2);
 $secret = Config::get('INSTAGRAM_APP_SECRET');
+if ($secret === '') {
+    http_response_code(503);
+    exit;
+}
 $expected = hash_hmac('sha256', $payload, $secret, true);
 $signature = base64UrlDecode($encodedSig);
 

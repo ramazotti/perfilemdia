@@ -10,6 +10,7 @@ use PerfilEmDia\Instagram\InstagramClient;
 use PerfilEmDia\Logger;
 use PerfilEmDia\Messages;
 use PerfilEmDia\Security\Crypto;
+use PerfilEmDia\Security\SecretRedactor;
 use PerfilEmDia\Telegram\Keyboards;
 use PerfilEmDia\Telegram\TelegramClient;
 
@@ -38,7 +39,7 @@ foreach ($users->instagramAccountsExpiringWithinDays(10) as $account) {
     } catch (Throwable $e) {
         Logger::get()->error('Falha ao renovar token Instagram', [
             'user_id' => $userId,
-            'error' => $e->getMessage(),
+            'error' => SecretRedactor::redact($e->getMessage()),
         ]);
         $users->markInstagramStatus($userId, 'expired');
         $user = $users->find($userId);

@@ -143,7 +143,7 @@ final class Messages
 
     public static function askStoryManual(): string
     {
-        return 'Manda o texto que entra na foto do story. Sem hashtag.';
+        return 'Manda o texto que entra na foto do story. Sem hashtag. Cada foto leva até 180 caracteres. Se passar, segue na próxima, em no máximo 3 stories.';
     }
 
     public static function cancelled(): string
@@ -325,6 +325,16 @@ final class Messages
     public static function activationInvalid(): string
     {
         return 'Não encontrei esse código. Confira na página pronta do site e envie de novo, começando com PD.';
+    }
+
+    public static function privateChatOnly(): string
+    {
+        return 'Fale comigo no chat privado. Em grupo eu não consigo guardar sua conta nem mandar links seguros.';
+    }
+
+    public static function audioNeedsPlan(string $plansUrl): string
+    {
+        return 'Áudio na legenda e nos ajustes entra com assinatura ativa. Planos: ' . $plansUrl;
     }
 
     public static function noSubscription(string $plansUrl): string
@@ -772,6 +782,21 @@ final class Messages
     public static function storyNeedsOne(): string
     {
         return 'O story aceita uma foto ou um vídeo. O carrossel continua no feed.';
+    }
+
+    public static function storyPages(int $count): string
+    {
+        return 'Este texto virou ' . $count . ' stories, um depois do outro. Cada foto leva um trecho de até 180 caracteres.';
+    }
+
+    public static function storyNoMark(): string
+    {
+        return 'No story entra só o texto gerado, na foto limpa. A marca d\'água e a frase curta da foto ficam no feed.';
+    }
+
+    public static function surpriseReadyStory(): string
+    {
+        return 'Pronto. O texto do story está na foto, sem marca d\'água. Se não couber em uma, ele segue na próxima, até 3. Nada é publicado antes de você aprovar.';
     }
 
     public static function ideaDailyOn(): string

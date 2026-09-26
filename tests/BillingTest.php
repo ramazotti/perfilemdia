@@ -15,6 +15,8 @@ use PerfilEmDia\Billing\PlanRepository;
 use PerfilEmDia\Billing\Settings;
 use PerfilEmDia\Billing\Trial;
 use PerfilEmDia\Db;
+use PerfilEmDia\Domain\UserRepository;
+use PerfilEmDia\Security\Crypto;
 use PHPUnit\Framework\TestCase;
 
 final class BillingTest extends TestCase
@@ -152,6 +154,7 @@ final class BillingTest extends TestCase
         $this->assertSame(99, (int) $first['amount_cents']);
         $pix = $service->startPix($first['public_id']);
         $this->assertTrue($service->confirmExternal('fake', (string) $pix['external_id'], '{"ok":true}'));
+        $this->linkPaidCustomer($service, $first['public_id']);
         $sub = $this->pdo->query('SELECT period_kind, posts_limit, period_days, current_period_end, price_cents FROM subscriptions ORDER BY id DESC LIMIT 1')->fetch();
         $this->assertSame('teste', $sub['period_kind']);
         $this->assertSame(2, (int) $sub['posts_limit']);
@@ -192,6 +195,7 @@ final class BillingTest extends TestCase
         $this->assertTrue($service->confirmExternal('fake', (string) $pix['external_id'], '{"ok":true}'));
         $paidCheckout = $service->findByPublicId($first['public_id']);
         $this->assertNotNull($paidCheckout);
+        $this->linkPaidCustomer($service, $first['public_id']);
         $subId = (int) $paidCheckout['subscription_id'];
         $this->pdo->prepare(
             "UPDATE subscriptions SET renew_method = 'cartao', renew_token = 'sandbox:1111', current_period_end = ? WHERE id = ?"
@@ -205,8 +209,10 @@ final class BillingTest extends TestCase
         $this->assertSame(16, (int) $row['posts_limit']);
         $this->assertSame('ativa', $row['status']);
         $this->assertGreaterThan(new \DateTimeImmutable('+20 days'), new \DateTimeImmutable((string) $row['current_period_end']));
-        $paid = $this->pdo->prepare('SELECT amount_cents FROM payments WHERE subscription_id = ? AND external_id LIKE ? ORDER BY id DESC LIMIT 1');
-        $paid->execute([$subId, 'card-renew-%']);
+        $paid = $this->pdo->prepare(
+            "SELECT amount_cents FROM payments WHERE subscription_id = ? AND checkout_id IS NULL AND status = 'pago' ORDER BY id DESC LIMIT 1"
+        );
+        $paid->execute([$subId]);
         $this->assertSame(2900, (int) $paid->fetchColumn());
 
         $this->assertSame(0, $service->renewDue());
@@ -227,6 +233,51 @@ final class BillingTest extends TestCase
         $this->assertSame('(44) 99103-5056', Phone::format('44991035056'));
         $this->assertNull(Phone::normalize('(44) 3103-5056'));
         $this->assertNull(Phone::normalize('4499103505'));
+    }
+
+    public function testActivationCodeIsSingleUseAndCannotHijackAnotherUser(): void
+    {
+        $plan = (new PlanRepository($this->pdo))->findBySlug('essencial');
+        $this->assertNotNull($plan);
+        $service = new CheckoutService($this->pdo, new FakeGateway());
+        $document = '529.982.247-25';
+        $checkout = $service->open($plan, 'mensal', [
+            'name' => 'Titular Teste',
+            'email' => 'titular@example.com',
+            'phone' => '11999999999',
+            'document' => $document,
+        ], null);
+        $pix = $service->startPix($checkout['public_id']);
+        $this->assertTrue($service->confirmExternal('fake', (string) $pix['external_id'], '{"ok":true}'));
+        $paid = $service->findByPublicId($checkout['public_id']);
+        $code = (string) $paid['activation_code'];
+        $users = new UserRepository($this->pdo, new Crypto(sodium_crypto_secretbox_keygen()));
+        $ownerId = $users->create(900001, 900001, 'owner');
+        $intruderId = $users->create(900002, 900002, 'intruder');
+        $this->assertTrue($service->activate($code, $ownerId));
+        $this->assertFalse($service->activate($code, $intruderId));
+        $this->assertFalse($service->activate($code, $ownerId));
+
+        $service->open($plan, 'mensal', [
+            'name' => 'Nome Atacante',
+            'email' => 'atacante@example.com',
+            'phone' => '11988887777',
+            'document' => $document,
+        ], null);
+        $customer = $this->pdo->query("SELECT name, email, user_id FROM customers WHERE document = '52998224725'")->fetch();
+        $this->assertSame('Titular Teste', $customer['name']);
+        $this->assertSame('titular@example.com', $customer['email']);
+        $this->assertSame($ownerId, (int) $customer['user_id']);
+    }
+
+    private function linkPaidCustomer(CheckoutService $service, string $publicId): void
+    {
+        $paid = $service->findByPublicId($publicId);
+        $this->assertNotNull($paid);
+        $code = (string) $paid['activation_code'];
+        $users = new UserRepository($this->pdo, new Crypto(sodium_crypto_secretbox_keygen()));
+        $userId = $users->create(880000 + random_int(1, 99999), 880000, 'billing');
+        $this->assertTrue($service->activate($code, $userId));
     }
 
     public function testCouponQuantityExpiryAndMonthlyOnly(): void

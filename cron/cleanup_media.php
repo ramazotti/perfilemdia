@@ -33,9 +33,11 @@ $root = Config::root();
 
 foreach ($rows as $row) {
     $name = (string) $row['public_name'];
-    $path = $root . '/public/m/' . $name . '.jpg';
-    if (is_file($path)) {
-        @unlink($path);
+    foreach (['.jpg', '.mp4'] as $ext) {
+        $path = $root . '/public/m/' . $name . $ext;
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
     $clear->execute([(int) $row['media_id']]);
 }

@@ -37,6 +37,7 @@ use PerfilEmDia\Image\VideoFrame;
 use PerfilEmDia\Instagram\InstagramApiException;
 use PerfilEmDia\Instagram\InstagramClient;
 use PerfilEmDia\Instagram\InstagramPublisherInterface;
+use PerfilEmDia\Instagram\PublishedMedia;
 use PerfilEmDia\Logger;
 use PerfilEmDia\Messages;
 use PerfilEmDia\Telegram\Keyboards;
@@ -705,6 +706,8 @@ class PostService
                 $result->outputTokens,
             );
             if (!$isVideo && (string) ($post['destination'] ?? 'feed') === 'story' && isset($jpegPaths[0])) {
+                $cleanId = (int) ($mediaRows[0]['id'] ?? 0);
+                $this->replaceStoryClean($cleanId, (string) $jpegPaths[0]);
                 $this->paintStoryCaption($user, $postId, (string) $jpegPaths[0], $result->caption);
             }
 
@@ -887,7 +890,8 @@ class PostService
             }
             $chatId = (int) $user['telegram_chat_id'];
             $postId = (int) $post['id'];
-            $this->publish($user, $chatId, $post);
+            $destination = (string) ($post['destination'] ?? 'feed') === 'story' ? 'story' : 'feed';
+            $this->publish($user, $chatId, $post, $destination);
             $fresh = $this->posts->find($postId);
             if ($fresh !== null && (string) $fresh['status'] === PostStatus::Scheduled->value) {
                 $this->posts->transition($postId, PostStatus::Scheduled, PostStatus::AwaitingApproval);
@@ -1124,6 +1128,11 @@ class PostService
 
             return;
         }
+        if ((string) ($post['destination'] ?? 'feed') === 'story') {
+            $this->channel->sendText($chatId, Messages::storyNoMark());
+
+            return;
+        }
         if (!$this->photoEditAllowed((int) $user['id'])) {
             $this->channel->sendText($chatId, Messages::markPlan());
 
@@ -1287,6 +1296,22 @@ class PostService
      */
     private function refreshPhrasePreview(array $user, int $chatId, array $post): bool
     {
+        if ((string) ($post['destination'] ?? 'feed') === 'story') {
+            $caption = trim((string) ($post['caption'] ?? ''));
+            if ($caption === '') {
+                return false;
+            }
+            $media = $this->posts->media((int) $post['id']);
+            $first = $media[0] ?? null;
+            $jpeg = is_array($first) && !empty($first['public_name'])
+                ? Config::root() . '/public/m/' . $first['public_name'] . '.jpg'
+                : '';
+            $this->paintStoryCaption($user, (int) $post['id'], $jpeg, $caption);
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+            $this->sendPreview($user, $chatId, (int) $post['id']);
+
+            return true;
+        }
         $phrase = trim((string) ($post['photo_phrase'] ?? ''));
         if ($phrase === '') {
             return false;
@@ -1320,19 +1345,109 @@ class PostService
     private function paintStoryCaption(array $user, int $postId, string $jpeg, string $caption): void
     {
         $parts = StoryScript::parts($caption, (string) ($user['contact_cta'] ?? ''));
-        $text = $parts[0] ?? '';
-        if ($text === '' || !is_file($jpeg)) {
+        if ($parts === []) {
             return;
         }
         $media = $this->posts->media($postId);
         $first = $media[0] ?? null;
-        if (!is_array($first)) {
+        if (!is_array($first) || ($first['kind'] ?? 'image') === 'video') {
             return;
         }
-        $this->rememberPhraseBase((int) $first['id'], $jpeg);
+        $clean = $this->ensureStoryClean((int) $first['id'], $first, $jpeg);
+        if (!is_file($clean)) {
+            return;
+        }
+        $this->dropStoryPages($postId);
+        $publicDir = Config::root() . '/public/m';
+        if (!is_dir($publicDir) && !mkdir($publicDir, 0775, true) && !is_dir($publicDir)) {
+            return;
+        }
         $post = $this->posts->find($postId) ?? ['destination' => 'story'];
-        $this->drawPhrase($user, $post, $jpeg, $text);
-        $this->posts->update($postId, ['photo_phrase' => $text]);
+        $oldName = (string) ($first['public_name'] ?? '');
+        $oldPath = $oldName !== '' ? $publicDir . '/' . $oldName . '.jpg' : '';
+        $firstName = '';
+        foreach ($parts as $index => $text) {
+            $name = bin2hex(random_bytes(20));
+            $dest = $publicDir . '/' . $name . '.jpg';
+            if (!copy($clean, $dest)) {
+                continue;
+            }
+            $this->drawPhrase($user, $post, $dest, $text);
+            $info = @getimagesize($dest);
+            $fields = ['public_name' => $name];
+            if (is_array($info)) {
+                $fields['width'] = (int) $info[0];
+                $fields['height'] = (int) $info[1];
+            }
+            if ($index === 0) {
+                $this->posts->updateMedia((int) $first['id'], $fields);
+                $firstName = $name;
+                continue;
+            }
+            $pageId = $this->posts->addMedia($postId, $index, 'storypage', 0);
+            $this->posts->updateMedia($pageId, $fields);
+        }
+        if ($oldPath !== '' && $firstName !== '' && $oldName !== $firstName && is_file($oldPath) && $oldPath !== $clean) {
+            unlink($oldPath);
+        }
+        $this->posts->update($postId, [
+            'photo_phrase' => $parts[0],
+            'story_sent' => 0,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function ensureStoryClean(int $mediaId, array $row, string $fallback): string
+    {
+        $clean = $this->storyCleanPath($mediaId);
+        if (is_file($clean)) {
+            return $clean;
+        }
+        $original = (string) ($row['original_path'] ?? '');
+        $source = $original !== '' && is_file($original) ? $original : $fallback;
+        $this->replaceStoryClean($mediaId, $source);
+
+        return $this->storyCleanPath($mediaId);
+    }
+
+    private function storyCleanPath(int $mediaId): string
+    {
+        return Config::root() . '/storage/media/storyclean_' . $mediaId . '.jpg';
+    }
+
+    private function replaceStoryClean(int $mediaId, string $source): void
+    {
+        if ($mediaId <= 0 || !is_file($source)) {
+            return;
+        }
+        $dest = $this->storyCleanPath($mediaId);
+        $dir = dirname($dest);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return;
+        }
+        if ($source !== $dest) {
+            copy($source, $dest);
+        }
+    }
+
+    private function dropStoryPages(int $postId): void
+    {
+        $publicDir = Config::root() . '/public/m';
+        foreach ($this->posts->media($postId) as $row) {
+            if ((string) ($row['telegram_file_id'] ?? '') !== 'storypage') {
+                continue;
+            }
+            $name = (string) ($row['public_name'] ?? '');
+            if ($name !== '') {
+                $path = $publicDir . '/' . $name . '.jpg';
+                if (is_file($path)) {
+                    unlink($path);
+                }
+            }
+            $this->posts->deleteMedia((int) $row['id']);
+        }
     }
 
     /**
@@ -1491,6 +1606,11 @@ class PostService
      */
     private function applyMark(array $user, int $chatId, array $post, string $logo, string $place, bool $plate = false): void
     {
+        if ((string) ($post['destination'] ?? 'feed') === 'story') {
+            $this->channel->sendText($chatId, Messages::storyNoMark());
+
+            return;
+        }
         $postId = (int) $post['id'];
         $publicDir = Config::root() . '/public/m';
         $stamped = false;
@@ -1575,9 +1695,25 @@ class PostService
                 return;
             }
             $fresh = $this->posts->find($postId);
-            if (is_array($fresh)) {
-                $this->applyPhrase($user, $chatId, $fresh, $request->phrase);
+            if (!is_array($fresh)) {
+                return;
             }
+            if ((string) ($fresh['destination'] ?? 'feed') === 'story') {
+                $this->posts->update($postId, [
+                    'caption' => $request->phrase,
+                    'caption_version' => ((int) ($fresh['caption_version'] ?? 0)) + 1,
+                ]);
+                $rows = $this->posts->media($postId);
+                $row = $rows[0] ?? null;
+                $jpeg = is_array($row) && !empty($row['public_name'])
+                    ? Config::root() . '/public/m/' . $row['public_name'] . '.jpg'
+                    : '';
+                $this->paintStoryCaption($user, $postId, $jpeg, $request->phrase);
+                $this->sendPreview($user, $chatId, $postId);
+
+                return;
+            }
+            $this->applyPhrase($user, $chatId, $fresh, $request->phrase);
 
             return;
         }
@@ -1595,8 +1731,13 @@ class PostService
             $current = Config::root() . '/public/m/' . $first['public_name'] . '.jpg';
             $base = $this->phraseBasePath((int) $first['id']);
             $source = is_file($base) ? $base : $current;
+            $isStory = (string) ($post['destination'] ?? 'feed') === 'story';
+            $cleanNow = $this->storyCleanPath((int) $first['id']);
+            if ($isStory && is_file($cleanNow)) {
+                $source = $cleanNow;
+            }
             if ($request->treatment !== '') {
-                $binary = $this->editor()->edit($current, $request->treatment);
+                $binary = $this->editor()->edit($isStory && is_file($cleanNow) ? $cleanNow : $current, $request->treatment);
                 $temp = tempnam(sys_get_temp_dir(), 'pd');
                 if ($temp === false) {
                     throw new ImageEditException('Cannot store edited photo');
@@ -1609,6 +1750,30 @@ class PostService
             $image = $normalized[0] ?? null;
             if ($image === null) {
                 throw new ImageEditException('Normalizer returned no photo');
+            }
+            if ($isStory) {
+                $this->replaceStoryClean((int) $first['id'], $image->absolutePath);
+                $this->freezeEditedPhoto($first, $this->storyCleanPath((int) $first['id']));
+                $this->posts->update($postId, [
+                    'image_edit_count' => ((int) ($post['image_edit_count'] ?? 0)) + 1,
+                ]);
+                if (!$this->returnToMenu($postId, PostStatus::ImageEditing)) {
+                    return;
+                }
+                $this->posts->recordEvent((int) $user['id'], $postId, 'photo_edit', [
+                    'phrase' => false,
+                    'treatment' => $request->treatment !== '',
+                ]);
+                $fresh = $this->posts->find($postId) ?? $post;
+                $this->paintStoryCaption($user, $postId, $image->absolutePath, (string) ($fresh['caption'] ?? ''));
+                $normalizedPath = $image->absolutePath;
+                $cleanPath = $this->storyCleanPath((int) $first['id']);
+                if ($normalizedPath !== $cleanPath && is_file($normalizedPath)) {
+                    unlink($normalizedPath);
+                }
+                $this->sendPreview($user, $chatId, $postId);
+
+                return;
             }
             $this->rememberPhraseBase((int) $first['id'], $image->absolutePath);
             if ($request->phrase !== null) {
@@ -1842,8 +2007,34 @@ class PostService
         }
         $previewId = $isVideo
             ? $this->channel->sendVideo($chatId, $path, $caption, $buttons)
-            : $this->channel->sendPhoto($chatId, $path, $caption, $buttons);
+            : ($isStory && count($media) > 1
+                ? $this->sendStoryPages($chatId, $media, $caption, $buttons)
+                : $this->channel->sendPhoto($chatId, $path, $caption, $buttons));
         $this->posts->update($postId, ['preview_message_id' => $previewId]);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $media
+     * @param list<list<array{text:string, callback_data?:string, url?:string}>> $buttons
+     */
+    private function sendStoryPages(int $chatId, array $media, string $caption, array $buttons): int
+    {
+        $paths = [];
+        foreach ($media as $row) {
+            if (($row['kind'] ?? 'image') === 'video' || empty($row['public_name'])) {
+                continue;
+            }
+            $file = Config::root() . '/public/m/' . $row['public_name'] . '.jpg';
+            if (is_file($file)) {
+                $paths[] = $file;
+            }
+        }
+        if (count($paths) > 1) {
+            $this->channel->sendAlbum($chatId, $paths);
+        }
+        $note = Messages::storyPages(max(1, count($paths)));
+
+        return $this->channel->sendText($chatId, $caption === '' ? $note : $note . "\n\n" . $caption, $buttons);
     }
 
     /**
@@ -1874,7 +2065,7 @@ class PostService
         return [
             'allowRegen' => $allowRegen,
             'allowPhoto' => $allowTreat,
-            'allowMark' => $canPhoto,
+            'allowMark' => $canPhoto && (string) ($post['destination'] ?? 'feed') !== 'story',
             'allowIdea' => $allowIdea,
             'allowPhrase' => $canPhoto && (string) ($post['destination'] ?? 'feed') !== 'story',
             'storyLook' => (string) ($post['destination'] ?? 'feed') === 'story',
@@ -2090,7 +2281,7 @@ class PostService
     private function publish(array $user, int $chatId, array $post, string $destination = 'feed'): void
     {
         $destination = $destination === 'story' ? 'story' : 'feed';
-        if ($destination === 'story' && !BenefitOrchestrator::storyFits(count($this->posts->media((int) $post['id'])))) {
+        if ($destination === 'story' && !$this->storyMediaReady((int) $post['id'])) {
             $this->channel->sendText($chatId, Messages::storyNeedsOne());
 
             return;
@@ -2130,6 +2321,80 @@ class PostService
         }
         $this->channel->sendText($chatId, Messages::publishing());
         $this->finishPublish($user, $chatId, $postId, $previewId);
+    }
+
+    private function storyMediaReady(int $postId): bool
+    {
+        $images = 0;
+        $videos = 0;
+        foreach ($this->posts->media($postId) as $row) {
+            if (empty($row['public_name']) && ($row['kind'] ?? 'image') !== 'video') {
+                continue;
+            }
+            if (($row['kind'] ?? 'image') === 'video') {
+                $videos++;
+                continue;
+            }
+            $images++;
+        }
+
+        return ($videos === 1 && $images === 0) || ($videos === 0 && $images >= 1 && $images <= 3);
+    }
+
+    /**
+     * @param array<string, mixed> $ig
+     * @param list<string> $urls
+     */
+    private function publishStorySet(array $ig, int $postId, array $urls, bool $video, int $alreadySent): PublishedMedia
+    {
+        if ($alreadySent >= count($urls) && $urls !== []) {
+            $current = $this->posts->find($postId) ?? [];
+
+            return new PublishedMedia(
+                (string) ($current['ig_container_id'] ?? ''),
+                (string) ($current['ig_media_id'] ?? ''),
+                (string) ($current['ig_permalink'] ?? ''),
+            );
+        }
+        $last = null;
+        foreach ($urls as $index => $url) {
+            if ($index < $alreadySent || $url === '') {
+                continue;
+            }
+            $last = $this->publisher->publishStory(
+                (string) $ig['ig_user_id'],
+                (string) $ig['access_token'],
+                $url,
+                $video && count($urls) === 1,
+                null,
+                null,
+                function (string $field, string $value) use ($postId): void {
+                    if ($field === 'container') {
+                        $this->posts->update($postId, ['ig_container_id' => $value]);
+                    }
+                    if ($field === 'media') {
+                        $this->posts->update($postId, ['ig_media_id' => $value]);
+                    }
+                },
+            );
+            $this->posts->update($postId, [
+                'story_sent' => $index + 1,
+                'ig_container_id' => $last->containerId,
+                'ig_media_id' => $last->mediaId,
+                'ig_permalink' => $last->permalink,
+            ]);
+        }
+        if ($last === null) {
+            $current = $this->posts->find($postId) ?? [];
+
+            return new PublishedMedia(
+                (string) ($current['ig_container_id'] ?? ''),
+                (string) ($current['ig_media_id'] ?? ''),
+                (string) ($current['ig_permalink'] ?? ''),
+            );
+        }
+
+        return $last;
     }
 
     /**
@@ -2173,24 +2438,9 @@ class PostService
             $mediaId = trim((string) ($current['ig_media_id'] ?? ''));
             try {
                 $caption = $this->captionText((string) ($current['caption'] ?? ''));
-                $asStory = (string) ($current['destination'] ?? 'feed') === 'story' && count($urls) === 1;
+                $asStory = (string) ($current['destination'] ?? 'feed') === 'story';
                 $published = $asStory
-                    ? $this->publisher->publishStory(
-                        (string) $ig['ig_user_id'],
-                        (string) $ig['access_token'],
-                        $urls[0] ?? '',
-                        $isVideo,
-                        $containerId !== '' ? $containerId : null,
-                        $mediaId !== '' ? $mediaId : null,
-                        function (string $field, string $value) use ($postId): void {
-                            if ($field === 'container') {
-                                $this->posts->update($postId, ['ig_container_id' => $value]);
-                            }
-                            if ($field === 'media') {
-                                $this->posts->update($postId, ['ig_media_id' => $value]);
-                            }
-                        },
-                    )
+                    ? $this->publishStorySet($ig, $postId, $urls, $isVideo, (int) ($current['story_sent'] ?? 0))
                     : ($isVideo
                     ? $this->publisher->publishReel(
                         (string) $ig['ig_user_id'],
@@ -3020,6 +3270,12 @@ class PostService
             return;
         }
         $marked = false;
+        if ((string) ($post['destination'] ?? 'feed') === 'story') {
+            $this->sendPreview($user, $chatId, $postId);
+            $this->channel->sendText($chatId, Messages::surpriseReadyStory());
+
+            return;
+        }
         if ($this->photoEditAllowed((int) $user['id'])) {
             $marked = $this->applySurpriseDress($user, $postId, $phrase);
         }

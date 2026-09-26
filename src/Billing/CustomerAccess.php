@@ -61,7 +61,9 @@ final class CustomerAccess
         if ((string) $row['expires_at'] < (new DateTimeImmutable('now'))->format('Y-m-d H:i:s')) {
             return null;
         }
+        $customerId = (int) $row['customer_id'];
+        $this->pdo->prepare('DELETE FROM customer_access_tokens WHERE token_hash = ?')->execute([hash('sha256', $token)]);
 
-        return (int) $row['customer_id'];
+        return $customerId;
     }
 }

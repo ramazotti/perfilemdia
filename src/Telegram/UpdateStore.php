@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PerfilEmDia\Telegram;
 
+use PerfilEmDia\Security\SecretRedactor;
 use PDO;
 use PDOException;
 
@@ -58,7 +59,7 @@ final class UpdateStore
              SET attempts = attempts + 1, last_error = ?
              WHERE update_id = ?'
         );
-        $stmt->execute([mb_substr($error, 0, 65000), $updateId]);
+        $stmt->execute([mb_substr(SecretRedactor::redact($error), 0, 65000), $updateId]);
     }
 
     /**

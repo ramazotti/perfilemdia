@@ -225,37 +225,64 @@ final class CheckoutService
 
     public function confirmExternal(string $gateway, string $externalId, string $rawPayload): bool
     {
-        $insert = $this->pdo->prepare(
-            'INSERT INTO gateway_webhooks (gateway, external_id, payload, created_at) VALUES (?, ?, ?, NOW())'
-        );
+        $own = !$this->pdo->inTransaction();
+        if ($own) {
+            $this->pdo->beginTransaction();
+        }
         try {
-            $insert->execute([$gateway, $externalId, $rawPayload]);
-        } catch (\PDOException) {
-            return false;
-        }
-        $pay = $this->pdo->prepare('SELECT * FROM payments WHERE gateway = ? AND external_id = ? LIMIT 1');
-        $pay->execute([$gateway, $externalId]);
-        $payment = $pay->fetch();
-        if ($payment === false || $payment['checkout_id'] === null) {
-            return true;
-        }
-        if ($payment['status'] === 'pago') {
+            $insert = $this->pdo->prepare(
+                'INSERT INTO gateway_webhooks (gateway, external_id, payload, created_at) VALUES (?, ?, ?, NOW())'
+            );
+            try {
+                $insert->execute([$gateway, $externalId, $rawPayload]);
+            } catch (\PDOException) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return false;
+            }
+            $pay = $this->pdo->prepare(
+                'SELECT * FROM payments WHERE gateway = ? AND external_id = ? LIMIT 1 FOR UPDATE'
+            );
+            $pay->execute([$gateway, $externalId]);
+            $payment = $pay->fetch();
+            if ($payment === false || $payment['checkout_id'] === null) {
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return true;
+            }
+            if ($payment['status'] === 'pago') {
+                $this->armAppMaxFromPayment($payment);
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return true;
+            }
+            $this->pdo->prepare("UPDATE payments SET status = 'pago' WHERE id = ? AND status <> 'pago'")->execute([(int) $payment['id']]);
+            $this->markPaid((int) $payment['checkout_id'], (string) $payment['method'], $externalId, $payment['brand'], $payment['last4'], (int) $payment['id']);
+            $this->rememberRenewal(
+                (int) $payment['subscription_id'],
+                (string) $payment['method'],
+                null,
+                $payment['brand'] !== null ? (string) $payment['brand'] : null,
+                $payment['last4'] !== null ? (string) $payment['last4'] : null,
+            );
             $this->armAppMaxFromPayment($payment);
+            if ($own) {
+                $this->pdo->commit();
+            }
 
             return true;
+        } catch (\Throwable $e) {
+            if ($own && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
         }
-        $this->pdo->prepare("UPDATE payments SET status = 'pago' WHERE id = ?")->execute([(int) $payment['id']]);
-        $this->markPaid((int) $payment['checkout_id'], (string) $payment['method'], $externalId, $payment['brand'], $payment['last4'], (int) $payment['id']);
-        $this->rememberRenewal(
-            (int) $payment['subscription_id'],
-            (string) $payment['method'],
-            null,
-            $payment['brand'] !== null ? (string) $payment['brand'] : null,
-            $payment['last4'] !== null ? (string) $payment['last4'] : null,
-        );
-        $this->armAppMaxFromPayment($payment);
-
-        return true;
     }
 
     public function renewDue(): int
@@ -265,7 +292,9 @@ final class CheckoutService
             "SELECT s.*, p.posts_limit AS plan_posts
              FROM subscriptions s
              INNER JOIN plans p ON p.id = s.plan_id
-             WHERE s.status = 'ativa' AND s.current_period_end IS NOT NULL AND s.current_period_end <= ?"
+             INNER JOIN customers cu ON cu.id = s.customer_id
+             WHERE s.status = 'ativa' AND s.current_period_end IS NOT NULL AND s.current_period_end <= ?
+               AND cu.status = 'ativo' AND cu.user_id IS NOT NULL"
         );
         $stmt->execute([$now]);
         $renewed = 0;
@@ -281,19 +310,72 @@ final class CheckoutService
     public function activate(string $code, int $userId): bool
     {
         $code = strtoupper(trim($code));
-        $stmt = $this->pdo->prepare(
-            "SELECT c.* FROM checkouts c WHERE c.activation_code = ? AND c.status = 'pago' LIMIT 1"
-        );
-        $stmt->execute([$code]);
-        $checkout = $stmt->fetch();
-        if ($checkout === false) {
+        if ($code === '') {
             return false;
         }
-        $this->pdo->prepare(
-            "UPDATE customers SET user_id = ?, status = 'ativo', updated_at = NOW() WHERE id = ? AND status <> 'excluido'"
-        )->execute([$userId, (int) $checkout['customer_id']]);
+        $own = !$this->pdo->inTransaction();
+        if ($own) {
+            $this->pdo->beginTransaction();
+        }
+        try {
+            $stmt = $this->pdo->prepare(
+                "SELECT c.id, c.customer_id, cu.user_id AS customer_user_id, cu.status AS customer_status
+                 FROM checkouts c
+                 INNER JOIN customers cu ON cu.id = c.customer_id
+                 WHERE c.activation_code = ? AND c.status = 'pago'
+                 FOR UPDATE"
+            );
+            $stmt->execute([$code]);
+            $checkout = $stmt->fetch();
+            if ($checkout === false) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
 
-        return true;
+                return false;
+            }
+            $linked = $checkout['customer_user_id'];
+            if ($linked !== null && (int) $linked !== $userId && (string) $checkout['customer_status'] === 'ativo') {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return false;
+            }
+            $spent = $this->pdo->prepare(
+                "UPDATE checkouts SET activation_code = NULL WHERE id = ? AND activation_code = ?"
+            );
+            $spent->execute([(int) $checkout['id'], $code]);
+            if ($spent->rowCount() !== 1) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return false;
+            }
+            $link = $this->pdo->prepare(
+                "UPDATE customers SET user_id = ?, status = 'ativo', updated_at = NOW()
+                 WHERE id = ? AND status <> 'excluido' AND (user_id IS NULL OR user_id = ?)"
+            );
+            $link->execute([$userId, (int) $checkout['customer_id'], $userId]);
+            if ($link->rowCount() !== 1) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return false;
+            }
+            if ($own) {
+                $this->pdo->commit();
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            if ($own && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -369,6 +451,35 @@ final class CheckoutService
         }
     }
 
+    private function claimRenewal(int $subscriptionId, int $amountCents, string $reference): ?int
+    {
+        $existing = $this->pdo->prepare(
+            'SELECT id, status FROM payments WHERE gateway = ? AND external_id = ? LIMIT 1'
+        );
+        $existing->execute([$this->gateway->name(), $reference]);
+        $row = $existing->fetch();
+        if ($row !== false) {
+            return null;
+        }
+        try {
+            $this->pdo->prepare(
+                "INSERT INTO payments (checkout_id, subscription_id, method, status, amount_cents, gateway, external_id, created_at)
+                 VALUES (NULL, ?, 'cartao', 'pendente', ?, ?, ?, NOW())"
+            )->execute([$subscriptionId, $amountCents, $this->gateway->name(), $reference]);
+
+            return (int) $this->pdo->lastInsertId();
+        } catch (\PDOException) {
+            return null;
+        }
+    }
+
+    private function releaseRenewalClaim(int $paymentId): void
+    {
+        $this->pdo->prepare(
+            "DELETE FROM payments WHERE id = ? AND status = 'pendente' AND checkout_id IS NULL"
+        )->execute([$paymentId]);
+    }
+
     /**
      * @param array<string, mixed> $subscription
      */
@@ -400,9 +511,14 @@ final class CheckoutService
         $cycle = (string) $subscription['cycle'];
         $amount = $cycle === 'anual' ? (int) $subscription['price_cents'] * 10 : (int) $subscription['price_cents'];
         $reference = 'renew-' . $id . '-' . str_replace([' ', ':'], '', (string) $subscription['current_period_end']);
+        $claimId = $this->claimRenewal($id, $amount, $reference);
+        if ($claimId === null) {
+            return false;
+        }
         try {
             $result = $this->chargeRenewal($subscription, $amount, $reference);
         } catch (PaymentRefused) {
+            $this->releaseRenewalClaim($claimId);
             $this->pdo->prepare(
                 "UPDATE subscriptions SET status = 'inadimplente', updated_at = NOW() WHERE id = ? AND status = 'ativa'"
             )->execute([$id]);
@@ -413,9 +529,20 @@ final class CheckoutService
             return false;
         }
         if (($result['status'] ?? '') === 'sincronizado') {
-            return $this->syncRenewedPeriod($subscription, (string) ($result['period_end'] ?? ''));
+            $ok = $this->syncRenewedPeriod($subscription, (string) ($result['period_end'] ?? ''));
+            if ($ok) {
+                $this->pdo->prepare(
+                    "UPDATE payments SET status = 'pago', external_id = ? WHERE id = ? AND status = 'pendente' AND checkout_id IS NULL"
+                )->execute([(string) ($result['external_id'] ?? $reference), $claimId]);
+            } else {
+                $this->releaseRenewalClaim($claimId);
+            }
+
+            return $ok;
         }
         if (($result['status'] ?? '') !== 'pago') {
+            $this->releaseRenewalClaim($claimId);
+
             return false;
         }
         if (isset($result['amount_cents'])) {
@@ -433,19 +560,19 @@ final class CheckoutService
         );
         $updated->execute([$posts, $start, $end, $id, $periodEnd]);
         if ($updated->rowCount() !== 1) {
+            $this->releaseRenewalClaim($claimId);
+
             return false;
         }
         $this->pdo->prepare(
-            'INSERT INTO payments (checkout_id, subscription_id, method, status, amount_cents, gateway, external_id, brand, last4, created_at)
-             VALUES (NULL, ?, ?, \'pago\', ?, ?, ?, ?, ?, NOW())'
+            "UPDATE payments SET status = 'pago', amount_cents = ?, external_id = ?, brand = ?, last4 = ?
+             WHERE id = ? AND status = 'pendente' AND checkout_id IS NULL"
         )->execute([
-            $id,
-            (string) ($subscription['renew_method'] ?: 'pix'),
             $amount,
-            $this->gateway->name(),
             (string) $result['external_id'],
             $subscription['renew_brand'],
             $subscription['renew_last4'],
+            $claimId,
         ]);
         $this->pdo->prepare(
             "UPDATE customers SET status = 'ativo', updated_at = NOW() WHERE id = ? AND status = 'inadimplente'"
@@ -697,12 +824,15 @@ final class CheckoutService
 
     private function upsertCustomer(string $name, string $email, string $phone, string $document, string $type, string $now): int
     {
-        $find = $this->pdo->prepare('SELECT id, status FROM customers WHERE document = ? LIMIT 1');
+        $find = $this->pdo->prepare('SELECT id, status, user_id FROM customers WHERE document = ? LIMIT 1');
         $find->execute([$document]);
         $row = $find->fetch();
         if ($row !== false && $row['status'] !== 'excluido') {
+            if ($row['user_id'] !== null && (int) $row['user_id'] > 0) {
+                return (int) $row['id'];
+            }
             $this->pdo->prepare(
-                'UPDATE customers SET name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?'
+                'UPDATE customers SET name = ?, email = ?, phone = ?, updated_at = ? WHERE id = ? AND user_id IS NULL'
             )->execute([$name, $email, $phone, $now, (int) $row['id']]);
 
             return (int) $row['id'];
@@ -1069,7 +1199,8 @@ final class CheckoutService
     private function closeSubscription(int $subscriptionId, int $customerId): void
     {
         $this->pdo->prepare(
-            "UPDATE subscriptions SET status = 'cancelada', cancel_at = NULL, updated_at = NOW() WHERE id = ? AND status IN ('ativa', 'inadimplente')"
+            "UPDATE subscriptions SET status = 'cancelada', cancel_at = NULL, renew_token = NULL, gateway_subscription_id = NULL, updated_at = NOW()
+             WHERE id = ? AND status IN ('ativa', 'inadimplente')"
         )->execute([$subscriptionId]);
         $this->pdo->prepare(
             "UPDATE customers SET status = 'cancelado', updated_at = NOW() WHERE id = ? AND status IN ('ativo', 'inadimplente')"

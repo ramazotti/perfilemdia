@@ -133,7 +133,7 @@ final class AppMaxGateway implements PaymentGateway
         if ($status === '') {
             $status = $this->orderStatus($orderId);
         }
-        if ($status !== '' && !$this->isPaidStatus($status)) {
+        if ($status === '' || !$this->isPaidStatus($status)) {
             throw new PaymentRefused('O banco recusou este cartão.');
         }
         $brand = $this->pick($body, ['data.card.brand', 'data.payment.credit_card.brand', 'data.brand']);
@@ -194,7 +194,7 @@ final class AppMaxGateway implements PaymentGateway
         if ($status === '') {
             $status = $this->orderStatus($orderId);
         }
-        if ($status !== '' && !$this->isPaidStatus($status)) {
+        if ($status === '' || !$this->isPaidStatus($status)) {
             throw new PaymentRefused('O banco recusou a renovação.');
         }
 

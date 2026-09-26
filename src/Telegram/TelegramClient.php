@@ -6,6 +6,7 @@ namespace PerfilEmDia\Telegram;
 
 use CURLFile;
 use PerfilEmDia\Config;
+use PerfilEmDia\Security\SecretRedactor;
 use PerfilEmDia\Support\GuzzleHttpPoster;
 use PerfilEmDia\Support\HttpPoster;
 use RuntimeException;
@@ -71,7 +72,7 @@ final class TelegramClient
             throw new RuntimeException('Resposta invalida do Telegram em ' . $method);
         }
         if (($body['ok'] ?? false) !== true) {
-            $description = (string) ($body['description'] ?? 'erro desconhecido');
+            $description = SecretRedactor::redact((string) ($body['description'] ?? 'erro desconhecido'));
             throw new RuntimeException('Telegram ' . $method . ' falhou: ' . $description);
         }
 

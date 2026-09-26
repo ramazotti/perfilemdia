@@ -8,6 +8,7 @@ use PerfilEmDia\Ai\OpenRouterSpeechTranscriber;
 use PerfilEmDia\Ai\SpeechTranscriber;
 use PerfilEmDia\Billing\CheckoutService;
 use PerfilEmDia\Billing\CustomerAccess;
+use PerfilEmDia\Billing\PlanAccess;
 use PerfilEmDia\Db;
 use PerfilEmDia\Channel\ChannelInterface;
 use PerfilEmDia\Config;
@@ -18,6 +19,7 @@ use PerfilEmDia\Domain\TicketService;
 use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Logger;
 use PerfilEmDia\Messages;
+use PerfilEmDia\Security\SecretRedactor;
 
 final class UpdateHandler
 {
@@ -65,6 +67,15 @@ final class UpdateHandler
         }
 
         $username = isset($from['username']) ? (string) $from['username'] : null;
+        $text = isset($message['text']) ? (string) $message['text'] : '';
+        $private = (string) ($chat['type'] ?? 'private') === 'private';
+        if (!$private) {
+            if ($text !== '' && str_starts_with($text, '/')) {
+                $this->channel->sendText($chatId, Messages::privateChatOnly());
+            }
+
+            return;
+        }
         $user = $this->users->findByTelegramId($telegramUserId);
         if ($user === null) {
             $id = $this->users->create($telegramUserId, $chatId, $username);
@@ -80,7 +91,6 @@ final class UpdateHandler
             $user = $this->users->find((int) $user['id']) ?? $user;
         }
 
-        $text = isset($message['text']) ? (string) $message['text'] : '';
         if ($text !== '' && str_starts_with($text, '/')) {
             $this->handleCommand($user, $chatId, $text);
 
@@ -93,7 +103,7 @@ final class UpdateHandler
             return;
         }
 
-        $spoken = $this->spokenText($chatId, $message);
+        $spoken = $this->spokenText($chatId, $message, $user);
         if ($spoken !== null) {
             if ($spoken === '') {
                 return;
@@ -266,7 +276,13 @@ final class UpdateHandler
             return;
         }
         $telegramUserId = (int) ($from['id'] ?? 0);
+        $chatType = is_array($message) ? (string) ($message['chat']['type'] ?? 'private') : 'private';
         $chatId = is_array($message) ? (int) ($message['chat']['id'] ?? 0) : 0;
+        if ($chatType !== 'private') {
+            $this->channel->answerCallback($callbackId);
+
+            return;
+        }
         if ($chatId === 0 && isset($callback['message']) && is_array($callback['message'])) {
             $chatId = (int) ($callback['message']['chat']['id'] ?? 0);
         }
@@ -488,6 +504,22 @@ final class UpdateHandler
     /**
      * @param array<string, mixed> $user
      */
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function audioAllowed(array $user): bool
+    {
+        if ((string) ($user['onboarding_step'] ?? '') !== 'done') {
+            return true;
+        }
+        $window = (new PlanAccess(Db::pdo()))->window((int) $user['id']);
+        if ($window === null) {
+            return false;
+        }
+
+        return ($window['scope'] ?? '') !== 'encerrado';
+    }
+
     private function leaveTicketDraft(array &$user): void
     {
         if (!$this->inTicketDraft($user)) {
@@ -503,11 +535,17 @@ final class UpdateHandler
     /**
      * @param array<string, mixed> $message
      */
-    private function spokenText(int $chatId, array $message): ?string
+    private function spokenText(int $chatId, array $message, array $user): ?string
     {
         $speech = SpeechMessage::from($message);
         if ($speech === null) {
             return null;
+        }
+        if (!$this->audioAllowed($user)) {
+            $url = rtrim(Config::get('APP_URL', 'https://perfilemdia.com.br'), '/') . '/planos';
+            $this->channel->sendText($chatId, Messages::audioNeedsPlan($url));
+
+            return '';
         }
         if (SpeechMessage::tooLong($speech)) {
             $this->channel->sendText($chatId, Messages::audioTooLong());
@@ -545,7 +583,7 @@ final class UpdateHandler
             }
             $text = trim(strip_tags(($this->speech ?? new OpenRouterSpeechTranscriber())->transcribe($bytes, $speech['format'])));
         } catch (\Throwable $e) {
-            Logger::get()->error('Transcricao falhou', ['error' => $e->getMessage()]);
+            Logger::get()->error('Transcricao falhou', ['error' => SecretRedactor::redact($e->getMessage())]);
             $this->channel->sendText($chatId, Messages::audioFailed());
 
             return '';

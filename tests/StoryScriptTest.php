@@ -19,5 +19,11 @@ final class StoryScriptTest extends TestCase
         foreach ($parts as $part) {
             $this->assertLessThanOrEqual(180, mb_strlen($part));
         }
+
+        $long = StoryScript::parts(str_repeat('palavra ', 200));
+        $this->assertCount(3, $long);
+        foreach ($long as $part) {
+            $this->assertLessThanOrEqual(180, mb_strlen($part));
+        }
     }
 }

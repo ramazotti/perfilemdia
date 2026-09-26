@@ -38,14 +38,11 @@ final class SandboxGateway implements PaymentGateway
 
     public static function enabled(): bool
     {
-        $gateway = strtolower(Config::get('PAYMENT_GATEWAY', 'sandbox'));
-        if ($gateway === 'appmax') {
-            return !AppMaxGateway::configured();
-        }
-        if ($gateway === 'sandbox') {
-            return true;
+        $env = strtolower(Config::get('APP_ENV', 'production'));
+        if (!in_array($env, ['local', 'development', 'dev'], true)) {
+            return false;
         }
 
-        return Config::get('PAYMENT_API_KEY', '') === '';
+        return strtolower(Config::get('PAYMENT_GATEWAY', 'sandbox')) === 'sandbox';
     }
 }

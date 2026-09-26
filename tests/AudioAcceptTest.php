@@ -8,6 +8,8 @@ use PerfilEmDia\Ai\CaptionGeneratorInterface;
 use PerfilEmDia\Ai\CaptionResult;
 use PerfilEmDia\Ai\OpenRouterSpeechTranscriber;
 use PerfilEmDia\Ai\SpeechTranscriber;
+use PerfilEmDia\Billing\CheckoutService;
+use PerfilEmDia\Billing\PlanRepository;
 use PerfilEmDia\Db;
 use PerfilEmDia\Domain\OnboardingService;
 use PerfilEmDia\Domain\PostRepository;
@@ -164,6 +166,7 @@ final class AudioAcceptTest extends TestCase
         $channel = new AudioTestChannel();
         $userId = $users->create(930441, 930441, 'ana');
         $users->update($userId, ['display_name' => 'Ana', 'onboarding_step' => 'done']);
+        $this->grantActivePlan($userId);
         $postsService = new PostService(
             $users,
             $posts,
@@ -204,6 +207,26 @@ final class AudioAcceptTest extends TestCase
         );
 
         return [$handler, $channel, $posts, $userId];
+    }
+
+    private function grantActivePlan(int $userId): void
+    {
+        $plan = (new PlanRepository($this->pdo))->findBySlug('essencial');
+        $this->assertNotNull($plan);
+        $service = new CheckoutService($this->pdo, new FakeGateway());
+        static $n = 0;
+        $n++;
+        $checkout = $service->open($plan, 'mensal', [
+            'name' => 'Ana Audio',
+            'email' => 'ana.audio.' . $n . '@example.com',
+            'phone' => '11999998888',
+            'document' => '12.ABC.345/01DE-35',
+        ], null);
+        $pix = $service->startPix($checkout['public_id']);
+        $this->assertTrue($service->confirmExternal('fake', (string) $pix['external_id'], '{}'));
+        $paid = $service->findByPublicId($checkout['public_id']);
+        $this->assertNotNull($paid);
+        $this->assertTrue($service->activate((string) $paid['activation_code'], $userId));
     }
 
     private function wavSeconds(int $seconds): string

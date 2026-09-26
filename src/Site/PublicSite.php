@@ -762,6 +762,14 @@ final class PublicSite
     private function appmaxValidate(): void
     {
         header('Content-Type: application/json; charset=utf-8');
+        $token = (string) ($_SERVER['HTTP_X_WEBHOOK_TOKEN'] ?? $_GET['token'] ?? '');
+        $expected = Config::get('PAYMENT_WEBHOOK_TOKEN', '');
+        if (!PaymentWebhook::tokenMatches($expected, $token)) {
+            http_response_code(401);
+            echo json_encode(['error' => 'nao autorizado'], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
         $json = json_decode(file_get_contents('php://input') ?: '', true);
         if (!is_array($json) || !isset($json['app_id'])) {
             http_response_code(422);
