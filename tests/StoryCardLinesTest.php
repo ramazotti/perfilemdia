@@ -24,6 +24,6 @@ final class StoryCardLinesTest extends TestCase
         });
 
         $this->assertLessThanOrEqual(7, count($result['lines']));
-        $this->assertGreaterThanOrEqual(28, $result['size']);
+        $this->assertGreaterThanOrEqual(32, $result['size']);
     }
 }

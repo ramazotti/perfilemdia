@@ -11,10 +11,13 @@ final class StoryCard
     private const CAIXA_TEXT_MARGIN = 5;
 
     /** Tamanho mínimo da fonte no story (px). Texto longo não fica menor que isso. */
-    private const MIN_FONT_SIZE = 28;
+    private const MIN_FONT_SIZE = 32;
 
     /** Máximo de linhas na foto (ex.: 270 caracteres em um quadro). */
     private const MAX_LINES = 7;
+
+    /** Margem lateral da área útil (px); o texto pode quase encostar na borda. */
+    private const SIDE_MARGIN = 22;
 
     public static function draw(
         string $jpegPath,
@@ -220,11 +223,11 @@ final class StoryCard
         $padY = (int) max(8, $size * 0.32);
         $lineHeight = (int) ($size * 1.8);
         $tail = 0;
-        $boxW = max(40, $width - 16);
+        $boxW = max(40, $width - (self::SIDE_MARGIN * 2));
         $boxH = (int) max(56, (int) round($height / 3) - $tail);
         $boxH = min($boxH, $height - 12 - $tail);
         $radius = min(22, (int) ($size * 0.55), (int) ($boxW / 2), (int) ($boxH / 2));
-        $x = 8;
+        $x = self::SIDE_MARGIN;
         $margin = (int) max(6, (int) round($height * 0.02));
         $y = match (PhrasePlace::normalize($place)) {
             PhrasePlace::TOPO => $margin,
@@ -407,20 +410,17 @@ final class StoryCard
     private static function fitBlock(int $width, int $height, string $text, string $sizeName, callable $measure): array
     {
         $band = (int) max(120, (int) round($height / 3));
-        $minWrap = self::wrapForLineCap($text, self::MAX_LINES);
-        $wrap = $minWrap;
-        $lines = self::lines($text, $wrap);
-        $size = (int) round(self::fit($width, $lines) * PhraseSize::factor($sizeName));
+        $innerW = max(40, $width - (self::SIDE_MARGIN * 2));
+        $seed = self::lines($text, 26);
+        $size = (int) round(self::fit($innerW, $seed) * PhraseSize::factor($sizeName));
         $size = (int) max(self::MIN_FONT_SIZE, $size);
+        $lines = [$text];
         $widths = [40];
-        $maxWrap = 72;
-        for ($try = 0; $try < 20; $try++) {
-            $lines = self::lines($text, $wrap);
-            if (count($lines) > self::MAX_LINES && $wrap < $maxWrap) {
-                $wrap = min($maxWrap, $wrap + 1);
 
-                continue;
-            }
+        for ($try = 0; $try < 28; $try++) {
+            [$padX] = self::caixaPadding($size);
+            $maxLine = max(40, $innerW - ($padX * 2));
+            $lines = self::linesByWidth($text, $maxLine, $size, $measure);
             $widths = [];
             foreach ($lines as $line) {
                 $widths[] = max(1, $measure($size, $line));
@@ -428,59 +428,80 @@ final class StoryCard
             $padY = (int) max(10, $size * 0.45);
             $lineHeight = (int) ($size * 1.8);
             $boxH = ($padY * 2) + ($lineHeight * max(1, count($lines)));
-            $tooWide = max($widths) > (int) ($width * 0.86);
-            $tooTall = $boxH > $band;
-            if (!$tooWide && !$tooTall) {
+            if (count($lines) <= self::MAX_LINES && $boxH <= $band) {
                 break;
-            }
-            if (($tooWide || $tooTall) && $wrap < $maxWrap && count($lines) >= self::MAX_LINES) {
-                $wrap = min($maxWrap, $wrap + 2);
-
-                continue;
-            }
-            if ($tooWide && $wrap < $maxWrap) {
-                $wrap = min($maxWrap, max($minWrap, $wrap + 2));
-
-                continue;
-            }
-            if ($tooTall && $wrap < $maxWrap) {
-                $wrap = min($maxWrap, max($minWrap, $wrap + 2));
-
-                continue;
             }
             if ($size <= self::MIN_FONT_SIZE) {
                 break;
             }
-            $next = (int) max(self::MIN_FONT_SIZE, (int) ($size * 0.9));
+            $next = (int) max(self::MIN_FONT_SIZE, (int) ($size * 0.94));
             if ($next === $size) {
                 break;
             }
             $size = $next;
         }
 
-        $wrap = self::wrapForLineCap($text, self::MAX_LINES);
-        $lines = self::lines($text, $wrap);
-        $widths = [];
-        foreach ($lines as $line) {
-            $widths[] = max(1, $measure($size, $line));
+        $cap = (int) min(72, (int) round($width / 11));
+        while ($size < $cap) {
+            $next = $size + 1;
+            [$padX] = self::caixaPadding($next);
+            $maxLine = max(40, $innerW - ($padX * 2));
+            $nextLines = self::linesByWidth($text, $maxLine, $next, $measure);
+            $nextWidths = [];
+            foreach ($nextLines as $line) {
+                $nextWidths[] = max(1, $measure($next, $line));
+            }
+            $padY = (int) max(10, $next * 0.45);
+            $lineHeight = (int) ($next * 1.8);
+            $boxH = ($padY * 2) + ($lineHeight * max(1, count($nextLines)));
+            if (count($nextLines) > self::MAX_LINES || $boxH > $band) {
+                break;
+            }
+            $size = $next;
+            $lines = $nextLines;
+            $widths = $nextWidths;
         }
+
         $size = (int) max(self::MIN_FONT_SIZE, $size);
 
         return ['lines' => $lines, 'size' => $size, 'widths' => $widths];
     }
 
-    private static function wrapForLineCap(string $text, int $maxLines): int
+    /**
+     * @param callable(int, string): int $measure
+     * @return list<string>
+     */
+    private static function linesByWidth(string $text, int $maxWidth, int $size, callable $measure): array
     {
         $text = trim($text);
         if ($text === '') {
-            return 26;
+            return [''];
         }
-        $wrap = max(26, (int) ceil(mb_strlen($text) / max(1, $maxLines)));
-        while ($wrap <= 72 && count(self::lines($text, $wrap)) > $maxLines) {
-            $wrap++;
+        $words = preg_split('/\s+/u', $text) ?: [];
+        $lines = [];
+        $line = '';
+        foreach ($words as $word) {
+            if ($word === '') {
+                continue;
+            }
+            $next = $line === '' ? $word : $line . ' ' . $word;
+            if ($line !== '' && $measure($size, $next) > $maxWidth) {
+                $lines[] = $line;
+                $line = $word;
+                continue;
+            }
+            if ($line === '' && $measure($size, $word) > $maxWidth) {
+                $lines[] = $word;
+
+                continue;
+            }
+            $line = $next;
+        }
+        if ($line !== '') {
+            $lines[] = $line;
         }
 
-        return $wrap;
+        return $lines === [] ? [$text] : $lines;
     }
 
     /**
@@ -492,9 +513,9 @@ final class StoryCard
         foreach ($lines as $line) {
             $longest = max($longest, mb_strlen($line));
         }
-        $byWidth = (int) (($width * 0.82) / max(1, $longest * 0.52));
+        $byWidth = (int) (($width * 0.94) / max(1, $longest * 0.52));
 
-        return (int) max(self::MIN_FONT_SIZE, min((int) ($width / 16), $byWidth));
+        return (int) max(self::MIN_FONT_SIZE, min((int) ($width / 13), $byWidth));
     }
 
     /**
