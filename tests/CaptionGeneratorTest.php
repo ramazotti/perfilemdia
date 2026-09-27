@@ -141,6 +141,23 @@ final class CaptionGeneratorTest extends TestCase
         $this->assertStringNotContainsString('transforma a manha', $result->caption);
     }
 
+    public function testManualEditKeepsHashtagsAndContact(): void
+    {
+        $full = "Texto original aqui.\n\n#escola #prof\n\nWhatsApp 11 99999-0000";
+        $edited = CaptionGenerator::legendaForEdit($full, 'WhatsApp 11 99999-0000');
+        $this->assertSame('Texto original aqui.', $edited);
+
+        $merged = CaptionGenerator::applyManualLegenda(
+            $full,
+            'Texto original, só que mais curto.',
+            'WhatsApp 11 99999-0000',
+        );
+        $this->assertStringContainsString('Texto original, só que mais curto.', $merged);
+        $this->assertStringContainsString('#escola #prof', $merged);
+        $this->assertStringContainsString('WhatsApp 11 99999-0000', $merged);
+        $this->assertStringNotContainsString('Texto original aqui.', $merged);
+    }
+
     public function testHashtagsAlreadyInLegendAreNotRepeated(): void
     {
         $http = $this->fakeHttp(fn () => $this->okResponse(json_encode([

@@ -138,12 +138,22 @@ final class Messages
 
     public static function askManual(): string
     {
-        return 'Manda o texto do jeito que você quer que saia.';
+        return 'Na mensagem seguinte vai só o texto da legenda, sem hashtag e sem contato. Toque e segure para copiar, mude o que quiser e mande de volta. Hashtags e contato do perfil eu mantenho.';
     }
 
     public static function askStoryManual(): string
     {
-        return 'Manda o texto que entra na foto do story. Sem hashtag. Cada foto leva até 270 caracteres. Se passar, segue na próxima, em no máximo 2 stories.';
+        return 'Na mensagem seguinte vai só o texto que entra na foto do story, sem hashtag. Toque e segure para copiar, mude o que quiser e mande de volta. Até 270 caracteres por foto; se passar, segue na próxima (máximo 2). Hashtags e contato ficam na legenda do Instagram, eu mantenho.';
+    }
+
+    public static function editableTextIntro(): string
+    {
+        return 'Texto atual:';
+    }
+
+    public static function askPhotoPhraseText(): string
+    {
+        return 'Manda a frase que entra na foto. Se mandou vazio, tente de novo.';
     }
 
     public static function cancelled(): string

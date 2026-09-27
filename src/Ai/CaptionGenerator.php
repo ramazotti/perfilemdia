@@ -533,6 +533,72 @@ final class CaptionGenerator implements CaptionGeneratorInterface
         return self::dedupeHashtagBlocks($caption);
     }
 
+    public static function legendaForEdit(string $caption, string $contact = '', bool $story = false): string
+    {
+        $caption = str_replace(["\\r\\n", "\\n", "\\r"], "\n", $caption);
+        if ($story) {
+            return trim(StoryScript::body($caption, trim($contact)));
+        }
+        $body = self::withoutHashtagBlocks($caption);
+        $contact = trim($contact);
+        if ($contact !== '') {
+            $body = self::withoutRepeatedContact($body, $contact);
+        }
+
+        return trim($body);
+    }
+
+    public static function applyManualLegenda(string $oldCaption, string $newBody, string $contact = ''): string
+    {
+        $oldCaption = str_replace(["\\r\\n", "\\n", "\\r"], "\n", (string) $oldCaption);
+        $newBody = trim(str_replace(["\\r\\n", "\\n", "\\r"], "\n", $newBody));
+        $contact = trim($contact);
+        $tags = self::hashtagsFromCaption($oldCaption);
+        $newBody = self::withoutHashtagBlocks($newBody);
+        if ($contact !== '') {
+            $newBody = self::withoutRepeatedContact($newBody, $contact);
+        }
+
+        return self::dedupeHashtagBlocks(self::assembleCaption($newBody, $tags, $contact));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function hashtagsFromCaption(string $caption): array
+    {
+        $caption = str_replace(["\\r\\n", "\\n", "\\r"], "\n", $caption);
+        $parts = preg_split("/\n{2,}/", trim($caption)) ?: [];
+        $tags = [];
+        $seen = [];
+        foreach ($parts as $part) {
+            $trim = trim($part);
+            if ($trim === '') {
+                continue;
+            }
+            $flat = trim((string) preg_replace('/\s+/u', ' ', str_replace("\n", ' ', $trim)));
+            if (preg_match('/^(?:#[\p{L}\p{N}_]+\s*)+$/u', $flat) !== 1) {
+                continue;
+            }
+            foreach (preg_split('/\s+/u', $flat, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $token) {
+                $token = ltrim($token, '#');
+                $token = mb_strtolower($token, 'UTF-8');
+                $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $token);
+                if ($ascii !== false) {
+                    $token = $ascii;
+                }
+                $token = preg_replace('/[^a-z0-9_]/', '', $token) ?? '';
+                if ($token === '' || isset($seen[$token])) {
+                    continue;
+                }
+                $seen[$token] = true;
+                $tags[] = '#' . $token;
+            }
+        }
+
+        return $tags;
+    }
+
     public static function dedupeHashtagBlocks(string $caption): string
     {
         $parts = preg_split("/\n{2,}/", trim($caption)) ?: [];

@@ -278,7 +278,18 @@ class PostService
         }
 
         if ($status === PostStatus::AwaitingManualEdit) {
-            $caption = trim(strip_tags($text));
+            $newBody = trim(strip_tags($text));
+            if ($newBody === '') {
+                $this->askManual($user, $chatId, $pending);
+
+                return true;
+            }
+            $story = (string) ($pending['destination'] ?? 'feed') === 'story';
+            $caption = \PerfilEmDia\Ai\CaptionGenerator::applyManualLegenda(
+                (string) ($pending['caption'] ?? ''),
+                $newBody,
+                (string) ($user['contact_cta'] ?? ''),
+            );
             $this->posts->update($postId, [
                 'caption' => $caption,
                 'caption_version' => ((int) $pending['caption_version']) + 1,
@@ -372,7 +383,7 @@ class PostService
         match ($action) {
             'adj' => $this->askAdjust($chatId, $post),
             'reg' => $this->regen($user, $chatId, $post),
-            'man' => $this->askManual($chatId, $post),
+            'man' => $this->askManual($user, $chatId, $post),
             'can' => $this->cancelPost($chatId, $post),
             default => null,
         };
@@ -1559,6 +1570,17 @@ class PostService
                     ? Messages::phraseLookSaved(PhraseStyle::label($style), PhraseColor::label($color), PhrasePlace::where($place))
                     : Messages::askStoryManual(),
             );
+            if (!$saved) {
+                $editable = trim((string) ($post['photo_phrase'] ?? ''));
+                if ($editable === '') {
+                    $editable = \PerfilEmDia\Ai\CaptionGenerator::legendaForEdit(
+                        (string) ($post['caption'] ?? ''),
+                        (string) ($user['contact_cta'] ?? ''),
+                        true,
+                    );
+                }
+                $this->sendEditableSnippet($chatId, $editable);
+            }
 
             return;
         }
@@ -1567,6 +1589,9 @@ class PostService
             : Messages::askPhotoPhrase(PhraseStyle::label($style), PhraseColor::label($color), PhrasePlace::where($place));
         $canRemove = is_array($post) && trim((string) ($post['photo_phrase'] ?? '')) !== '';
         $this->channel->sendText($chatId, $text, Keyboards::phraseStyles($postId, $style, $color, $place, $size, $canRemove));
+        if (!$saved && is_array($post)) {
+            $this->sendEditableSnippet($chatId, trim((string) ($post['photo_phrase'] ?? '')));
+        }
     }
 
     private function phraseBasePath(int $mediaId): string
@@ -2812,7 +2837,11 @@ class PostService
     /**
      * @param array<string, mixed> $post
      */
-    private function askManual(int $chatId, array $post): void
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $post
+     */
+    private function askManual(array $user, int $chatId, array $post): void
     {
         if (!$this->leaveMenu((int) $post['id'], PostStatus::AwaitingManualEdit)) {
             $this->channel->sendText($chatId, Messages::alreadyProcessed());
@@ -2821,6 +2850,22 @@ class PostService
         }
         $story = (string) ($post['destination'] ?? 'feed') === 'story';
         $this->channel->sendText($chatId, $story ? Messages::askStoryManual() : Messages::askManual());
+        $editable = \PerfilEmDia\Ai\CaptionGenerator::legendaForEdit(
+            (string) ($post['caption'] ?? ''),
+            (string) ($user['contact_cta'] ?? ''),
+            $story,
+        );
+        $this->sendEditableSnippet($chatId, $editable);
+    }
+
+    private function sendEditableSnippet(int $chatId, string $text): void
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return;
+        }
+        $this->channel->sendText($chatId, Messages::editableTextIntro());
+        $this->channel->sendText($chatId, $text);
     }
 
     /**
