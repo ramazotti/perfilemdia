@@ -12,10 +12,7 @@ use RuntimeException;
 
 final class ImageNormalizer implements ImageNormalizerInterface
 {
-    private const MIN_RATIO = 0.8;
-    private const MAX_RATIO = 1.91;
-    private const PORTRAIT_CROP_RATIO = 4 / 5;
-    private const LANDSCAPE_CROP_RATIO = 1.91;
+    private const FEED_RATIO = 16 / 9;
     private const TARGET_WIDTH = 1080;
     private const STORY_WIDTH = 1080;
     private const STORY_HEIGHT = 1920;
@@ -81,23 +78,12 @@ final class ImageNormalizer implements ImageNormalizerInterface
 
     private function resolveCropRatio(float $ratio, ?float $carouselRatio, string $canvas): float
     {
+        unset($ratio, $carouselRatio);
         if ($canvas === 'story') {
             return self::STORY_RATIO;
         }
 
-        if ($carouselRatio !== null) {
-            return $carouselRatio;
-        }
-
-        if ($ratio < self::MIN_RATIO) {
-            return self::PORTRAIT_CROP_RATIO;
-        }
-
-        if ($ratio > self::MAX_RATIO) {
-            return self::LANDSCAPE_CROP_RATIO;
-        }
-
-        return $ratio;
+        return self::FEED_RATIO;
     }
 
     private function resolveOutputWidth(int $width): int
@@ -150,16 +136,8 @@ final class ImageNormalizer implements ImageNormalizerInterface
             return [self::STORY_WIDTH, self::STORY_HEIGHT];
         }
 
-        $outputWidth = $this->resolveOutputWidth($width);
-        $outputHeight = max(1, (int) round($height * ($outputWidth / $width)));
-
-        if ($outputWidth / $outputHeight < self::MIN_RATIO) {
-            $outputHeight = max(1, (int) floor($outputWidth / self::MIN_RATIO));
-        }
-
-        if ($outputWidth / $outputHeight > self::MAX_RATIO) {
-            $outputHeight = max(1, (int) ceil($outputWidth / self::MAX_RATIO));
-        }
+        $outputWidth = self::TARGET_WIDTH;
+        $outputHeight = max(1, (int) round($outputWidth / self::FEED_RATIO));
 
         return [$outputWidth, $outputHeight];
     }

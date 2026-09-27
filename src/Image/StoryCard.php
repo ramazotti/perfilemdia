@@ -204,15 +204,15 @@ final class StoryCard
      */
     private static function layout(int $width, int $height, array $widths, int $size, string $place, string $style): array
     {
-        $padY = (int) max(12, $size * 0.45);
-        $lineHeight = (int) ($size * 1.28);
+        $padY = (int) max(8, $size * 0.32);
+        $lineHeight = (int) ($size * 1.12);
         $tail = 0;
-        $boxW = max(40, $width - 24);
+        $boxW = max(40, $width - 16);
         $boxH = (int) max(56, (int) round($height / 3) - $tail);
-        $boxH = min($boxH, $height - 16 - $tail);
+        $boxH = min($boxH, $height - 12 - $tail);
         $radius = min(22, (int) ($size * 0.55), (int) ($boxW / 2), (int) ($boxH / 2));
-        $x = 12;
-        $margin = (int) max(8, (int) round($height * 0.03));
+        $x = 8;
+        $margin = (int) max(6, (int) round($height * 0.02));
         $y = match (PhrasePlace::normalize($place)) {
             PhrasePlace::TOPO => $margin,
             PhrasePlace::RODAPE => max($margin, $height - $boxH - $margin - $tail),
@@ -239,8 +239,8 @@ final class StoryCard
      */
     private static function bubble(array $layout, array $widths, int $size, int $lineCount, int $baseline, int $ascent): array
     {
-        $padX = (int) max(6, $size * 0.16);
-        $padY = (int) max(2, $size * 0.05);
+        $padX = (int) max(5, $size * 0.12);
+        $padY = (int) max(1, $size * 0.04);
         $textW = max(1, ...$widths);
         $w = $textW + ($padX * 2);
         $textH = $ascent + (int) max(2, $size * 0.2) + ($layout['lineHeight'] * max(0, $lineCount - 1));
@@ -404,8 +404,8 @@ final class StoryCard
             foreach ($lines as $line) {
                 $widths[] = max(1, $measure($size, $line));
             }
-            $padY = (int) max(16, $size * 0.65);
-            $lineHeight = (int) ($size * 1.28);
+            $padY = (int) max(10, $size * 0.45);
+            $lineHeight = (int) ($size * 1.12);
             $boxH = ($padY * 2) + ($lineHeight * max(1, count($lines)));
             $tooWide = max($widths) > (int) ($width * 0.86);
             $tooTall = $boxH > (int) ($height * 0.28);

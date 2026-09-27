@@ -167,7 +167,7 @@ final class PublicSite
             . '<div class="jobs">' . $cards . '</div></div></section>';
         $items = [
             ['Ideia do dia', 'A partir das 8h, uma vez por dia, chega um pedido pronto, ligado ao que você faz. Se passar de 1 dia sem postar, o aviso lembra. Em data comemorativa, a sugestão já vem no tema. Dá para pedir na hora com /ideia, ou parar no botão.'],
-            ['Publicar no story', 'No /novo, a primeira pergunta é se vai para o feed ou para o story. No story, a foto sai em tela cheia, 1080 × 1920, com o texto em cima, sem hashtag e sem o acesse. O texto ocupa um terço da foto. Se não cabe em uma, continua na seguinte, em até 3 fotos, com no máximo 180 caracteres em cada. Dá para escolher o estilo (Limpa, Caixa ou Balão) e o lugar: topo, centro ou rodapé. O vídeo segue inteiro. Carrossel continua no feed.'],
+            ['Publicar no story', 'No /novo, a primeira pergunta é se vai para o feed ou para o story. No feed, a foto sai em 16:9 (1080 × 608). No story, a foto sai em tela cheia, 1080 × 1920, com o texto em cima, sem hashtag e sem o acesse. O texto ocupa um terço da foto. Se não cabe em uma, continua na seguinte, em até 2 fotos, com no máximo 270 caracteres em cada. Dá para escolher o estilo (Limpa, Caixa ou Balão) e o lugar: topo, centro ou rodapé. O vídeo segue inteiro. Carrossel continua no feed.'],
             ['Cor e estilo', 'No plano Estúdio, descreva a marca com /marca. A imagem criada pela IA segue essa descrição.'],
             ['Resultado da semana', 'O comando /resultado mostra alcance e visualizações dos últimos 7 dias, quando o Instagram libera.'],
         ];

@@ -262,7 +262,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
             return $prompt;
         }
 
-        return $prompt . "\n\n" . 'Isto é um story. A legenda, sem hashtags e sem o contato, tem no máximo 540 caracteres. Ela cabe em até 3 blocos de 180 caracteres. Pode ser 1, 2 ou 3 blocos. Não passe de 3. Ignore a faixa de 250 a 900.';
+        return $prompt . "\n\n" . 'Isto é um story. A legenda, sem hashtags e sem o contato, tem no máximo 540 caracteres. Ela cabe em até 2 blocos de 270 caracteres. Pode ser 1 ou 2 blocos. Não passe de 2. Ignore a faixa de 250 a 900.';
     }
 
     private function fitStoryPages(string $legenda): string

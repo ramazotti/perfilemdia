@@ -6,6 +6,9 @@ namespace PerfilEmDia\Image;
 
 final class StoryScript
 {
+    public const MAX_PART_CHARS = 270;
+    public const MAX_PARTS = 2;
+
     /**
      * @return list<string>
      */
@@ -24,7 +27,7 @@ final class StoryScript
                 continue;
             }
             $next = $current === '' ? $word : $current . ' ' . $word;
-            if (mb_strlen($next) > 180 && $current !== '') {
+            if (mb_strlen($next) > self::MAX_PART_CHARS && $current !== '') {
                 $frames[] = $current;
                 $current = $word;
                 continue;
@@ -35,7 +38,7 @@ final class StoryScript
             $frames[] = $current;
         }
 
-        return array_slice($frames, 0, 3);
+        return array_slice($frames, 0, self::MAX_PARTS);
     }
 
     public static function body(string $caption, string $contact = ''): string

@@ -7,11 +7,11 @@ namespace PerfilEmDia\Image;
 interface ImageNormalizerInterface
 {
     /**
-     * Converte as fotos para JPEG publicável no feed do Instagram.
-     * No carrossel, todas saem na proporção da primeira depois do recorte.
+     * Converte as fotos para JPEG publicável no Instagram.
+     * Feed e carrossel saem em 1080×608 (16:9). Story em 1080×1920 (9:16).
      *
      * @param list<string> $sourcePaths
-     * @param 'feed'|'story' $canvas story is exactly 1080x1920 (9:16)
+     * @param 'feed'|'story' $canvas
      * @return list<NormalizedImage>
      */
     public function normalize(array $sourcePaths, string $publicDirectory, string $canvas = 'feed'): array;

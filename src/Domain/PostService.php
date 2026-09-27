@@ -1070,7 +1070,7 @@ class PostService
 
             return true;
         }
-        $limit = (string) ($post['destination'] ?? '') === 'story' ? 180 : 80;
+        $limit = (string) ($post['destination'] ?? '') === 'story' ? StoryScript::MAX_PART_CHARS : 80;
         $this->applyPhrase($user, $chatId, $post, mb_substr($phrase, 0, $limit));
 
         return true;
@@ -1931,7 +1931,7 @@ class PostService
         $savedRef = IdeaReference::postPath($postId);
         $reference = is_file($savedRef) ? $savedRef : (is_file($path) ? $path : null);
         try {
-            $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '';
+            $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '16:9';
             $jpeg = ($this->ideas ?? new IdeaImage())->create(
                 (string) ($post['theme_text'] ?? ''),
                 $reference,
@@ -3183,7 +3183,7 @@ class PostService
         $reference = $this->resolveIdeaReference($user, $postId, $message);
 
         try {
-            $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '';
+            $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '16:9';
             $jpeg = ($this->ideas ?? new IdeaImage())->create($idea, $reference, IdeaLook::brief($user), $aspect);
             $dest = Config::root() . '/storage/media/' . $postId . '_0.jpg';
             $dir = dirname($dest);

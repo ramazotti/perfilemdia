@@ -11,6 +11,10 @@ use PHPUnit\Framework\TestCase;
 
 final class ImageNormalizerTest extends TestCase
 {
+    private const FEED_RATIO = 16 / 9;
+    private const FEED_WIDTH = 1080;
+    private const FEED_HEIGHT = 608;
+
     private string $tempRoot;
 
     private ImageNormalizer $normalizer;
@@ -30,7 +34,7 @@ final class ImageNormalizerTest extends TestCase
         parent::tearDown();
     }
 
-    public function testPortraitThreeByFourCropsToMinRatio(): void
+    public function testPortraitThreeByFourCropsToSixteenByNine(): void
     {
         $source = $this->createJpeg(750, 1000);
         $publicDir = $this->tempRoot . '/public';
@@ -38,13 +42,10 @@ final class ImageNormalizerTest extends TestCase
         $results = $this->normalizer->normalize([$source], $publicDir);
 
         $this->assertCount(1, $results);
-        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
-        $this->assertEqualsWithDelta(0.8, $results[0]->ratio, 0.02);
-        $this->assertGreaterThanOrEqual(0.8, $results[0]->ratio);
-        $this->assertLessThanOrEqual(1.91, $results[0]->ratio);
+        $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testTallNineBySixteenCropsToMinRatio(): void
+    public function testTallNineBySixteenCropsToSixteenByNine(): void
     {
         $source = $this->createJpeg(900, 1600);
         $publicDir = $this->tempRoot . '/public';
@@ -52,12 +53,10 @@ final class ImageNormalizerTest extends TestCase
         $results = $this->normalizer->normalize([$source], $publicDir);
 
         $this->assertCount(1, $results);
-        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
-        $this->assertEqualsWithDelta(0.8, $results[0]->ratio, 0.02);
-        $this->assertRatioWithinFeedBounds($results[0]->ratio);
+        $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testSquareOneByOneKeepsNearUnity(): void
+    public function testSquareOneByOneCropsToSixteenByNine(): void
     {
         $source = $this->createJpeg(1000, 1000);
         $publicDir = $this->tempRoot . '/public';
@@ -65,12 +64,10 @@ final class ImageNormalizerTest extends TestCase
         $results = $this->normalizer->normalize([$source], $publicDir);
 
         $this->assertCount(1, $results);
-        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
-        $this->assertEqualsWithDelta(1.0, $results[0]->ratio, 0.02);
-        $this->assertRatioWithinFeedBounds($results[0]->ratio);
+        $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testSixteenByNineStaysWithinBounds(): void
+    public function testSixteenByNineStaysSixteenByNine(): void
     {
         $source = $this->createJpeg(1600, 900);
         $publicDir = $this->tempRoot . '/public';
@@ -78,12 +75,10 @@ final class ImageNormalizerTest extends TestCase
         $results = $this->normalizer->normalize([$source], $publicDir);
 
         $this->assertCount(1, $results);
-        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
-        $this->assertEqualsWithDelta(1600 / 900, $results[0]->ratio, 0.02);
-        $this->assertRatioWithinFeedBounds($results[0]->ratio);
+        $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testUltraWideThreeByOneCropsToMaxRatio(): void
+    public function testUltraWideThreeByOneCropsToSixteenByNine(): void
     {
         $source = $this->createJpeg(3000, 1000);
         $publicDir = $this->tempRoot . '/public';
@@ -91,26 +86,21 @@ final class ImageNormalizerTest extends TestCase
         $results = $this->normalizer->normalize([$source], $publicDir);
 
         $this->assertCount(1, $results);
-        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
-        $this->assertEqualsWithDelta(1.91, $results[0]->ratio, 0.02);
-        $this->assertRatioWithinFeedBounds($results[0]->ratio);
+        $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testCarouselForcesSameRatioAsFirstImage(): void
+    public function testCarouselForcesSixteenByNineOnEverySlide(): void
     {
-        $first = $this->createJpeg(750, 1000); // 3:4 -> 0.8
-        $second = $this->createJpeg(1600, 900); // 16:9
+        $first = $this->createJpeg(750, 1000);
+        $second = $this->createJpeg(1600, 900);
         $publicDir = $this->tempRoot . '/public';
 
         $results = $this->normalizer->normalize([$first, $second], $publicDir);
 
         $this->assertCount(2, $results);
-        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
-        $this->assertJpegNormalized($results[1]->absolutePath, $results[1]->width, $results[1]->height);
+        $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
+        $this->assertFeedOutput($results[1]->absolutePath, $results[1]->width, $results[1]->height, $results[1]->ratio);
         $this->assertEqualsWithDelta($results[0]->ratio, $results[1]->ratio, 0.02);
-        $this->assertEqualsWithDelta(0.8, $results[0]->ratio, 0.02);
-        $this->assertRatioWithinFeedBounds($results[0]->ratio);
-        $this->assertRatioWithinFeedBounds($results[1]->ratio);
     }
 
     public function testCreatesPublicDirectoryWhenMissing(): void
@@ -146,14 +136,13 @@ final class ImageNormalizerTest extends TestCase
     }
 
     #[DataProvider('aspectRatioProvider')]
-    public function testAllRequiredAspectsStayWithinFeedBounds(int $width, int $height): void
+    public function testAllRequiredAspectsBecomeSixteenByNine(int $width, int $height): void
     {
         $source = $this->createJpeg($width, $height);
         $results = $this->normalizer->normalize([$source], $this->tempRoot . '/public');
 
         $this->assertCount(1, $results);
-        $this->assertJpegNormalized($results[0]->absolutePath, $results[0]->width, $results[0]->height);
-        $this->assertRatioWithinFeedBounds($results[0]->ratio);
+        $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
     /**
@@ -199,13 +188,7 @@ final class ImageNormalizerTest extends TestCase
         return $path;
     }
 
-    private function assertRatioWithinFeedBounds(float $ratio): void
-    {
-        $this->assertGreaterThanOrEqual(0.8, $ratio);
-        $this->assertLessThanOrEqual(1.91, $ratio);
-    }
-
-    private function assertJpegNormalized(string $path, int $width, int $height): void
+    private function assertFeedOutput(string $path, int $width, int $height, float $ratio): void
     {
         $this->assertFileExists($path);
         $info = getimagesize($path);
@@ -213,8 +196,9 @@ final class ImageNormalizerTest extends TestCase
         $this->assertSame('image/jpeg', $info['mime']);
         $this->assertSame($width, $info[0]);
         $this->assertSame($height, $info[1]);
-        $this->assertLessThanOrEqual(1080, $width);
-        $this->assertGreaterThanOrEqual(320, $width);
+        $this->assertSame(self::FEED_WIDTH, $width);
+        $this->assertSame(self::FEED_HEIGHT, $height);
+        $this->assertEqualsWithDelta(self::FEED_RATIO, $ratio, 0.02);
     }
 
     private function removeTree(string $path): void

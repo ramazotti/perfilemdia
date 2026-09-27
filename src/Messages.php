@@ -143,7 +143,7 @@ final class Messages
 
     public static function askStoryManual(): string
     {
-        return 'Manda o texto que entra na foto do story. Sem hashtag. Cada foto leva até 180 caracteres. Se passar, segue na próxima, em no máximo 3 stories.';
+        return 'Manda o texto que entra na foto do story. Sem hashtag. Cada foto leva até 270 caracteres. Se passar, segue na próxima, em no máximo 2 stories.';
     }
 
     public static function cancelled(): string
@@ -786,7 +786,7 @@ final class Messages
 
     public static function storyPages(int $count): string
     {
-        return 'Este texto virou ' . $count . ' stories, um depois do outro. Cada foto leva um trecho de até 180 caracteres.';
+        return 'Este texto virou ' . $count . ' stories, um depois do outro. Cada foto leva um trecho de até 270 caracteres.';
     }
 
     public static function storyNoMark(): string
