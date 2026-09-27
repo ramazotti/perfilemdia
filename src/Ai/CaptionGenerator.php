@@ -533,11 +533,23 @@ final class CaptionGenerator implements CaptionGeneratorInterface
         return self::dedupeHashtagBlocks($caption);
     }
 
+    /** Texto que entra na foto do story (revisão/cópia), sem hashtag nem contato. */
+    public static function storyTextForReview(string $caption, string $contact = ''): string
+    {
+        $caption = str_replace(["\\r\\n", "\\n", "\\r"], "\n", $caption);
+        $parts = StoryScript::parts($caption, trim($contact));
+        if ($parts === []) {
+            return trim(StoryScript::body($caption, trim($contact)));
+        }
+
+        return implode("\n\n", $parts);
+    }
+
     public static function legendaForEdit(string $caption, string $contact = '', bool $story = false): string
     {
         $caption = str_replace(["\\r\\n", "\\n", "\\r"], "\n", $caption);
         if ($story) {
-            return trim(StoryScript::body($caption, trim($contact)));
+            return self::storyTextForReview($caption, trim($contact));
         }
         $body = self::withoutHashtagBlocks($caption);
         $contact = trim($contact);

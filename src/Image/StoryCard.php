@@ -13,6 +13,9 @@ final class StoryCard
     /** Tamanho mínimo da fonte no story (px). Texto longo não fica menor que isso. */
     private const MIN_FONT_SIZE = 28;
 
+    /** Máximo de linhas na foto (ex.: 270 caracteres em um quadro). */
+    private const MAX_LINES = 7;
+
     public static function draw(
         string $jpegPath,
         string $text,
@@ -404,13 +407,20 @@ final class StoryCard
     private static function fitBlock(int $width, int $height, string $text, string $sizeName, callable $measure): array
     {
         $band = (int) max(120, (int) round($height / 3));
-        $wrap = 26;
+        $minWrap = self::wrapForLineCap($text, self::MAX_LINES);
+        $wrap = $minWrap;
         $lines = self::lines($text, $wrap);
         $size = (int) round(self::fit($width, $lines) * PhraseSize::factor($sizeName));
         $size = (int) max(self::MIN_FONT_SIZE, $size);
         $widths = [40];
-        for ($try = 0; $try < 16; $try++) {
+        $maxWrap = 72;
+        for ($try = 0; $try < 20; $try++) {
             $lines = self::lines($text, $wrap);
+            if (count($lines) > self::MAX_LINES && $wrap < $maxWrap) {
+                $wrap = min($maxWrap, $wrap + 1);
+
+                continue;
+            }
             $widths = [];
             foreach ($lines as $line) {
                 $widths[] = max(1, $measure($size, $line));
@@ -423,13 +433,18 @@ final class StoryCard
             if (!$tooWide && !$tooTall) {
                 break;
             }
-            if ($tooWide && $wrap < 48) {
-                $wrap = min(48, $wrap + 4);
+            if (($tooWide || $tooTall) && $wrap < $maxWrap && count($lines) >= self::MAX_LINES) {
+                $wrap = min($maxWrap, $wrap + 2);
 
                 continue;
             }
-            if ($tooTall && $wrap < 48) {
-                $wrap = min(48, $wrap + 4);
+            if ($tooWide && $wrap < $maxWrap) {
+                $wrap = min($maxWrap, max($minWrap, $wrap + 2));
+
+                continue;
+            }
+            if ($tooTall && $wrap < $maxWrap) {
+                $wrap = min($maxWrap, max($minWrap, $wrap + 2));
 
                 continue;
             }
@@ -443,9 +458,29 @@ final class StoryCard
             $size = $next;
         }
 
+        $wrap = self::wrapForLineCap($text, self::MAX_LINES);
+        $lines = self::lines($text, $wrap);
+        $widths = [];
+        foreach ($lines as $line) {
+            $widths[] = max(1, $measure($size, $line));
+        }
         $size = (int) max(self::MIN_FONT_SIZE, $size);
 
         return ['lines' => $lines, 'size' => $size, 'widths' => $widths];
+    }
+
+    private static function wrapForLineCap(string $text, int $maxLines): int
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return 26;
+        }
+        $wrap = max(26, (int) ceil(mb_strlen($text) / max(1, $maxLines)));
+        while ($wrap <= 72 && count(self::lines($text, $wrap)) > $maxLines) {
+            $wrap++;
+        }
+
+        return $wrap;
     }
 
     /**

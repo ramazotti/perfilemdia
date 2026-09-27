@@ -141,6 +141,15 @@ final class CaptionGeneratorTest extends TestCase
         $this->assertStringNotContainsString('transforma a manha', $result->caption);
     }
 
+    public function testStoryReviewTextStripsHashtagsAndContact(): void
+    {
+        $full = "Texto do story na foto.\n\n#escola #prof\n\nWhatsApp 11 99999-0000";
+        $review = CaptionGenerator::storyTextForReview($full, 'WhatsApp 11 99999-0000');
+        $this->assertSame('Texto do story na foto.', $review);
+        $this->assertStringNotContainsString('#', $review);
+        $this->assertStringNotContainsString('WhatsApp', $review);
+    }
+
     public function testManualEditKeepsHashtagsAndContact(): void
     {
         $full = "Texto original aqui.\n\n#escola #prof\n\nWhatsApp 11 99999-0000";

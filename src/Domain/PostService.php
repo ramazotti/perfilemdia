@@ -1571,13 +1571,13 @@ class PostService
                     : Messages::askStoryManual(),
             );
             if (!$saved) {
-                $editable = trim((string) ($post['photo_phrase'] ?? ''));
+                $editable = \PerfilEmDia\Ai\CaptionGenerator::legendaForEdit(
+                    (string) ($post['caption'] ?? ''),
+                    (string) ($user['contact_cta'] ?? ''),
+                    true,
+                );
                 if ($editable === '') {
-                    $editable = \PerfilEmDia\Ai\CaptionGenerator::legendaForEdit(
-                        (string) ($post['caption'] ?? ''),
-                        (string) ($user['contact_cta'] ?? ''),
-                        true,
-                    );
+                    $editable = trim((string) ($post['photo_phrase'] ?? ''));
                 }
                 $this->sendEditableSnippet($chatId, $editable);
             }
@@ -2120,6 +2120,9 @@ class PostService
             $this->channel->sendText($chatId, Messages::regenLimit());
         }
         $isStory = (string) ($post['destination'] ?? 'feed') === 'story';
+        $previewCaption = $isStory && !$isVideo
+            ? \PerfilEmDia\Ai\CaptionGenerator::storyTextForReview($caption, (string) ($user['contact_cta'] ?? ''))
+            : $caption;
         $buttons = Keyboards::approval($postId, false);
         if ((string) $post['status'] === PostStatus::Scheduled->value && !empty($post['scheduled_at'])) {
             $at = DateTimeImmutable::createFromFormat(
@@ -2131,14 +2134,11 @@ class PostService
                 $this->channel->sendText($chatId, Messages::stillScheduled(ScheduleTime::label($at)));
             }
         }
-        if ($isStory && $caption !== '' && !$isVideo) {
-            $this->channel->sendText($chatId, Messages::storyPreviewCaption());
-        }
         $previewId = $isVideo
-            ? $this->channel->sendVideo($chatId, $path, $caption, $buttons)
+            ? $this->channel->sendVideo($chatId, $path, $previewCaption, $buttons)
             : ($isStory && count($media) > 1
-                ? $this->sendStoryPages($chatId, $media, $caption, $buttons)
-                : $this->channel->sendPhoto($chatId, $path, $caption, $buttons));
+                ? $this->sendStoryPages($chatId, $media, $previewCaption, $buttons)
+                : $this->channel->sendPhoto($chatId, $path, $previewCaption, $buttons));
         $this->posts->update($postId, ['preview_message_id' => $previewId]);
     }
 

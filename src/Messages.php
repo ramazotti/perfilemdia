@@ -143,7 +143,7 @@ final class Messages
 
     public static function askStoryManual(): string
     {
-        return 'Na mensagem seguinte vai só o texto que entra na foto do story, sem hashtag. Toque e segure para copiar, mude o que quiser e mande de volta. Até 270 caracteres por foto; se passar, segue na próxima (máximo 2). Hashtags e contato ficam na legenda do Instagram, eu mantenho.';
+        return 'Na mensagem seguinte vai só o texto que entra na foto do story. Toque e segure para copiar, mude o que quiser e mande de volta. Até 270 caracteres por foto; se passar, segue na próxima (máximo 2).';
     }
 
     public static function editableTextIntro(): string
@@ -189,11 +189,6 @@ final class Messages
     public static function storyKindInvalid(): string
     {
         return 'No story entram foto, vídeo ou imagem criada pela IA. Carrossel e vídeo com IA ficam no feed.';
-    }
-
-    public static function storyPreviewCaption(): string
-    {
-        return 'O texto grande já está na foto. Abaixo vai a legenda do Instagram (hashtags e chamada, se houver).';
     }
 
     public static function publishing(): string
