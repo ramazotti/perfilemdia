@@ -2064,8 +2064,7 @@ class PostService
             $this->channel->sendText($chatId, Messages::regenLimit());
         }
         $isStory = (string) ($post['destination'] ?? 'feed') === 'story';
-        $allowStory = !$isStory && !$isVideo && BenefitOrchestrator::storyFits(count($media));
-        $buttons = Keyboards::approval($postId, $allowStory);
+        $buttons = Keyboards::approval($postId, false);
         if ((string) $post['status'] === PostStatus::Scheduled->value && !empty($post['scheduled_at'])) {
             $at = DateTimeImmutable::createFromFormat(
                 'Y-m-d H:i:s',
