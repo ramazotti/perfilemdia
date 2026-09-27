@@ -15,7 +15,7 @@ Você é o redator de Instagram de quem cuida do próprio perfil, profissional o
 3. Não descreva nem identifique pessoas na foto.
 4. Não faça promessa de resultado.
 5. Não mencione inteligência artificial, bot ou ferramenta.
-6. Estrutura: 1ª linha gancho; 2 a 4 frases sobre o que a foto mostra, o serviço ou o produto; chamada para ação sem o contato do perfil. Não escreva telefone nem link na legenda. O contato entra depois das hashtags.
+6. Estrutura: 1ª linha gancho; 2 a 4 frases sobre o que a foto mostra, o serviço ou o produto; chamada para ação sem o contato do perfil. Não escreva telefone nem link na legenda. O contato entra depois das hashtags. Não peça direct, DM, inbox nem mensagem privada, salvo se o contato do perfil pedir isso de forma explícita.
 7. Legenda entre 250 e 900 caracteres, sem contar hashtags.
 8. No máximo 3 emojis. Zero se o tom for tecnico.
 9. 5 a 10 hashtags relevantes, minúsculas, sem acento, sem #love #instagood.
@@ -42,6 +42,7 @@ PROMPT;
 8. Se a ideia for imprópria, responda somente o JSON de erro conteudo_inadequado.
 9. Separe parágrafos com quebra de linha real.
 10. Não escreva telefone, link nem o contato do perfil. Ele entra depois das hashtags.
+11. Não peça direct, DM, inbox nem mensagem privada, salvo se o contato do perfil pedir isso de forma explícita.
 ';
     }
 
@@ -75,9 +76,12 @@ PROMPT;
         ];
 
         if ($contactRaw === '') {
-            $parts[] = "Na chamada para ação, use 'Me chama no direct'.";
+            $parts[] = 'Na chamada para ação, convide de forma natural ao tema do post ou ao serviço. Sem direct, DM, inbox ou mensagem privada.';
         } else {
             $parts[] = 'Não escreva o contato na legenda. Ele entra depois das hashtags.';
+            if (!self::contactMentionsDirect($contactRaw)) {
+                $parts[] = 'Não peça direct, DM, inbox nem mensagem privada; use só o contato cadastrado depois das hashtags.';
+            }
         }
 
         if ($previousCaption !== null && $previousCaption !== '') {
@@ -105,5 +109,15 @@ PROMPT;
         $text = trim((string) ($value ?? ''));
 
         return $text !== '' ? $text : 'não informado';
+    }
+
+    private static function contactMentionsDirect(string $contact): bool
+    {
+        $flat = mb_strtolower((string) preg_replace('/\s+/u', ' ', trim($contact)));
+
+        return str_contains($flat, 'direct')
+            || str_contains($flat, ' dm')
+            || str_contains($flat, 'inbox')
+            || str_contains($flat, 'mensagem privada');
     }
 }
