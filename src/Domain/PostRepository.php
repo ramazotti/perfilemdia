@@ -184,6 +184,19 @@ final class PostRepository
         return $row === false ? null : $row;
     }
 
+    public function findOpenWorkflowForUser(int $userId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM posts
+             WHERE user_id = ? AND status IN ('COLLECTING', 'GENERATING', 'IMAGE_EDITING')
+             ORDER BY id DESC LIMIT 1"
+        );
+        $stmt->execute([$userId]);
+        $row = $stmt->fetch();
+
+        return $row === false ? null : $row;
+    }
+
     public function countPublishedInMonth(int $userId, string $monthStart, string $nextMonthStart): int
     {
         $stmt = $this->pdo->prepare(

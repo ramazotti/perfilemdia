@@ -112,6 +112,21 @@ class PostService
 
         $kind = $this->selectedKind($user);
         if ($kind === null) {
+            if ($this->posts->findOpenWorkflowForUser((int) $user['id']) !== null) {
+                $this->channel->sendText($chatId, Messages::postInProgress());
+
+                return;
+            }
+            if (IncomingMediaStash::save((int) $user['id'], $message)) {
+                $this->channel->sendText($chatId, Messages::mediaStashed());
+            }
+            $pending = (string) ($user['pending_action'] ?? '');
+            if (str_starts_with($pending, 'where:')) {
+                $where = substr($pending, 6) === 'story' ? 'story' : 'feed';
+                $this->sendKindMenu($user, $chatId, $where);
+
+                return;
+            }
             $this->askWhere($chatId, $user);
 
             return;
@@ -356,19 +371,75 @@ class PostService
      */
     public function cancelPending(array $user, int $chatId): void
     {
+        $clearedWizard = $this->clearPostWizard((int) $user['id']);
+
         $pending = $this->posts->findPendingForUser((int) $user['id']);
-        if ($pending === null) {
+        if ($pending !== null) {
+            $from = PostStatus::from((string) $pending['status']);
+            if ($from->isPending() && $this->posts->transition((int) $pending['id'], $from, PostStatus::Cancelled)) {
+                $this->discardPublicMedia((int) $pending['id']);
+                $this->channel->sendText($chatId, Messages::cancelled());
+
+                return;
+            }
+        }
+
+        $open = $this->posts->findOpenWorkflowForUser((int) $user['id']);
+        if ($open !== null) {
+            $from = PostStatus::from((string) $open['status']);
+            if ($this->posts->transition((int) $open['id'], $from, PostStatus::Cancelled)) {
+                $this->discardPublicMedia((int) $open['id']);
+                $this->channel->sendText($chatId, Messages::cancelled());
+
+                return;
+            }
+        }
+
+        if ($clearedWizard) {
+            $this->channel->sendText($chatId, Messages::wizardCancelled());
+
             return;
         }
-        $from = PostStatus::from((string) $pending['status']);
-        if (!$from->isPending()) {
-            return;
+
+        $this->channel->sendText($chatId, Messages::nothingToCancel());
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function beginNewPost(array $user, int $chatId): bool
+    {
+        if (!$this->guardsPass($user, $chatId)) {
+            return false;
         }
-        if (!$this->posts->transition((int) $pending['id'], $from, PostStatus::Cancelled)) {
-            return;
+        $this->channel->sendText($chatId, Messages::novo());
+        $this->askWhere($chatId, $user);
+
+        return true;
+    }
+
+    private function clearPostWizard(int $userId): bool
+    {
+        $user = $this->users->find($userId);
+        if ($user === null) {
+            return false;
         }
-        $this->discardPublicMedia((int) $pending['id']);
-        $this->channel->sendText($chatId, Messages::cancelled());
+        $pendingAction = (string) ($user['pending_action'] ?? '');
+        if ($pendingAction === '' || str_starts_with($pendingAction, 'chamado:') || str_starts_with($pendingAction, 'edit:')) {
+            return false;
+        }
+        $wizard = str_starts_with($pendingAction, 'where:')
+            || str_starts_with($pendingAction, 'kind:')
+            || str_starts_with($pendingAction, 'aiv:')
+            || str_starts_with($pendingAction, 'newpost:');
+        if (!$wizard) {
+            return false;
+        }
+        $this->users->update($userId, ['pending_action' => null]);
+        IncomingMediaStash::clear($userId);
+        IdeaReference::clearStash($userId);
+
+        return true;
     }
 
     public function finalizeCollecting(int $postId): void
@@ -2005,6 +2076,9 @@ class PostService
                 $this->channel->sendText($chatId, Messages::stillScheduled(ScheduleTime::label($at)));
             }
         }
+        if ($isStory && $caption !== '' && !$isVideo) {
+            $this->channel->sendText($chatId, Messages::storyPreviewCaption());
+        }
         $previewId = $isVideo
             ? $this->channel->sendVideo($chatId, $path, $caption, $buttons)
             : ($isStory && count($media) > 1
@@ -2853,13 +2927,15 @@ class PostService
             IdeaReference::clearStash((int) $user['id']);
         }
         $where = $this->chosenDestination($user);
-        if ($where === 'story' && in_array($kind, ['album', 'aivideo'], true)) {
+        if ($where === 'story' && in_array($kind, ['album', 'aivideo', 'surpresa'], true)) {
+            $this->channel->sendText($chatId, Messages::storyKindInvalid());
             $this->sendKindMenu($user, $chatId, 'story');
 
             return;
         }
         $mark = $where === 'story' ? '@story' : '';
         $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind . $mark]);
+        $user['pending_action'] = 'kind:' . $kind . $mark;
         $text = match ($kind) {
             'album' => Messages::kindAlbum(),
             'video' => $where === 'story' ? Messages::kindStoryVideo() : Messages::kindVideo(),
@@ -2867,6 +2943,7 @@ class PostService
             default => $where === 'story' ? Messages::kindStoryFoto() : Messages::kindFoto(),
         };
         $this->channel->sendText($chatId, $text, $kind === 'ia' ? Keyboards::surpriseMe() : null);
+        $this->tryConsumeIncomingStash($user, $chatId);
     }
 
     /**
@@ -3240,6 +3317,62 @@ class PostService
      * @param array<string, mixed> $user
      * @param array<string, mixed> $message
      */
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function tryConsumeIncomingStash(array $user, int $chatId): void
+    {
+        $payload = IncomingMediaStash::load((int) $user['id']);
+        if ($payload === null) {
+            return;
+        }
+        $message = IncomingMediaStash::toMessage($payload);
+        $kind = $this->selectedKind($user);
+        if ($kind === null) {
+            return;
+        }
+
+        if ($kind === 'ia') {
+            $idea = $this->extractTheme($message);
+            IncomingMediaStash::clear((int) $user['id']);
+            if ($idea !== null && $idea !== '') {
+                $this->startIdea($user, $chatId, $idea, $message);
+
+                return;
+            }
+            if ($this->stashIdeaReference($user, $message)) {
+                $this->channel->sendText($chatId, Messages::kindIaNeedTextWithPhoto());
+            }
+
+            return;
+        }
+
+        if ($kind === 'album') {
+            if (!isset($message['media_group_id'])) {
+                return;
+            }
+        }
+
+        $block = $this->incomingBlock($user, $message);
+        if ($block !== null) {
+            $this->channel->sendText($chatId, $block);
+
+            return;
+        }
+
+        IncomingMediaStash::clear((int) $user['id']);
+
+        if ($kind === 'album' && isset($message['media_group_id'])) {
+            $this->handleAlbumItem($user, $chatId, $message, (string) $message['media_group_id']);
+
+            return;
+        }
+
+        if ($kind === 'foto' || $kind === 'video') {
+            $this->startSinglePost($user, $chatId, $message);
+        }
+    }
+
     private function stashIdeaReference(array $user, array $message): bool
     {
         $file = $this->extractFile($message);

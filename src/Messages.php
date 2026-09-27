@@ -19,7 +19,7 @@ final class Messages
     {
         $who = $name !== '' ? $name : 'de novo';
 
-        return "Bem-vindo de volta, {$who}. Me manda a foto com uma frase sobre ela, ou use /ajuda.";
+        return "Bem-vindo de volta, {$who}. Use /novo para montar um post ou /ajuda para ver os comandos.";
     }
 
     public static function askProfession(): string
@@ -61,7 +61,7 @@ final class Messages
     {
         $who = $name !== '' ? $name : 'Tudo pronto';
 
-        return "{$who}! Me manda a foto com uma frase sobre ela.";
+        return "{$who}! Quando quiser publicar, envie /novo.";
     }
 
     public static function repeat(): string
@@ -71,7 +71,7 @@ final class Messages
 
     public static function novo(): string
     {
-        return 'Me manda a foto do serviço ou do produto. Se quiser, escreva na mesma mensagem uma frase sobre ela. Para mais qualidade, envie a foto como arquivo.';
+        return 'Vamos montar um post. Escolha se vai para o feed ou para o story. Depois você manda a mídia (ou usa a que já enviou).';
     }
 
     public static function ajuda(): string
@@ -148,7 +148,42 @@ final class Messages
 
     public static function cancelled(): string
     {
-        return 'Cancelado. Quando quiser, é só mandar outra foto.';
+        return 'Post descartado. Use /novo quando quiser começar outro.';
+    }
+
+    public static function wizardCancelled(): string
+    {
+        return 'Ok, parei por aqui. Use /novo quando quiser começar de novo.';
+    }
+
+    public static function nothingToCancel(): string
+    {
+        return 'Não há post esperando agora. Use /novo para começar um.';
+    }
+
+    public static function mediaStashed(): string
+    {
+        return 'Guardei a mídia. Agora escolha feed ou story.';
+    }
+
+    public static function postInProgress(): string
+    {
+        return 'Ainda estou montando o post anterior. Espere a prévia ou use /cancelar para descartar.';
+    }
+
+    public static function toneUseButtons(): string
+    {
+        return 'Toque em um dos botões abaixo para escolher o tom da legenda.';
+    }
+
+    public static function storyKindInvalid(): string
+    {
+        return 'No story entram foto, vídeo ou imagem criada pela IA. Carrossel e vídeo com IA ficam no feed.';
+    }
+
+    public static function storyPreviewCaption(): string
+    {
+        return 'O texto grande já está na foto. Abaixo vai a legenda do Instagram (hashtags e chamada, se houver).';
     }
 
     public static function publishing(): string
@@ -588,12 +623,12 @@ final class Messages
 
     public static function kindFoto(): string
     {
-        return 'Manda uma foto e, na mesma mensagem, uma frase sobre ela.';
+        return 'Manda a foto (como arquivo, se puder). Se quiser, escreva na mesma mensagem sobre o que é.';
     }
 
     public static function kindStoryFoto(): string
     {
-        return 'Manda a foto e, na mesma mensagem, a frase que entra nela. Sem hashtag.';
+        return 'Manda a foto do story (como arquivo, se puder). Se quiser, escreva na mesma mensagem a frase que entra nela.';
     }
 
     public static function kindStoryVideo(): string
@@ -643,7 +678,7 @@ final class Messages
 
     public static function askVideoSeconds(): string
     {
-        return 'Quantos segundos tem o vídeo? O máximo é 8.';
+        return 'Quantos segundos tem o vídeo com IA? Escolha abaixo (até 15 segundos).';
     }
 
     public static function askAiVideo(int $seconds): string

@@ -345,6 +345,12 @@ final class OnboardingService
      */
     private function rejectUnexpected(array $user, int $chatId): bool
     {
+        $step = (string) ($user['onboarding_step'] ?? 'start');
+        if ($step === 'city') {
+            $this->channel->sendText($chatId, Messages::toneUseButtons(), Keyboards::tone());
+
+            return true;
+        }
         $this->channel->sendText($chatId, Messages::repeat());
         $this->askCurrentStep($user, $chatId);
 

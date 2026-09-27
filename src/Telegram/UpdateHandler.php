@@ -171,7 +171,7 @@ final class UpdateHandler
 
         match ($command) {
             '/start' => $this->startCommand($user, $chatId, (string) ($parts[1] ?? '')),
-            '/novo' => $this->postsService->askWhere($chatId, $user),
+            '/novo' => $this->cmdNovo($user, $chatId),
             '/perfil' => $this->channel->sendText($chatId, Messages::perfil($user), Keyboards::perfilFields()),
             '/conectar' => $this->cmdConectar($user, $chatId),
             '/status' => $this->cmdStatus($user, $chatId),
@@ -213,6 +213,18 @@ final class UpdateHandler
         }
 
         $this->onboarding->start($user, $chatId);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function cmdNovo(array $user, int $chatId): void
+    {
+        if (!$this->postsService->beginNewPost($user, $chatId)) {
+            if ((string) ($user['onboarding_step'] ?? '') !== 'done') {
+                $this->onboarding->continueOnboarding($user, $chatId);
+            }
+        }
     }
 
     /**
