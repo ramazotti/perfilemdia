@@ -107,7 +107,24 @@ $meioCaixaBranco = $outDir . '/destaque_meio_caixa_branco.jpg';
 copy($base, $meioCaixaBranco);
 StoryCard::draw($meioCaixaBranco, $text, PhraseColor::BRANCO, PhrasePlace::MEIO, PhraseSize::NORMAL, PhraseStyle::CAIXA);
 
+$shortText = 'Sala calma, luz suave. Texto curto para ver a fonte maior com o marcador linha a linha.';
+$compareDir = $outDir . '/comparacao_curto_vs_longo';
+mkdir($compareDir, 0775, true);
+file_put_contents($compareDir . '/texto_curto.txt', $shortText . "\n# mb_strlen=" . mb_strlen($shortText) . "\n");
+file_put_contents($compareDir . '/texto_longo.txt', $text . "\n# mb_strlen=" . mb_strlen($text) . "\n");
+foreach ([
+    ['limpa', PhraseStyle::LIMPA],
+    ['caixa', PhraseStyle::CAIXA],
+    ['balao', PhraseStyle::BALAO],
+] as [$label, $style]) {
+    foreach (['curto' => $shortText, 'longo' => $text] as $tag => $body) {
+        $dest = $compareDir . "/{$label}_meio_branco_{$tag}.jpg";
+        copy($base, $dest);
+        StoryCard::draw($dest, $body, PhraseColor::BRANCO, PhrasePlace::MEIO, PhraseSize::NORMAL, PhraseStyle::storyChoice($style));
+    }
+}
+
 echo "Pronto: {$outDir}\n";
 echo "Texto: " . mb_strlen($text) . " caracteres, " . count($parts) . " quadro(s) no fluxo real.\n";
-echo "Arquivos com texto: {$count} combinações + destaque + sem texto.\n";
+echo "Arquivos com texto: {$count} combinações + destaque + comparacao_curto_vs_longo + sem texto.\n";
 echo "Abra no Finder: open \"{$outDir}\"\n";

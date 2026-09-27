@@ -10,6 +10,9 @@ final class StoryCard
 
     private const CAIXA_TEXT_MARGIN = 5;
 
+    /** Tamanho mínimo da fonte no story (px). Texto longo não fica menor que isso. */
+    private const MIN_FONT_SIZE = 28;
+
     public static function draw(
         string $jpegPath,
         string $text,
@@ -77,9 +80,6 @@ final class StoryCard
             if ($style === PhraseStyle::BALAO) {
                 self::paintBubbleGd($image, self::bubble($layout, $widths, $size, count($lines), $baseline, $ascent));
             }
-            if ($style === PhraseStyle::CAIXA && $marker !== false) {
-                self::paintCaixaGd($image, $layout, $widths, $lines, $size, $font, $baseline, $ascent, $marker);
-            }
             $shadow = null;
             if ($style === PhraseStyle::LIMPA) {
                 $sum = $ir + $ig + $ib;
@@ -88,8 +88,24 @@ final class StoryCard
             foreach ($lines as $i => $line) {
                 $box = imagettfbbox($size, 0, $font, $line);
                 $textWidth = is_array($box) ? (int) ($box[2] - $box[0]) : 0;
+                $ascentLine = is_array($box) ? abs((int) $box[7]) : $ascent;
+                $descent = is_array($box) ? max(0, (int) $box[1]) : (int) ($size * 0.25);
                 $tx = (int) ($layout['x'] + (($layout['boxW'] - $textWidth) / 2));
                 $ty = $baseline + ($i * $layout['lineHeight']);
+                if ($marker !== false) {
+                    [$padX, $padY] = self::caixaPadding($size);
+                    $markH = $ascentLine + $descent + ($padY * 2);
+                    $markW = $textWidth + ($padX * 2);
+                    self::round(
+                        $image,
+                        max(0, $tx - $padX),
+                        max(0, $ty - $ascentLine - $padY),
+                        $markW,
+                        $markH,
+                        self::caixaCornerRadius($markH, $markW, $size),
+                        $marker
+                    );
+                }
                 if ($shadow !== false && $shadow !== null) {
                     imagettftext($image, $size, 0, $tx + 2, $ty + 2, $shadow, $font, $line);
                 }
@@ -144,18 +160,26 @@ final class StoryCard
             [$mr, $mg, $mb] = self::markerRgb($color);
             $mark = new \ImagickDraw();
             $mark->setFillColor(new \ImagickPixel(sprintf('rgba(%d,%d,%d,%.2f)', $mr, $mg, $mb, self::markerOpacity())));
-            $lastLine = $lines[array_key_last($lines)] ?? 'A';
-            $lastMetrics = $image->queryFontMetrics($probe, $lastLine);
-            $lastDescent = (int) abs($lastMetrics['descender'] ?? $descent);
-            $caixa = self::caixaFrame($layout, $widths, count($lines), $size, $baseline, $ascent, $lastDescent, $layout['lineHeight']);
-            $mark->roundRectangle(
-                $caixa['x'],
-                $caixa['y'],
-                $caixa['x'] + $caixa['w'],
-                $caixa['y'] + $caixa['h'],
-                $caixa['radius'],
-                $caixa['radius'],
-            );
+            [$padX, $padY] = self::caixaPadding($size);
+            foreach ($lines as $i => $line) {
+                $lineMetrics = $image->queryFontMetrics($probe, $line);
+                $textWidth = (int) ($lineMetrics['textWidth'] ?? 0);
+                $tx = (int) ($cx - ($textWidth / 2));
+                $ty = $baseline + ($i * $layout['lineHeight']);
+                $lineAscent = (int) ($lineMetrics['ascender'] ?? $ascent);
+                $lineDescent = (int) abs($lineMetrics['descender'] ?? $descent);
+                $markH = $lineAscent + $lineDescent + ($padY * 2);
+                $markW = $textWidth + ($padX * 2);
+                $radius = self::caixaCornerRadius($markH, $markW, $size);
+                $mark->roundRectangle(
+                    max(0, $tx - $padX),
+                    max(0, $ty - $lineAscent - $padY),
+                    $tx + $textWidth + $padX,
+                    max(0, $ty - $lineAscent - $padY) + $markH,
+                    $radius,
+                    $radius
+                );
+            }
             $image->drawImage($mark);
         }
         if ($style === PhraseStyle::LIMPA) {
@@ -193,9 +217,9 @@ final class StoryCard
         $padY = (int) max(8, $size * 0.32);
         $lineHeight = (int) ($size * 1.8);
         $tail = 0;
-        $boxW = max(40, $width - (int) max(24, round($width * 0.06)));
+        $boxW = max(40, $width - 16);
         $boxH = (int) max(56, (int) round($height / 3) - $tail);
-        $boxH = min($boxH, (int) round($height * 0.38) - $tail);
+        $boxH = min($boxH, $height - 12 - $tail);
         $radius = min(22, (int) ($size * 0.55), (int) ($boxW / 2), (int) ($boxH / 2));
         $x = 8;
         $margin = (int) max(6, (int) round($height * 0.02));
@@ -379,13 +403,13 @@ final class StoryCard
      */
     private static function fitBlock(int $width, int $height, string $text, string $sizeName, callable $measure): array
     {
-        $band = (int) max(140, (int) round($height / 3));
-        $wrap = max(34, min(54, (int) round($width / 24)));
+        $band = (int) max(120, (int) round($height / 3));
+        $wrap = 26;
         $lines = self::lines($text, $wrap);
         $size = (int) round(self::fit($width, $lines) * PhraseSize::factor($sizeName));
-        $size = (int) max(16, $size);
+        $size = (int) max(self::MIN_FONT_SIZE, $size);
         $widths = [40];
-        for ($try = 0; $try < 18; $try++) {
+        for ($try = 0; $try < 16; $try++) {
             $lines = self::lines($text, $wrap);
             $widths = [];
             foreach ($lines as $line) {
@@ -394,27 +418,32 @@ final class StoryCard
             $padY = (int) max(10, $size * 0.45);
             $lineHeight = (int) ($size * 1.8);
             $boxH = ($padY * 2) + ($lineHeight * max(1, count($lines)));
-            $tooWide = max($widths) > (int) ($width * 0.88);
+            $tooWide = max($widths) > (int) ($width * 0.86);
             $tooTall = $boxH > $band;
             if (!$tooWide && !$tooTall) {
                 break;
             }
-            if ($tooWide && $wrap < 54) {
-                $wrap = min(54, $wrap + 3);
+            if ($tooWide && $wrap < 48) {
+                $wrap = min(48, $wrap + 4);
 
                 continue;
             }
-            if ($tooTall && $wrap < 54) {
-                $wrap = min(54, $wrap + 4);
+            if ($tooTall && $wrap < 48) {
+                $wrap = min(48, $wrap + 4);
 
                 continue;
             }
-            $next = (int) max(16, (int) ($size * 0.92));
+            if ($size <= self::MIN_FONT_SIZE) {
+                break;
+            }
+            $next = (int) max(self::MIN_FONT_SIZE, (int) ($size * 0.9));
             if ($next === $size) {
                 break;
             }
             $size = $next;
         }
+
+        $size = (int) max(self::MIN_FONT_SIZE, $size);
 
         return ['lines' => $lines, 'size' => $size, 'widths' => $widths];
     }
@@ -430,73 +459,7 @@ final class StoryCard
         }
         $byWidth = (int) (($width * 0.82) / max(1, $longest * 0.52));
 
-        return (int) max(20, min((int) ($width / 13), $byWidth));
-    }
-
-    /**
-     * @param list<int> $widths
-     * @param array{x:int,y:int,boxW:int,boxH:int,padY:int,radius:int,lineHeight:int,place:string,tail:int} $layout
-     * @return array{x:int,y:int,w:int,h:int,radius:int}
-     */
-    private static function caixaFrame(
-        array $layout,
-        array $widths,
-        int $lineCount,
-        int $size,
-        int $baseline,
-        int $ascent,
-        int $lastDescent,
-        int $lineHeight,
-    ): array {
-        [$padX, $padY] = self::caixaPadding($size);
-        $maxW = max(1, ...$widths);
-        $lineCount = max(1, $lineCount);
-        $cx = (int) ($layout['x'] + ($layout['boxW'] / 2));
-        $top = $baseline - $ascent - $padY;
-        $bottom = $baseline + (($lineCount - 1) * $lineHeight) + $lastDescent + $padY;
-        $w = $maxW + ($padX * 2);
-        $h = max(1, $bottom - $top);
-        $x = (int) ($cx - ($w / 2));
-
-        return [
-            'x' => max(0, $x),
-            'y' => max(0, $top),
-            'w' => $w,
-            'h' => $h,
-            'radius' => self::caixaCornerRadius($h, $w, $size),
-        ];
-    }
-
-    /**
-     * @param list<string> $lines
-     * @param list<int> $widths
-     * @param array{x:int,y:int,boxW:int,boxH:int,padY:int,radius:int,lineHeight:int,place:string,tail:int} $layout
-     */
-    private static function paintCaixaGd(
-        $image,
-        array $layout,
-        array $widths,
-        array $lines,
-        int $size,
-        string $font,
-        int $baseline,
-        int $ascent,
-        int $marker,
-    ): void {
-        $last = $lines[array_key_last($lines)] ?? 'A';
-        $lastBox = imagettfbbox($size, 0, $font, $last);
-        $lastDescent = is_array($lastBox) ? max(0, (int) $lastBox[1]) : (int) ($size * 0.25);
-        $frame = self::caixaFrame(
-            $layout,
-            $widths,
-            count($lines),
-            $size,
-            $baseline,
-            $ascent,
-            $lastDescent,
-            $layout['lineHeight'],
-        );
-        self::round($image, $frame['x'], $frame['y'], $frame['w'], $frame['h'], $frame['radius'], $marker);
+        return (int) max(self::MIN_FONT_SIZE, min((int) ($width / 16), $byWidth));
     }
 
     /**
