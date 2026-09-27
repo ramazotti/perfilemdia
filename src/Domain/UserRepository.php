@@ -189,7 +189,14 @@ final class UserRepository
         if ($row === false) {
             return null;
         }
-        $row['access_token'] = $this->crypto->decrypt((string) $row['access_token_enc']);
+        $enc = (string) ($row['access_token_enc'] ?? '');
+        if ($enc === '' || (string) ($row['status'] ?? '') !== 'active') {
+            unset($row['access_token_enc']);
+            $row['access_token'] = null;
+
+            return $row;
+        }
+        $row['access_token'] = $this->crypto->decrypt($enc);
         unset($row['access_token_enc']);
 
         return $row;
@@ -216,21 +223,19 @@ final class UserRepository
 
     private function cancelBillingForUser(int $userId): void
     {
-        $stmt = $this->pdo->prepare('SELECT id FROM customers WHERE user_id = ? LIMIT 1');
+        $stmt = $this->pdo->prepare("SELECT id FROM customers WHERE user_id = ? AND status <> 'excluido'");
         $stmt->execute([$userId]);
-        $customerId = $stmt->fetchColumn();
-        if ($customerId === false) {
-            return;
+        foreach ($stmt->fetchAll() as $row) {
+            $customerId = (int) $row['id'];
+            $this->pdo->prepare(
+                "UPDATE subscriptions
+                 SET status = 'cancelada', renew_token = NULL, gateway_subscription_id = NULL, cancel_at = NULL, updated_at = NOW()
+                 WHERE customer_id = ? AND status IN ('ativa', 'inadimplente', 'pendente')"
+            )->execute([$customerId]);
+            $this->pdo->prepare(
+                "UPDATE customers SET status = 'excluido', user_id = NULL, name = 'Excluído', email = '', phone = '', updated_at = NOW() WHERE id = ?"
+            )->execute([$customerId]);
         }
-        $customerId = (int) $customerId;
-        $this->pdo->prepare(
-            "UPDATE subscriptions
-             SET status = 'cancelada', renew_token = NULL, gateway_subscription_id = NULL, cancel_at = NULL, updated_at = NOW()
-             WHERE customer_id = ? AND status IN ('ativa', 'inadimplente', 'pendente')"
-        )->execute([$customerId]);
-        $this->pdo->prepare(
-            "UPDATE customers SET status = 'excluido', user_id = NULL, name = 'Excluído', email = '', phone = '', updated_at = NOW() WHERE id = ?"
-        )->execute([$customerId]);
     }
 
     public function markInstagramStatus(int $userId, string $status): void
@@ -282,7 +287,7 @@ final class UserRepository
         $ids = array_map(static fn (array $row): int => (int) $row['id'], $postIds->fetchAll());
         foreach ($ids as $postId) {
             $paths[] = Config::root() . '/storage/media/' . $postId . '_0.jpg';
-            $paths[] = Config::root() . '/storage/media/' . $postId . '_ia_ref.jpg';
+            $paths[] = Config::root() . '/storage/media/' . $postId . '_ref.jpg';
         }
         $paths[] = Config::root() . '/storage/media/u' . $userId . '_ia_ref.jpg';
         if ($ids !== []) {

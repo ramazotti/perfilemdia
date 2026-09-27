@@ -200,27 +200,105 @@ final class CheckoutService
 
     public function chargeCard(string $publicId, string $token, ?string $brand, ?string $last4): void
     {
-        $checkout = $this->requireOpen($publicId);
+        $reference = 'checkout-' . $publicId;
+        $own = !$this->pdo->inTransaction();
+        if ($own) {
+            $this->pdo->beginTransaction();
+        }
         try {
-            $result = $this->gateway->chargeCard($token, (int) $checkout['amount_cents'], $publicId);
+            $stmt = $this->pdo->prepare('SELECT * FROM checkouts WHERE public_id = ? FOR UPDATE');
+            $stmt->execute([$publicId]);
+            $checkout = $stmt->fetch();
+            if ($checkout === false) {
+                throw new RuntimeException('Checkout não encontrado.');
+            }
+            if ((string) $checkout['status'] === 'pago') {
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return;
+            }
+            if ((string) $checkout['status'] !== 'aberto') {
+                throw new RuntimeException('Este checkout não está aberto.');
+            }
+            $existing = $this->pdo->prepare(
+                'SELECT id, status FROM payments WHERE gateway = ? AND external_id = ? LIMIT 1'
+            );
+            $existing->execute([$this->gateway->name(), $reference]);
+            $row = $existing->fetch();
+            if ($row !== false && (string) $row['status'] === 'pago') {
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return;
+            }
+            $claimId = null;
+            if ($row !== false && (string) $row['status'] === 'pendente') {
+                $claimId = (int) $row['id'];
+            } else {
+                $claimId = $this->claimCheckoutCharge(
+                    (int) $checkout['id'],
+                    (int) $checkout['subscription_id'],
+                    (int) $checkout['amount_cents'],
+                    $reference,
+                );
+                if ($claimId === null) {
+                    throw new PaymentRefused('Este pagamento já está em processamento.');
+                }
+            }
+            $paymentRow = $this->paymentRow($claimId);
+            $result = $this->resolveCardCharge(
+                $paymentRow,
+                $reference,
+                fn (): array => $this->gateway->chargeCard($token, (int) $checkout['amount_cents'], $publicId),
+            );
+            if (($result['status'] ?? '') !== 'pago') {
+                $this->releaseCheckoutClaim($claimId);
+                $this->recordRefusal($checkout, $brand, $last4);
+                throw new PaymentRefused('O banco recusou este cartão.');
+            }
+            if (is_string($result['brand'] ?? null) && $result['brand'] !== '') {
+                $brand = (string) $result['brand'];
+            }
+            if (is_string($result['last4'] ?? null) && $result['last4'] !== '') {
+                $last4 = substr((string) $result['last4'], -4);
+            }
+            $this->captureCardPayment(
+                $claimId,
+                (string) ($result['external_id'] ?? $reference),
+                (int) $checkout['amount_cents'],
+                $brand,
+                $last4,
+            );
+            $this->markPaid((int) $checkout['id'], 'cartao', $reference, $brand, $last4, $claimId);
+            $savedToken = $this->gateway instanceof AppMaxGateway ? null : $token;
+            $this->rememberRenewal((int) $checkout['subscription_id'], 'cartao', $savedToken, $brand, $last4);
+            $this->armAppMax($checkout);
+            if ($own) {
+                $this->pdo->commit();
+            }
         } catch (PaymentRefused $e) {
-            $this->recordRefusal($checkout, $brand, $last4);
+            if (isset($claimId) && is_int($claimId)) {
+                $this->releaseCheckoutClaim($claimId);
+                $this->recordRefusal($checkout, $brand, $last4);
+            }
+            if ($own && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        } catch (\Throwable $e) {
+            if (isset($claimId) && is_int($claimId)) {
+                $this->markChargeUncertain($claimId, $reference);
+                if ($own && $this->pdo->inTransaction()) {
+                    $this->pdo->commit();
+                }
+            } elseif ($own && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
             throw $e;
         }
-        if (($result['status'] ?? '') !== 'pago') {
-            $this->recordRefusal($checkout, $brand, $last4);
-            throw new PaymentRefused('O banco recusou este cartão.');
-        }
-        if (is_string($result['brand'] ?? null) && $result['brand'] !== '') {
-            $brand = (string) $result['brand'];
-        }
-        if (is_string($result['last4'] ?? null) && $result['last4'] !== '') {
-            $last4 = substr((string) $result['last4'], -4);
-        }
-        $this->markPaid((int) $checkout['id'], 'cartao', $result['external_id'], $brand, $last4, null);
-        $savedToken = $this->gateway instanceof AppMaxGateway ? null : $token;
-        $this->rememberRenewal((int) $checkout['subscription_id'], 'cartao', $savedToken, $brand, $last4);
-        $this->armAppMax($checkout);
     }
 
     public function confirmExternal(string $gateway, string $externalId, string $rawPayload): bool
@@ -435,19 +513,46 @@ final class CheckoutService
             )->execute([$checkoutId, (int) $row['subscription_id']]);
             $this->rememberRenewal((int) $row['subscription_id'], 'cupom', null, null, null);
         }
-        if ($paymentId === null && $method === 'cartao') {
+        if ($method === 'cartao') {
+            if ($paymentId !== null) {
+                $this->pdo->prepare(
+                    "UPDATE payments SET status = 'pago', amount_cents = ?, brand = ?, last4 = ?
+                     WHERE id = ? AND status = 'pendente' AND checkout_id = ?"
+                )->execute([
+                    (int) $row['amount_cents'],
+                    $brand,
+                    $last4,
+                    $paymentId,
+                    $checkoutId,
+                ]);
+            } elseif ($paymentId === null) {
+                $this->pdo->prepare(
+                    "INSERT INTO payments (checkout_id, subscription_id, method, status, amount_cents, gateway, external_id, brand, last4, created_at)
+                     VALUES (?, ?, 'cartao', 'pago', ?, ?, ?, ?, ?, NOW())"
+                )->execute([
+                    $checkoutId,
+                    (int) $row['subscription_id'],
+                    (int) $row['amount_cents'],
+                    $this->gateway->name(),
+                    $externalId,
+                    $brand,
+                    $last4,
+                ]);
+            }
+        }
+    }
+
+    private function claimCheckoutCharge(int $checkoutId, int $subscriptionId, int $amountCents, string $reference): ?int
+    {
+        try {
             $this->pdo->prepare(
-                "INSERT INTO payments (checkout_id, subscription_id, method, status, amount_cents, gateway, external_id, brand, last4, created_at)
-                 VALUES (?, ?, 'cartao', 'pago', ?, ?, ?, ?, ?, NOW())"
-            )->execute([
-                $checkoutId,
-                (int) $row['subscription_id'],
-                (int) $row['amount_cents'],
-                $this->gateway->name(),
-                $externalId,
-                $brand,
-                $last4,
-            ]);
+                "INSERT INTO payments (checkout_id, subscription_id, method, status, amount_cents, gateway, external_id, created_at)
+                 VALUES (?, ?, 'cartao', 'pendente', ?, ?, ?, NOW())"
+            )->execute([$checkoutId, $subscriptionId, $amountCents, $this->gateway->name(), $reference]);
+
+            return (int) $this->pdo->lastInsertId();
+        } catch (\PDOException) {
+            return null;
         }
     }
 
@@ -459,6 +564,13 @@ final class CheckoutService
         $existing->execute([$this->gateway->name(), $reference]);
         $row = $existing->fetch();
         if ($row !== false) {
+            if ((string) $row['status'] === 'pago') {
+                return null;
+            }
+            if ((string) $row['status'] === 'pendente') {
+                return (int) $row['id'];
+            }
+
             return null;
         }
         try {
@@ -480,17 +592,110 @@ final class CheckoutService
         )->execute([$paymentId]);
     }
 
+    private function releaseCheckoutClaim(int $paymentId): void
+    {
+        $this->pdo->prepare(
+            "DELETE FROM payments WHERE id = ? AND status = 'pendente' AND checkout_id IS NOT NULL"
+        )->execute([$paymentId]);
+    }
+
+    /**
+     * @return array<string, mixed>|false
+     */
+    private function paymentRow(int $paymentId): array|false
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM payments WHERE id = ? LIMIT 1');
+        $stmt->execute([$paymentId]);
+        $row = $stmt->fetch();
+
+        return $row === false ? false : $row;
+    }
+
+    private function markChargeUncertain(int $paymentId, string $reference): void
+    {
+        $this->pdo->prepare(
+            "UPDATE payments SET pix_payload = ?
+             WHERE id = ? AND status = 'pendente' AND (pix_payload IS NULL OR pix_payload = '')"
+        )->execute(['charge_uncertain:' . $reference, $paymentId]);
+    }
+
+    private function captureCardPayment(
+        int $paymentId,
+        string $gatewayOrderId,
+        int $amountCents,
+        ?string $brand,
+        ?string $last4,
+    ): void {
+        $this->pdo->prepare(
+            "UPDATE payments SET status = 'pago', amount_cents = ?, pix_payload = ?, brand = ?, last4 = ?
+             WHERE id = ? AND status = 'pendente'"
+        )->execute([
+            $amountCents,
+            'gateway:' . $gatewayOrderId,
+            $brand,
+            $last4,
+            $paymentId,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed>|false $paymentRow
+     * @param callable(): array<string, mixed> $charge
+     * @return array<string, mixed>
+     */
+    private function resolveCardCharge(array|false $paymentRow, string $reference, callable $charge): array
+    {
+        if (is_array($paymentRow) && (string) ($paymentRow['status'] ?? '') === 'pago') {
+            return [
+                'status' => 'pago',
+                'external_id' => $this->gatewayOrderFromPayment($paymentRow) ?? $reference,
+            ];
+        }
+        if (is_array($paymentRow) && $this->paymentNeedsRecovery($paymentRow)) {
+            return [
+                'status' => 'pago',
+                'external_id' => $this->gatewayOrderFromPayment($paymentRow) ?? ('sync-' . $reference),
+            ];
+        }
+        try {
+            return $charge();
+        } catch (PaymentRefused $e) {
+            throw $e;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $payment
+     */
+    private function paymentNeedsRecovery(array $payment): bool
+    {
+        $payload = (string) ($payment['pix_payload'] ?? '');
+
+        return str_starts_with($payload, 'charge_uncertain:')
+            || str_starts_with($payload, 'gateway:');
+    }
+
+    /**
+     * @param array<string, mixed> $payment
+     */
+    private function gatewayOrderFromPayment(array $payment): ?string
+    {
+        $payload = (string) ($payment['pix_payload'] ?? '');
+        if (!str_starts_with($payload, 'gateway:')) {
+            return null;
+        }
+        $id = substr($payload, strlen('gateway:'));
+
+        return $id !== '' ? $id : null;
+    }
+
     /**
      * @param array<string, mixed> $subscription
      */
     private function renewOne(array $subscription): bool
     {
         $id = (int) $subscription['id'];
-        if ($this->cancelIsDue($subscription)) {
-            $this->closeSubscription($id, (int) $subscription['customer_id']);
-
-            return false;
-        }
+        $planPosts = (int) ($subscription['plan_posts'] ?? 0);
         if ((int) ($subscription['comp_forever'] ?? 0) === 1) {
             $next = (new \DateTimeImmutable('now'))->modify('+10 years')->format('Y-m-d H:i:s');
             $this->pdo->prepare('UPDATE subscriptions SET current_period_end = ?, updated_at = NOW() WHERE id = ?')
@@ -499,87 +704,158 @@ final class CheckoutService
             return true;
         }
         $compUntil = (string) ($subscription['comp_until'] ?? '');
-        $periodEnd = (string) $subscription['current_period_end'];
-        if ($compUntil !== '' && $compUntil > $periodEnd) {
+        $periodEndHint = (string) $subscription['current_period_end'];
+        if ($compUntil !== '' && $compUntil > $periodEndHint) {
             $this->pdo->prepare('UPDATE subscriptions SET current_period_end = ?, updated_at = NOW() WHERE id = ?')
                 ->execute([$compUntil, $id]);
 
             return true;
         }
-        $periodEnd = (string) $subscription['current_period_end'];
-        $subscription = $this->applySchedule($subscription);
-        $cycle = (string) $subscription['cycle'];
-        $amount = $cycle === 'anual' ? (int) $subscription['price_cents'] * 10 : (int) $subscription['price_cents'];
-        $reference = 'renew-' . $id . '-' . str_replace([' ', ':'], '', (string) $subscription['current_period_end']);
-        $claimId = $this->claimRenewal($id, $amount, $reference);
-        if ($claimId === null) {
-            return false;
+        $own = !$this->pdo->inTransaction();
+        if ($own) {
+            $this->pdo->beginTransaction();
         }
+        $claimId = null;
+        $reference = '';
         try {
-            $result = $this->chargeRenewal($subscription, $amount, $reference);
-        } catch (PaymentRefused) {
-            $this->releaseRenewalClaim($claimId);
-            $this->pdo->prepare(
-                "UPDATE subscriptions SET status = 'inadimplente', updated_at = NOW() WHERE id = ? AND status = 'ativa'"
-            )->execute([$id]);
-            $this->pdo->prepare(
-                "UPDATE customers SET status = 'inadimplente', updated_at = NOW() WHERE id = ? AND status = 'ativo'"
-            )->execute([(int) $subscription['customer_id']]);
+            $lock = $this->pdo->prepare('SELECT * FROM subscriptions WHERE id = ? FOR UPDATE');
+            $lock->execute([$id]);
+            $locked = $lock->fetch();
+            if ($locked === false) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
 
-            return false;
-        }
-        if (($result['status'] ?? '') === 'sincronizado') {
-            $ok = $this->syncRenewedPeriod($subscription, (string) ($result['period_end'] ?? ''));
-            if ($ok) {
-                $this->pdo->prepare(
-                    "UPDATE payments SET status = 'pago', external_id = ? WHERE id = ? AND status = 'pendente' AND checkout_id IS NULL"
-                )->execute([(string) ($result['external_id'] ?? $reference), $claimId]);
-            } else {
+                return false;
+            }
+            $subscription = $locked;
+            if ($this->cancelIsDue($subscription)) {
+                $this->closeSubscription($id, (int) $subscription['customer_id']);
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return false;
+            }
+            $periodEnd = (string) $subscription['current_period_end'];
+            $now = date('Y-m-d H:i:s');
+            if ($periodEnd === '' || $periodEnd > $now) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return false;
+            }
+            $subscription = $this->applySchedule($subscription);
+            $postsForRenewal = max((int) ($subscription['posts_limit'] ?? 0), $planPosts);
+            $cycle = (string) $subscription['cycle'];
+            $amount = $cycle === 'anual' ? (int) $subscription['price_cents'] * 10 : (int) $subscription['price_cents'];
+            $reference = 'renew-' . $id . '-' . str_replace([' ', ':'], '', $periodEnd);
+            $claimId = $this->claimRenewal($id, $amount, $reference);
+            if ($claimId === null) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return false;
+            }
+            $paymentRow = $this->paymentRow($claimId);
+            try {
+                $result = $this->resolveCardCharge(
+                    $paymentRow,
+                    $reference,
+                    fn (): array => $this->chargeRenewal($subscription, $amount, $reference),
+                );
+            } catch (PaymentRefused) {
                 $this->releaseRenewalClaim($claimId);
+                $this->pdo->prepare(
+                    "UPDATE subscriptions SET status = 'inadimplente', updated_at = NOW() WHERE id = ? AND status = 'ativa'"
+                )->execute([$id]);
+                $this->pdo->prepare(
+                    "UPDATE customers SET status = 'inadimplente', updated_at = NOW() WHERE id = ? AND status = 'ativo'"
+                )->execute([(int) $subscription['customer_id']]);
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return false;
+            }
+            if (($result['status'] ?? '') === 'sincronizado') {
+                $ok = $this->syncRenewedPeriod($subscription, (string) ($result['period_end'] ?? ''), $postsForRenewal);
+                if ($ok) {
+                    $this->pdo->prepare(
+                        "UPDATE payments SET status = 'pago' WHERE id = ? AND status = 'pendente' AND checkout_id IS NULL"
+                    )->execute([$claimId]);
+                } else {
+                    $this->releaseRenewalClaim($claimId);
+                }
+                if ($own) {
+                    $ok ? $this->pdo->commit() : $this->pdo->rollBack();
+                }
+
+                return $ok;
+            }
+            if (($result['status'] ?? '') !== 'pago') {
+                $this->releaseRenewalClaim($claimId);
+                $this->pdo->prepare(
+                    "UPDATE subscriptions SET status = 'inadimplente', updated_at = NOW() WHERE id = ? AND status = 'ativa'"
+                )->execute([$id]);
+                $this->pdo->prepare(
+                    "UPDATE customers SET status = 'inadimplente', updated_at = NOW() WHERE id = ? AND status = 'ativo'"
+                )->execute([(int) $subscription['customer_id']]);
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return false;
+            }
+            if (isset($result['amount_cents'])) {
+                $amount = (int) $result['amount_cents'];
+            }
+            $this->captureCardPayment(
+                $claimId,
+                (string) ($result['external_id'] ?? $reference),
+                $amount,
+                is_string($subscription['renew_brand'] ?? null) ? (string) $subscription['renew_brand'] : null,
+                is_string($subscription['renew_last4'] ?? null) ? (string) $subscription['renew_last4'] : null,
+            );
+            $months = $cycle === 'anual' ? 12 : 1;
+            $start = date('Y-m-d H:i:s');
+            $end = (new \DateTimeImmutable($start))->modify('+' . $months . ' months')->format('Y-m-d H:i:s');
+            $updated = $this->pdo->prepare(
+                "UPDATE subscriptions
+                 SET status = 'ativa', period_kind = 'cheio', posts_limit = ?, period_days = 0,
+                     period_started_at = ?, current_period_end = ?, cancel_at = NULL, updated_at = NOW()
+                 WHERE id = ? AND status = 'ativa' AND current_period_end = ?"
+            );
+            $updated->execute([$postsForRenewal, $start, $end, $id, $periodEnd]);
+            if ($updated->rowCount() !== 1) {
+                if ($own) {
+                    $this->pdo->commit();
+                }
+
+                return false;
+            }
+            $this->pdo->prepare(
+                "UPDATE customers SET status = 'ativo', updated_at = NOW() WHERE id = ? AND status = 'inadimplente'"
+            )->execute([(int) $subscription['customer_id']]);
+            $this->rememberRenewedCard($id, $result);
+            if ($own) {
+                $this->pdo->commit();
             }
 
-            return $ok;
+            return true;
+        } catch (\Throwable $e) {
+            if ($claimId !== null && $reference !== '') {
+                $this->markChargeUncertain($claimId, $reference);
+                if ($own && $this->pdo->inTransaction()) {
+                    $this->pdo->commit();
+                }
+            } elseif ($own && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
         }
-        if (($result['status'] ?? '') !== 'pago') {
-            $this->releaseRenewalClaim($claimId);
-
-            return false;
-        }
-        if (isset($result['amount_cents'])) {
-            $amount = (int) $result['amount_cents'];
-        }
-        $months = $cycle === 'anual' ? 12 : 1;
-        $start = date('Y-m-d H:i:s');
-        $end = (new \DateTimeImmutable($start))->modify('+' . $months . ' months')->format('Y-m-d H:i:s');
-        $posts = (int) $subscription['plan_posts'];
-        $updated = $this->pdo->prepare(
-            "UPDATE subscriptions
-             SET status = 'ativa', period_kind = 'cheio', posts_limit = ?, period_days = 0,
-                 period_started_at = ?, current_period_end = ?, cancel_at = NULL, updated_at = NOW()
-             WHERE id = ? AND status = 'ativa' AND current_period_end = ?"
-        );
-        $updated->execute([$posts, $start, $end, $id, $periodEnd]);
-        if ($updated->rowCount() !== 1) {
-            $this->releaseRenewalClaim($claimId);
-
-            return false;
-        }
-        $this->pdo->prepare(
-            "UPDATE payments SET status = 'pago', amount_cents = ?, external_id = ?, brand = ?, last4 = ?
-             WHERE id = ? AND status = 'pendente' AND checkout_id IS NULL"
-        )->execute([
-            $amount,
-            (string) $result['external_id'],
-            $subscription['renew_brand'],
-            $subscription['renew_last4'],
-            $claimId,
-        ]);
-        $this->pdo->prepare(
-            "UPDATE customers SET status = 'ativo', updated_at = NOW() WHERE id = ? AND status = 'inadimplente'"
-        )->execute([(int) $subscription['customer_id']]);
-        $this->rememberRenewedCard($id, $result);
-
-        return true;
     }
 
     /**
@@ -624,7 +900,7 @@ final class CheckoutService
     /**
      * @param array<string, mixed> $subscription
      */
-    private function syncRenewedPeriod(array $subscription, string $periodEnd): bool
+    private function syncRenewedPeriod(array $subscription, string $periodEnd, int $postsLimit): bool
     {
         if ($periodEnd === '') {
             return false;
@@ -636,7 +912,7 @@ final class CheckoutService
              WHERE id = ? AND status = 'ativa' AND current_period_end = ?"
         );
         $updated->execute([
-            (int) $subscription['plan_posts'],
+            $postsLimit,
             $periodEnd,
             (int) $subscription['id'],
             (string) $subscription['current_period_end'],

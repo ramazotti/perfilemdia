@@ -197,9 +197,10 @@ final class BillingTest extends TestCase
         $this->assertNotNull($paidCheckout);
         $this->linkPaidCustomer($service, $first['public_id']);
         $subId = (int) $paidCheckout['subscription_id'];
+        $pastDue = (new \DateTimeImmutable('-61 minutes'))->format('Y-m-d H:i:s');
         $this->pdo->prepare(
             "UPDATE subscriptions SET renew_method = 'cartao', renew_token = 'sandbox:1111', current_period_end = ? WHERE id = ?"
-        )->execute([(new \DateTimeImmutable('-1 hour'))->format('Y-m-d H:i:s'), $subId]);
+        )->execute([$pastDue, $subId]);
 
         $this->assertSame(1, $service->renewDue());
         $sub = $this->pdo->prepare('SELECT period_kind, posts_limit, status, current_period_end FROM subscriptions WHERE id = ?');
@@ -217,9 +218,10 @@ final class BillingTest extends TestCase
 
         $this->assertSame(0, $service->renewDue());
 
+        $pastDueAgain = (new \DateTimeImmutable('-121 minutes'))->format('Y-m-d H:i:s');
         $this->pdo->prepare(
             "UPDATE subscriptions SET renew_token = 'sandbox:0002', current_period_end = ? WHERE id = ?"
-        )->execute([(new \DateTimeImmutable('-1 hour'))->format('Y-m-d H:i:s'), $subId]);
+        )->execute([$pastDueAgain, $subId]);
         $this->assertSame(0, $service->renewDue());
         $refused = $this->pdo->prepare('SELECT status FROM subscriptions WHERE id = ?');
         $refused->execute([$subId]);

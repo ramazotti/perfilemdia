@@ -38,33 +38,37 @@ final class TelegramClient
             }
         }
 
-        if ($hasFile) {
-            $multipart = [];
-            foreach ($params as $key => $value) {
-                if ($value instanceof CURLFile) {
-                    $multipart[] = [
-                        'name' => $key,
-                        'contents' => fopen($value->getFilename(), 'rb'),
-                        'filename' => basename($value->getFilename()),
-                    ];
-                    continue;
+        try {
+            if ($hasFile) {
+                $multipart = [];
+                foreach ($params as $key => $value) {
+                    if ($value instanceof CURLFile) {
+                        $multipart[] = [
+                            'name' => $key,
+                            'contents' => fopen($value->getFilename(), 'rb'),
+                            'filename' => basename($value->getFilename()),
+                        ];
+                        continue;
+                    }
+                    if (is_array($value) || is_object($value)) {
+                        $multipart[] = [
+                            'name' => $key,
+                            'contents' => json_encode($value, JSON_UNESCAPED_UNICODE),
+                        ];
+                        continue;
+                    }
+                    if (is_bool($value)) {
+                        $multipart[] = ['name' => $key, 'contents' => $value ? 'true' : 'false'];
+                        continue;
+                    }
+                    $multipart[] = ['name' => $key, 'contents' => (string) $value];
                 }
-                if (is_array($value) || is_object($value)) {
-                    $multipart[] = [
-                        'name' => $key,
-                        'contents' => json_encode($value, JSON_UNESCAPED_UNICODE),
-                    ];
-                    continue;
-                }
-                if (is_bool($value)) {
-                    $multipart[] = ['name' => $key, 'contents' => $value ? 'true' : 'false'];
-                    continue;
-                }
-                $multipart[] = ['name' => $key, 'contents' => (string) $value];
+                $response = $this->http->request('POST', $url, ['multipart' => $multipart, 'timeout' => 60]);
+            } else {
+                $response = $this->http->request('POST', $url, ['json' => $params, 'timeout' => 45]);
             }
-            $response = $this->http->request('POST', $url, ['multipart' => $multipart, 'timeout' => 60]);
-        } else {
-            $response = $this->http->request('POST', $url, ['json' => $params, 'timeout' => 45]);
+        } catch (\Throwable $e) {
+            throw new RuntimeException(SecretRedactor::redact($e->getMessage()), (int) $e->getCode(), $e);
         }
 
         $body = $response['body'];
@@ -101,7 +105,11 @@ final class TelegramClient
         }
 
         $url = 'https://api.telegram.org/file/bot' . $this->token . '/' . $filePath;
-        $response = $this->http->request('GET', $url, ['timeout' => 60]);
+        try {
+            $response = $this->http->request('GET', $url, ['timeout' => 60]);
+        } catch (\Throwable $e) {
+            throw new RuntimeException(SecretRedactor::redact($e->getMessage()), (int) $e->getCode(), $e);
+        }
         $body = $response['body'];
         if (is_array($body)) {
             throw new RuntimeException('Download do Telegram retornou JSON inesperado.');

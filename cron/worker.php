@@ -17,6 +17,7 @@ use PerfilEmDia\Instagram\InstagramClient;
 use PerfilEmDia\Instagram\InstagramPublisher;
 use PerfilEmDia\Logger;
 use PerfilEmDia\Security\Crypto;
+use PerfilEmDia\Security\SecretRedactor;
 use PerfilEmDia\Telegram\TelegramClient;
 use PerfilEmDia\Telegram\UpdateHandler;
 use PerfilEmDia\Telegram\UpdateStore;
@@ -73,7 +74,7 @@ foreach ($store->stuck() as $row) {
         $store->markError($updateId, $e->getMessage());
         Logger::get()->error('Worker update falhou', [
             'update_id' => $updateId,
-            'error' => $e->getMessage(),
+            'error' => SecretRedactor::redact($e->getMessage()),
         ]);
     }
 }

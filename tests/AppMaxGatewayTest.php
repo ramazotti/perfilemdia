@@ -149,6 +149,18 @@ final class AppMaxGatewayTest extends TestCase
         $this->assertSame('hash1', $http->calls[1][2]['json']['payment']['CreditCard']['upsell_hash']);
     }
 
+    public function testStoredTokenRenewalRefusesWhenStatusIsMissing(): void
+    {
+        $http = new ScriptedPoster([
+            ['status' => 200, 'body' => ['success' => true, 'data' => ['id' => 92]]],
+            ['status' => 200, 'body' => ['success' => true, 'data' => []]],
+            ['status' => 200, 'body' => ['success' => true, 'data' => ['status' => 'pendente']]],
+        ]);
+        $gateway = new AppMaxGateway($this->pdo, $http, 'v3-token');
+        $this->expectException(\PerfilEmDia\Billing\PaymentRefused::class);
+        $gateway->renewWithToken(9, '52998224725', 'tok_saved', 2900, 'renovacao-9');
+    }
+
     public function testStoredTokenRenewalChargesThatToken(): void
     {
         $http = new ScriptedPoster([

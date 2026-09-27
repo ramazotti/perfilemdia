@@ -50,20 +50,51 @@ final class CustomerAccess
         if (preg_match('/^[a-f0-9]{64}$/', $token) !== 1) {
             return null;
         }
-        $stmt = $this->pdo->prepare(
-            'SELECT customer_id, expires_at FROM customer_access_tokens WHERE token_hash = ? LIMIT 1'
-        );
-        $stmt->execute([hash('sha256', $token)]);
-        $row = $stmt->fetch();
-        if ($row === false) {
-            return null;
+        $hash = hash('sha256', $token);
+        $own = !$this->pdo->inTransaction();
+        if ($own) {
+            $this->pdo->beginTransaction();
         }
-        if ((string) $row['expires_at'] < (new DateTimeImmutable('now'))->format('Y-m-d H:i:s')) {
-            return null;
-        }
-        $customerId = (int) $row['customer_id'];
-        $this->pdo->prepare('DELETE FROM customer_access_tokens WHERE token_hash = ?')->execute([hash('sha256', $token)]);
+        try {
+            $stmt = $this->pdo->prepare(
+                'SELECT customer_id, expires_at FROM customer_access_tokens WHERE token_hash = ? LIMIT 1 FOR UPDATE'
+            );
+            $stmt->execute([$hash]);
+            $row = $stmt->fetch();
+            if ($row === false) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
 
-        return $customerId;
+                return null;
+            }
+            if ((string) $row['expires_at'] < (new DateTimeImmutable('now'))->format('Y-m-d H:i:s')) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return null;
+            }
+            $customerId = (int) $row['customer_id'];
+            $del = $this->pdo->prepare('DELETE FROM customer_access_tokens WHERE token_hash = ?');
+            $del->execute([$hash]);
+            if ($del->rowCount() !== 1) {
+                if ($own) {
+                    $this->pdo->rollBack();
+                }
+
+                return null;
+            }
+            if ($own) {
+                $this->pdo->commit();
+            }
+
+            return $customerId;
+        } catch (\Throwable $e) {
+            if ($own && $this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 }

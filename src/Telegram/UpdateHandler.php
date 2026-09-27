@@ -504,14 +504,8 @@ final class UpdateHandler
     /**
      * @param array<string, mixed> $user
      */
-    /**
-     * @param array<string, mixed> $user
-     */
     private function audioAllowed(array $user): bool
     {
-        if ((string) ($user['onboarding_step'] ?? '') !== 'done') {
-            return true;
-        }
         $window = (new PlanAccess(Db::pdo()))->window((int) $user['id']);
         if ($window === null) {
             return false;
