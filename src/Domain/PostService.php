@@ -95,13 +95,21 @@ class PostService
 
         $pending = $this->posts->findPendingForUser((int) $user['id']);
         if ($pending !== null && !str_starts_with($userPending, 'newpost:')) {
+            if ($this->shouldBlockMediaWhilePending($userPending, $pending)) {
+                $text = (string) ($pending['destination'] ?? 'feed') === 'story'
+                    ? Messages::storyKeepPreview()
+                    : Messages::useOpenButtons();
+                $this->channel->sendText($chatId, $text);
+
+                return;
+            }
             $block = $this->incomingBlock($user, $message);
             if ($block !== null) {
                 $this->channel->sendText($chatId, $block);
 
                 return;
             }
-            $draftId = $this->createDraftFromMessage($user, $message);
+            $draftId = $this->createDraftFromMessage($user, $message, $pending);
             $this->users->update((int) $user['id'], [
                 'pending_action' => 'newpost:' . $draftId,
             ]);
@@ -184,7 +192,8 @@ class PostService
             }
             $old = $this->posts->findPendingForUser((int) $user['id']);
             if ($old !== null) {
-                $this->channel->sendText($chatId, Messages::replacePending());
+                $this->channel->sendText($chatId, Messages::useOpenButtons());
+                $this->sendPreview($user, $chatId, (int) $old['id']);
             }
 
             return;
@@ -203,6 +212,9 @@ class PostService
         $draft = $this->posts->find($draftId);
         if ($draft === null) {
             return;
+        }
+        if ($old !== null && (string) ($old['destination'] ?? '') === 'story') {
+            $this->posts->update($draftId, ['destination' => 'story']);
         }
 
         $theme = $draft['theme_text'] !== null ? (string) $draft['theme_text'] : null;
@@ -563,12 +575,20 @@ class PostService
      * @param array<string, mixed> $user
      * @param array<string, mixed> $message
      */
-    private function createDraftFromMessage(array $user, array $message): int
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $message
+     * @param array<string, mixed>|null $inheritFrom
+     */
+    private function createDraftFromMessage(array $user, array $message, ?array $inheritFrom = null): int
     {
         $theme = $this->extractTheme($message);
         $mediaGroupId = isset($message['media_group_id']) ? (string) $message['media_group_id'] : null;
         $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId);
         $this->rememberDestination($user, $postId);
+        if ($inheritFrom !== null && (string) ($inheritFrom['destination'] ?? '') === 'story') {
+            $this->posts->update($postId, ['destination' => 'story']);
+        }
         $file = $this->extractFile($message);
         if ($file !== null) {
             $this->rememberMedia($postId, 0, $file, (int) ($message['message_id'] ?? 0));
@@ -1530,10 +1550,21 @@ class PostService
         $color = $this->phraseColorOf($user);
         $place = $this->phrasePlaceOf($user);
         $size = $this->phraseSizeOf($user);
+        $post = $this->posts->find($postId);
+        $isStory = is_array($post) && (string) ($post['destination'] ?? 'feed') === 'story';
+        if ($isStory) {
+            $this->channel->sendText(
+                $chatId,
+                $saved
+                    ? Messages::phraseLookSaved(PhraseStyle::label($style), PhraseColor::label($color), PhrasePlace::where($place))
+                    : Messages::askStoryManual(),
+            );
+
+            return;
+        }
         $text = $saved
             ? Messages::phraseLookSaved(PhraseStyle::label($style), PhraseColor::label($color), PhrasePlace::where($place))
             : Messages::askPhotoPhrase(PhraseStyle::label($style), PhraseColor::label($color), PhrasePlace::where($place));
-        $post = $this->posts->find($postId);
         $canRemove = is_array($post) && trim((string) ($post['photo_phrase'] ?? '')) !== '';
         $this->channel->sendText($chatId, $text, Keyboards::phraseStyles($postId, $style, $color, $place, $size, $canRemove));
     }
@@ -2340,11 +2371,14 @@ class PostService
         }
         $fresh = $this->users->find((int) $user['id']) ?? $user;
         $now = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
-        $idea = trim((string) ($fresh['idea_text'] ?? ''));
-        if ($idea === '') {
-            $idea = BenefitOrchestrator::suggestion($fresh, $now);
+        $stored = trim((string) ($fresh['idea_text'] ?? ''));
+        if ($stored !== '') {
+            $this->startIdea($fresh, $chatId, mb_substr($stored, 0, 1000), null, BenefitOrchestrator::photoPhrase($fresh));
+
+            return;
         }
-        $this->startIdea($fresh, $chatId, mb_substr($idea, 0, 1000), null, BenefitOrchestrator::photoPhrase($fresh));
+        $brief = BenefitOrchestrator::surpriseBrief($fresh, $now);
+        $this->startIdea($fresh, $chatId, mb_substr($brief['idea'], 0, 1000), null, $brief['phrase']);
     }
 
     /**
@@ -3515,6 +3549,10 @@ class PostService
     private function chosenDestination(array $user): string
     {
         $pending = (string) ($user['pending_action'] ?? '');
+        $fromPost = $this->destinationFromPendingAction($pending);
+        if ($fromPost !== null) {
+            return $fromPost;
+        }
         if (str_starts_with($pending, 'where:')) {
             return substr($pending, 6) === 'story' ? 'story' : 'feed';
         }
@@ -3523,6 +3561,34 @@ class PostService
         }
 
         return 'feed';
+    }
+
+    private function destinationFromPendingAction(string $pendingAction): ?string
+    {
+        if (preg_match('/^(phrase|logo|sched):(\d+)$/', $pendingAction, $match) !== 1) {
+            return null;
+        }
+        $post = $this->posts->find((int) $match[2]);
+        if ($post === null) {
+            return null;
+        }
+
+        return (string) ($post['destination'] ?? 'feed') === 'story' ? 'story' : 'feed';
+    }
+
+    /**
+     * @param array<string, mixed> $pendingPost
+     */
+    private function shouldBlockMediaWhilePending(string $userPending, array $pendingPost): bool
+    {
+        if (preg_match('/^(phrase|logo|sched):(\d+)$/', $userPending) === 1) {
+            return true;
+        }
+        if ((string) ($pendingPost['destination'] ?? 'feed') === 'story') {
+            return true;
+        }
+
+        return false;
     }
 
     /**

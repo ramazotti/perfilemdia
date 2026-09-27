@@ -732,6 +732,11 @@ final class Messages
         return 'Use os botões da mensagem anterior. Para outro post, envie /novo.';
     }
 
+    public static function storyKeepPreview(): string
+    {
+        return 'Este story ainda está em ajuste. Use os botões da prévia. Para descartar e começar outro, envie /cancelar e depois /novo.';
+    }
+
     public static function aiPlan(): string
     {
         return 'Post criado pela IA faz parte do plano Estúdio.';

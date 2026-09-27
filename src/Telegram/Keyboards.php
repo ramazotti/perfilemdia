@@ -13,15 +13,15 @@ final class Keyboards
     {
         $rows = [
             [
-                ['text' => 'Publicar', 'callback_data' => 'a:pub:' . $postId],
-                ['text' => 'Agendar', 'callback_data' => 'a:sch:' . $postId],
+                ['text' => 'Publicar no Instagram', 'callback_data' => 'a:pub:' . $postId],
+                ['text' => 'Agendar horário', 'callback_data' => 'a:sch:' . $postId],
             ],
-            [['text' => 'Ajustar', 'callback_data' => 'a:mor:' . $postId]],
+            [['text' => 'Revisar texto e foto', 'callback_data' => 'a:mor:' . $postId]],
         ];
         if ($allowStory) {
             $rows[] = [['text' => 'Publicar no story', 'callback_data' => 'a:sty:' . $postId]];
         }
-        $rows[] = [['text' => 'Cancelar', 'callback_data' => 'a:can:' . $postId]];
+        $rows[] = [['text' => 'Descartar este post', 'callback_data' => 'a:can:' . $postId]];
 
         return $rows;
     }
@@ -32,8 +32,8 @@ final class Keyboards
     public static function where(): array
     {
         return [[
-            ['text' => 'Post no feed', 'callback_data' => 'wh:feed'],
-            ['text' => 'Story', 'callback_data' => 'wh:story'],
+            ['text' => 'Feed (grade do perfil)', 'callback_data' => 'wh:feed'],
+            ['text' => 'Story (24 horas)', 'callback_data' => 'wh:story'],
         ]];
     }
 
@@ -44,10 +44,10 @@ final class Keyboards
     {
         return [
             [
-                ['text' => 'Foto', 'callback_data' => 'pk:foto'],
-                ['text' => 'Vídeo', 'callback_data' => 'pk:video'],
+                ['text' => 'Enviar minha foto', 'callback_data' => 'pk:foto'],
+                ['text' => 'Enviar meu vídeo', 'callback_data' => 'pk:video'],
             ],
-            [['text' => 'Criado pela IA', 'callback_data' => 'pk:ia']],
+            [['text' => 'IA cria a imagem', 'callback_data' => 'pk:ia']],
         ];
     }
 
@@ -65,34 +65,37 @@ final class Keyboards
     ): array {
         $rows = [];
         $textRow = [[
-            'text' => $storyLook ? 'Mudar o texto' : 'Mudar a legenda',
+            'text' => $storyLook ? 'Pedir outro texto na foto' : 'Pedir nova legenda (IA)',
             'callback_data' => 'a:adj:' . $postId,
         ]];
         if ($allowRegen) {
-            $textRow[] = ['text' => 'Outra versão', 'callback_data' => 'a:reg:' . $postId];
+            $textRow[] = ['text' => 'Gerar tudo de novo', 'callback_data' => 'a:reg:' . $postId];
         }
         $rows[] = $textRow;
-        $rows[] = [['text' => 'Escrever eu mesmo', 'callback_data' => 'a:man:' . $postId]];
+        $rows[] = [[
+            'text' => $storyLook ? 'Escrever o texto na foto' : 'Escrever a legenda eu mesma',
+            'callback_data' => 'a:man:' . $postId,
+        ]];
         if ($storyLook) {
-            $rows[] = [['text' => 'Estilo e lugar', 'callback_data' => 'a:look:' . $postId]];
+            $rows[] = [['text' => 'Estilo, cor e posição', 'callback_data' => 'a:look:' . $postId]];
         }
         $photoRow = [];
         if ($allowPhrase) {
-            $photoRow[] = ['text' => 'Texto na foto', 'callback_data' => 'a:txt:' . $postId];
+            $photoRow[] = ['text' => 'Frase extra na imagem', 'callback_data' => 'a:txt:' . $postId];
         }
         if ($allowPhoto) {
-            $photoRow[] = ['text' => 'Tratar foto', 'callback_data' => 'a:img:' . $postId];
+            $photoRow[] = ['text' => 'Melhorar foto (IA)', 'callback_data' => 'a:img:' . $postId];
         }
         if ($photoRow !== []) {
             $rows[] = $photoRow;
         }
         if ($allowMark) {
-            $rows[] = [['text' => "Marca d'água", 'callback_data' => 'a:wm:' . $postId]];
+            $rows[] = [['text' => 'Logo ou foto do perfil', 'callback_data' => 'a:wm:' . $postId]];
         }
         if ($allowIdea) {
-            $rows[] = [['text' => 'Outra foto', 'callback_data' => 'a:pic:' . $postId]];
+            $rows[] = [['text' => 'Trocar imagem (IA)', 'callback_data' => 'a:pic:' . $postId]];
         }
-        $rows[] = [['text' => 'Voltar', 'callback_data' => 'a:back:' . $postId]];
+        $rows[] = [['text' => 'Voltar à prévia', 'callback_data' => 'a:back:' . $postId]];
 
         return $rows;
     }
@@ -102,7 +105,7 @@ final class Keyboards
      */
     public static function storyLook(int $postId, string $style, string $place, string $color): array
     {
-        $styles = ['limpa' => 'Limpa', 'caixa' => 'Caixa', 'balao' => 'Balão'];
+        $styles = ['limpa' => 'Só texto', 'caixa' => 'Faixa escura', 'balao' => 'Balão branco'];
         $styleRow = [];
         foreach ($styles as $key => $label) {
             if ($key === $style) {
@@ -110,7 +113,7 @@ final class Keyboards
             }
             $styleRow[] = ['text' => $label, 'callback_data' => 'f:' . $key . ':' . $postId];
         }
-        $places = ['topo' => 'Topo', 'meio' => 'Centro', 'rodape' => 'Rodapé'];
+        $places = ['topo' => 'Texto no topo', 'meio' => 'Texto no meio', 'rodape' => 'Texto embaixo'];
         $placeRow = [];
         foreach ($places as $key => $label) {
             if ($key === $place) {
@@ -118,7 +121,7 @@ final class Keyboards
             }
             $placeRow[] = ['text' => $label, 'callback_data' => 'pp:' . $key . ':' . $postId];
         }
-        $colors = ['dourado' => 'Dourado', 'branco' => 'Branco', 'preto' => 'Preto'];
+        $colors = ['dourado' => 'Letra dourada', 'branco' => 'Letra branca', 'preto' => 'Letra preta'];
         $colorRow = [];
         foreach ($colors as $key => $label) {
             if ($key === $color) {
@@ -131,7 +134,7 @@ final class Keyboards
             $styleRow,
             $placeRow,
             $colorRow,
-            [['text' => 'Voltar', 'callback_data' => 'a:back:' . $postId]],
+            [['text' => 'Voltar à prévia', 'callback_data' => 'a:back:' . $postId]],
         ];
     }
 
@@ -156,8 +159,8 @@ final class Keyboards
     public static function scheduled(int $postId): array
     {
         return [
-            [['text' => 'Publicar agora', 'callback_data' => 'a:pub:' . $postId]],
-            [['text' => 'Cancelar agendamento', 'callback_data' => 'a:uns:' . $postId]],
+            [['text' => 'Publicar no Instagram agora', 'callback_data' => 'a:pub:' . $postId]],
+            [['text' => 'Cancelar o agendamento', 'callback_data' => 'a:uns:' . $postId]],
         ];
     }
 
@@ -167,12 +170,12 @@ final class Keyboards
     public static function markSource(int $postId, bool $hasLogo): array
     {
         $rows = [
-            [['text' => 'Foto do perfil', 'callback_data' => 'm:ig:' . $postId]],
+            [['text' => 'Usar foto do Instagram', 'callback_data' => 'm:ig:' . $postId]],
         ];
         if ($hasLogo) {
-            $rows[] = [['text' => 'Minha logo', 'callback_data' => 'm:ok:' . $postId]];
+            $rows[] = [['text' => 'Usar logo que enviei', 'callback_data' => 'm:ok:' . $postId]];
         }
-        $rows[] = [['text' => 'Enviar logo', 'callback_data' => 'm:up:' . $postId]];
+        $rows[] = [['text' => 'Enviar arquivo de logo', 'callback_data' => 'm:up:' . $postId]];
 
         return $rows;
     }
@@ -183,12 +186,12 @@ final class Keyboards
     public static function phraseStyles(int $postId, string $current, string $color = 'branco', string $place = 'rodape', string $size = 'normal', bool $canRemove = false): array
     {
         $labels = [
-            'cursiva' => 'Cursiva',
-            'classica' => "Cl\u{00e1}ssica",
-            'limpa' => 'Limpa',
-            'forte' => 'Forte',
-            'balao' => "Bal\u{00e3}o",
-            'caixa' => 'Caixa',
+            'cursiva' => 'Fonte cursiva',
+            'classica' => "Fonte cl\u{00e1}ssica",
+            'limpa' => "S\u{00f3} texto",
+            'forte' => 'Texto em negrito',
+            'balao' => "Bal\u{00e3}o branco",
+            'caixa' => 'Faixa escura',
         ];
         $button = static function (string $style) use ($postId, $current, $labels): array {
             $text = $labels[$style];
@@ -199,9 +202,9 @@ final class Keyboards
             return ['text' => $text, 'callback_data' => 'f:' . $style . ':' . $postId];
         };
         $colors = [
-            'dourado' => 'Dourado',
-            'branco' => 'Branco',
-            'preto' => 'Preto',
+            'dourado' => 'Letra dourada',
+            'branco' => 'Letra branca',
+            'preto' => 'Letra preta',
         ];
         $colorRow = [];
         foreach ($colors as $key => $label) {
@@ -211,9 +214,9 @@ final class Keyboards
             $colorRow[] = ['text' => $label, 'callback_data' => 'pc:' . $key . ':' . $postId];
         }
         $places = [
-            'topo' => 'Topo',
-            'meio' => 'Meio',
-            'rodape' => "Rodap\u{00e9}",
+            'topo' => 'Texto no topo',
+            'meio' => 'Texto no meio',
+            'rodape' => 'Texto embaixo',
         ];
         $placeRow = [];
         foreach ($places as $key => $label) {
@@ -223,9 +226,9 @@ final class Keyboards
             $placeRow[] = ['text' => $label, 'callback_data' => 'pp:' . $key . ':' . $postId];
         }
         $sizes = [
-            'menor' => 'Menor',
-            'normal' => 'Normal',
-            'maior' => 'Maior',
+            'menor' => 'Letra menor',
+            'normal' => "Letra m\u{00e9}dia",
+            'maior' => 'Letra maior',
         ];
         $sizeRow = [];
         foreach ($sizes as $key => $label) {
@@ -243,7 +246,7 @@ final class Keyboards
             $sizeRow,
         ];
         if ($canRemove) {
-            $rows[] = [['text' => 'Tirar texto', 'callback_data' => 'px:' . $postId]];
+            $rows[] = [['text' => 'Remover frase da foto', 'callback_data' => 'px:' . $postId]];
         }
 
         return $rows;
@@ -290,7 +293,7 @@ final class Keyboards
      */
     public static function skip(string $step): array
     {
-        return [[['text' => 'Pular', 'callback_data' => 'pular:' . $step]]];
+        return [[['text' => 'Pular esta etapa', 'callback_data' => 'pular:' . $step]]];
     }
 
     /**
@@ -299,8 +302,8 @@ final class Keyboards
     public static function yesNoPending(): array
     {
         return [
-            [['text' => 'Sim, começar novo', 'callback_data' => 'novo:sim']],
-            [['text' => 'Não, voltar ao anterior', 'callback_data' => 'novo:nao']],
+            [['text' => 'Sim, descartar o anterior', 'callback_data' => 'novo:sim']],
+            [['text' => 'Não, manter o anterior', 'callback_data' => 'novo:nao']],
         ];
     }
 
@@ -406,16 +409,16 @@ final class Keyboards
     {
         $rows = [
             [
-                ['text' => 'Foto única', 'callback_data' => 'pk:foto'],
-                ['text' => 'Carrossel', 'callback_data' => 'pk:album'],
+                ['text' => '1 foto no feed', 'callback_data' => 'pk:foto'],
+                ['text' => 'Carrossel (várias fotos)', 'callback_data' => 'pk:album'],
             ],
             [
                 ['text' => 'Vídeo curto', 'callback_data' => 'pk:video'],
-                ['text' => 'Criado pela IA', 'callback_data' => 'pk:ia'],
+                ['text' => 'IA cria imagem e legenda', 'callback_data' => 'pk:ia'],
             ],
         ];
         if ($aiVideo) {
-            $rows[] = [['text' => "V\u{00ed}deo com IA", 'callback_data' => 'pk:aivideo']];
+            $rows[] = [['text' => 'IA gera vídeo curto', 'callback_data' => 'pk:aivideo']];
         }
 
         return $rows;
@@ -441,7 +444,7 @@ final class Keyboards
 
     public static function publishRetry(int $postId): array
     {
-        return [[['text' => 'Tentar de novo', 'callback_data' => 'a:pub:' . $postId]]];
+        return [[['text' => 'Tentar publicar de novo', 'callback_data' => 'a:pub:' . $postId]]];
     }
 
     /**
@@ -451,12 +454,12 @@ final class Keyboards
     {
         $rows = [];
         if ($surprise) {
-            $rows[] = [['text' => 'Surpreenda-me', 'callback_data' => 'id:sur']];
-            $rows[] = [['text' => 'Criar pela IA', 'callback_data' => 'id:ia']];
+            $rows[] = [['text' => 'Surpreenda-me (IA decide)', 'callback_data' => 'id:sur']];
+            $rows[] = [['text' => 'Criar post com IA', 'callback_data' => 'id:ia']];
         }
         $rows[] = [
-            ['text' => 'Receber todo dia', 'callback_data' => 'id:on'],
-            ['text' => 'Parar', 'callback_data' => 'id:off'],
+            ['text' => 'Ideia diária no Telegram', 'callback_data' => 'id:on'],
+            ['text' => 'Parar ideias diárias', 'callback_data' => 'id:off'],
         ];
 
         return $rows;
@@ -467,6 +470,6 @@ final class Keyboards
      */
     public static function surpriseMe(): array
     {
-        return [[['text' => 'Surpreenda-me', 'callback_data' => 'pk:surpresa']]];
+        return [[['text' => 'Surpreenda-me (IA decide)', 'callback_data' => 'pk:surpresa']]];
     }
 }

@@ -24,11 +24,11 @@ final class Utf8CopyTest extends TestCase
             $json = json_encode(["inline_keyboard" => $rows], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
             $this->assertNotSame("", $json);
         }
-        $this->assertSame("Outra vers\u{00e3}o", Keyboards::adjustMenu(7, false, true, true, true, false, true)[0][1]["text"]);
+        $this->assertSame("Gerar tudo de novo", Keyboards::adjustMenu(7, false, true, true, true, false, true)[0][1]["text"]);
         $this->assertSame("Descontra\u{00ed}do", Keyboards::tone()[0][1]["text"]);
         $this->assertSame("T\u{00e9}cnico", Keyboards::tone()[1][0]["text"]);
-        $this->assertSame("Sim, come\u{00e7}ar novo", Keyboards::yesNoPending()[0][0]["text"]);
-        $this->assertSame("N\u{00e3}o, voltar ao anterior", Keyboards::yesNoPending()[1][0]["text"]);
+        $this->assertSame("Sim, descartar o anterior", Keyboards::yesNoPending()[0][0]["text"]);
+        $this->assertSame("N\u{00e3}o, manter o anterior", Keyboards::yesNoPending()[1][0]["text"]);
         $this->assertSame("J\u{00e1} \u{00e9} profissional, conectar", Keyboards::instagramConnect("https://exemplo")[0][0]["text"]);
     }
 

@@ -152,7 +152,7 @@ final class ImageEditTest extends TestCase
         $photos = array_filter($channel->sent, static fn (array $row): bool => $row['type'] === 'photo');
         $this->assertNotEmpty($photos);
         $this->openAdjustMenu($service, $user, 930001, $postId);
-        $this->assertContains('Tratar foto', $this->buttonLabels($channel));
+        $this->assertContains('Melhorar foto (IA)', $this->buttonLabels($channel));
     }
 
     public function testTreatPhotoStaysAvailableForASecondUse(): void
@@ -161,7 +161,7 @@ final class ImageEditTest extends TestCase
         $service->handleApprovalCallback($user, 930001, 'cb', 'img', $postId);
         $service->handleThemeText($user, 930001, 'mais luz');
         $this->openAdjustMenu($service, $user, 930001, $postId);
-        $this->assertContains('Tratar foto', $this->buttonLabels($channel));
+        $this->assertContains('Melhorar foto (IA)', $this->buttonLabels($channel));
         $this->assertSame(1, (int) $posts->find($postId)['image_edit_count']);
 
         $service->handleApprovalCallback($user, 930001, 'cb2', 'img', $postId);
@@ -169,8 +169,8 @@ final class ImageEditTest extends TestCase
 
         $this->assertSame(2, (int) $posts->find($postId)['image_edit_count']);
         $this->openAdjustMenu($service, $user, 930001, $postId);
-        $this->assertNotContains('Tratar foto', $this->buttonLabels($channel));
-        $this->assertContains('Texto na foto', $this->buttonLabels($channel));
+        $this->assertNotContains('Melhorar foto (IA)', $this->buttonLabels($channel));
+        $this->assertContains('Frase extra na imagem', $this->buttonLabels($channel));
     }
 
     public function testPhraseStyleIsSavedAndUsedOnTheNextText(): void
@@ -365,13 +365,13 @@ final class ImageEditTest extends TestCase
             $service->handleApprovalCallback($user, 930001, 'cb', 'pic', $postId);
             $this->assertSame(1, $ideas->calls);
             $this->openAdjustMenu($service, $user, 930001, $postId);
-            $this->assertContains('Outra foto', $this->buttonLabels($channel));
+            $this->assertContains('Trocar imagem (IA)', $this->buttonLabels($channel));
 
             $service->handleApprovalCallback($user, 930001, 'cb2', 'pic', $postId);
             $this->assertSame(2, $ideas->calls);
             $this->assertSame(2, (int) $posts->find($postId)['idea_regen_count']);
             $this->openAdjustMenu($service, $user, 930001, $postId);
-            $this->assertNotContains('Outra foto', $this->buttonLabels($channel));
+            $this->assertNotContains('Trocar imagem (IA)', $this->buttonLabels($channel));
 
             $service->handleApprovalCallback($user, 930001, 'cb3', 'pic', $postId);
             $this->assertSame(2, $ideas->calls);

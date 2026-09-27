@@ -14,7 +14,12 @@ final class IdeaLook
      */
     public static function brief(array $user): string
     {
-        $bits = [self::tone((string) ($user['tone'] ?? ''))];
+        $tone = (string) ($user['tone'] ?? '');
+        $bits = [self::tone($tone), self::composition($tone)];
+        $setting = self::professionSetting((string) ($user['profession'] ?? ''));
+        if ($setting !== '') {
+            $bits[] = $setting;
+        }
         $who = self::plain((string) ($user['profession'] ?? ''));
         if ($who !== '') {
             $bits[] = 'This image is for a ' . $who . '. Show that real work, not a generic stand-in.';
@@ -38,12 +43,58 @@ final class IdeaLook
     private static function tone(string $tone): string
     {
         return match ($tone) {
-            'profissional' => 'Tone: professional. Polished, calm, well kept, and credible.',
-            'descontraido' => 'Tone: relaxed. Candid, warm, lively, and still cared for.',
-            'tecnico' => 'Tone: precise. Clear light, orderly, and focused on the craft.',
-            'acolhedor' => 'Tone: welcoming. Soft natural light, close, human, and gentle.',
+            'profissional' => 'Tone: professional. Polished, calm, credible, and quiet.',
+            'descontraido' => 'Tone: relaxed. Warm and candid, but still tidy and believable.',
+            'tecnico' => 'Tone: precise. Clear light, orderly, focused on one craft detail.',
+            'acolhedor' => 'Tone: welcoming. Soft natural light, gentle, human, and calm.',
             default => 'Tone: natural and cared for, the kind of place someone is proud to show.',
         };
+    }
+
+    private static function composition(string $tone): string
+    {
+        return match ($tone) {
+            'acolhedor' => 'Composition: very simple and uncluttered. One clear subject, lots of calm empty space, plain walls, few objects. '
+                . 'No crowded rooms, no poster walls, no neon, no confetti, no busy patterns, no dramatic stock props. '
+                . 'Think a quiet room someone trusts, not a marketing montage.',
+            'profissional' => 'Composition: clean and restrained. Few elements, straight lines, nothing flashy or chaotic in the background.',
+            'tecnico' => 'Composition: one tool, material, or step in focus. Background stays plain and orderly, not decorative.',
+            'descontraido' => 'Composition: friendly and lived-in, but not messy. Avoid visual noise and clutter; keep the frame easy to read.',
+            default => 'Composition: simple frame, real materials, no visual clutter or fake stock chaos.',
+        };
+    }
+
+    private static function professionSetting(string $profession): string
+    {
+        $who = mb_strtolower(trim($profession));
+        if ($who === '') {
+            return '';
+        }
+
+        if (preg_match('/\b(professor|professora|docente|teacher|educador|educadora)\b/u', $who) === 1
+            || str_contains($who, 'escola')
+            || str_contains($who, 'ensino')) {
+            return 'Setting: a calm school or classroom with white or light walls, simple desks, and a board. '
+                . 'Only the essentials. No packed bulletin boards, no toy explosion, no carnival colors, no crowd of children.';
+        }
+
+        if (str_contains($who, 'psicolog') || str_contains($who, 'terapeut')) {
+            return 'Setting: a quiet therapy or consultation room, soft light, one chair or sofa, minimal objects on shelves.';
+        }
+
+        if (str_contains($who, 'nutricion')) {
+            return 'Setting: a clean consultation desk or a simple plate on a plain table, not a food collage.';
+        }
+
+        if (str_contains($who, 'advogad')) {
+            return 'Setting: a tidy office desk or meeting table, neutral walls, few papers, no courtroom drama.';
+        }
+
+        if (str_contains($who, 'dentist')) {
+            return 'Setting: a bright, sterile consultation room ready for use, without patients visible.';
+        }
+
+        return '';
     }
 
     private static function plain(string $value): string

@@ -46,7 +46,7 @@ final class BenefitOrchestrator
     public static function surpriseBrief(array $user, DateTimeImmutable $now, ?int $roll = null): array
     {
         $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
-        $scenes = self::surpriseScenes($now);
+        $scenes = self::surpriseScenes($now, (string) ($user['tone'] ?? ''), (string) ($user['profession'] ?? ''));
         $index = ($roll ?? random_int(0, PHP_INT_MAX)) % count($scenes);
         $scene = $scenes[$index];
 
@@ -168,6 +168,7 @@ final class BenefitOrchestrator
             'confeitaria' => self::job('Confeitaria', 'o bolo, a fornada ou a bancada', 'Fornada de hoje, ainda na bancada.'),
             'pet-shop' => self::job('Pet shop', 'um cuidado no pet, com o tutor de acordo, ou o produto na prateleira', 'Banho terminado e toalha dobrada.'),
             'academia' => self::job('Academia', 'a sala, um aparelho ou uma aula começando', 'Sala de aula pronta para o horário.'),
+            'professor' => self::job('Professor', 'a sala de aula calma, com carteiras, quadro e parede clara, sem poluição visual', 'Sala pronta para a aula.'),
         ];
     }
 
@@ -264,9 +265,61 @@ final class BenefitOrchestrator
     /**
      * @return list<array{0:string,1:string}>
      */
-    private static function surpriseScenes(DateTimeImmutable $now): array
+    private static function surpriseScenes(DateTimeImmutable $now, string $tone = '', string $profession = ''): array
     {
-        $scenes = [
+        $calm = in_array($tone, ['acolhedor', 'profissional'], true);
+        $scenes = $calm ? self::surpriseScenesCalm($profession) : self::surpriseScenesDefault();
+        if ($tone === 'tecnico') {
+            $scenes = array_merge(self::surpriseScenesTechnical(), $scenes);
+        }
+        $date = self::commemorative($now);
+        if ($date !== null) {
+            $hint = $date['hint'];
+            if ($calm) {
+                $hint .= ' Prefira um enquadramento simples, com poucos objetos.';
+            }
+            $scenes[] = [$hint, 'Hoje, neste tema.'];
+        }
+
+        return $scenes;
+    }
+
+    /**
+     * @return list<array{0:string,1:string}>
+     */
+    private static function surpriseScenesCalm(string $profession): array
+    {
+        $who = mb_strtolower(trim($profession));
+        if (preg_match('/\b(professor|professora|docente|teacher|educador|educadora)\b/u', $who) === 1
+            || str_contains($who, 'escola')
+            || str_contains($who, 'ensino')) {
+            return [
+                ['Mostre a sala de aula vazia e calma: carteiras, quadro e parede clara, sem cartazes ou bagunça.', 'Sala pronta.'],
+                ['Mostre a mesa da professora ou do professor, com poucos objetos, luz natural.', 'Mesa do dia.'],
+                ['Mostre o quadro ou o livro aberto, com o resto da sala simples ao fundo.', 'Antes da aula.'],
+                ['Mostre o corredor quieto da escola, limpo e com luz suave.', 'Escola em silêncio.'],
+                ['Mostre um detalhe do material de aula, sozinho sobre a carteira.', 'Material do dia.'],
+            ];
+        }
+
+        return [
+            ['Mostre o espaço de trabalho vazio e quieto, com parede clara e poucos objetos.', 'O dia começa assim.'],
+            ['Mostre um único detalhe em close, com fundo limpo e desfocado.', 'De perto, agora.'],
+            ['Mostre a sala pronta para o próximo horário, sem pessoas e sem excesso de decoração.', 'Pronto para receber.'],
+            ['Mostre a mesa ou bancada organizada, só com o essencial do trabalho.', 'Só o essencial.'],
+            ['Mostre um canto calmo do ambiente que quase ninguém fotografa, sem poluição visual.', 'Por dentro.'],
+            ['Mostre luz natural entrando em um ambiente simples e cuidado.', 'Luz do dia.'],
+            ['Mostre o material do ofício, sozinho, sobre superfície lisa.', 'Ferramenta do dia.'],
+            ['Mostre o fim do expediente: tudo no lugar, ambiente sereno.', 'Fim do expediente.'],
+        ];
+    }
+
+    /**
+     * @return list<array{0:string,1:string}>
+     */
+    private static function surpriseScenesDefault(): array
+    {
+        return [
             ['Mostre o começo do dia, com o espaço ainda quieto.', 'O dia começa assim.'],
             ['Mostre um detalhe de perto do que foi feito agora.', 'De perto, agora.'],
             ['Mostre o bastidor, antes de ficar pronto.', 'Antes de ficar pronto.'],
@@ -282,12 +335,17 @@ final class BenefitOrchestrator
             ['Mostre um canto do espaço que o cliente quase não vê.', 'Por dentro.'],
             ['Mostre o preparo, o passo anterior ao resultado.', 'O passo anterior.'],
         ];
-        $date = self::commemorative($now);
-        if ($date !== null) {
-            $scenes[] = [$date['hint'], 'Hoje, neste tema.'];
-        }
+    }
 
-        return $scenes;
+    /**
+     * @return list<array{0:string,1:string}>
+     */
+    private static function surpriseScenesTechnical(): array
+    {
+        return [
+            ['Mostre um passo do processo, com foco na ferramenta ou no material.', 'O passo a passo.'],
+            ['Mostre o detalhe técnico que faz diferença no serviço, fundo neutro.', 'Detalhe que importa.'],
+        ];
     }
 
     private static function weekdayHint(DateTimeImmutable $now): string

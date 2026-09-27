@@ -483,7 +483,7 @@ final class StoryCard
 
     private static function markerOpacity(): float
     {
-        return 0.42;
+        return 0.90;
     }
 
     private static function markerAlpha(): int
@@ -493,7 +493,7 @@ final class StoryCard
 
     private static function bubbleOpacity(): float
     {
-        return 0.62;
+        return 0.90;
     }
 
     /**

@@ -53,7 +53,7 @@ final class AiVideoFlowTest extends TestCase
             }
         }
         $joined = implode("\n", $labels);
-        $this->assertStringContainsString('com IA', $joined);
+        $this->assertStringContainsString('IA gera vídeo curto', $joined);
     }
 
     public function testAnIdeaBecomesAReelAfterTheJobFinishes(): void
