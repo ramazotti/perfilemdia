@@ -6,6 +6,10 @@ namespace PerfilEmDia\Image;
 
 final class StoryCard
 {
+    private const BUBBLE_TEXT_MARGIN = 20;
+
+    private const CAIXA_TEXT_MARGIN = 5;
+
     public static function draw(
         string $jpegPath,
         string $text,
@@ -86,16 +90,16 @@ final class StoryCard
                 $tx = (int) ($layout['x'] + (($layout['boxW'] - $textWidth) / 2));
                 $ty = $baseline + ($i * $layout['lineHeight']);
                 if ($marker !== false) {
-                    $padX = (int) max(10, $size * 0.42);
-                    $padY = (int) max(3, $size * 0.08);
+                    [$padX, $padY] = self::caixaPadding($size);
                     $markH = $ascentLine + $descent + ($padY * 2);
+                    $markW = $textWidth + ($padX * 2);
                     self::round(
                         $image,
                         max(0, $tx - $padX),
                         max(0, $ty - $ascentLine - $padY),
-                        $textWidth + ($padX * 2),
+                        $markW,
                         $markH,
-                        (int) max(6, $markH / 2),
+                        self::caixaCornerRadius($markH, $markW, $size),
                         $marker
                     );
                 }
@@ -153,21 +157,24 @@ final class StoryCard
             [$mr, $mg, $mb] = self::markerRgb($color);
             $mark = new \ImagickDraw();
             $mark->setFillColor(new \ImagickPixel(sprintf('rgba(%d,%d,%d,%.2f)', $mr, $mg, $mb, self::markerOpacity())));
-            $padX = (int) max(10, $size * 0.42);
-            $padY = (int) max(3, $size * 0.08);
+            [$padX, $padY] = self::caixaPadding($size);
             foreach ($lines as $i => $line) {
                 $lineMetrics = $image->queryFontMetrics($probe, $line);
                 $textWidth = (int) ($lineMetrics['textWidth'] ?? 0);
                 $tx = (int) ($cx - ($textWidth / 2));
                 $ty = $baseline + ($i * $layout['lineHeight']);
-                $markH = $ascent + $descent + ($padY * 2);
+                $lineAscent = (int) ($lineMetrics['ascender'] ?? $ascent);
+                $lineDescent = (int) abs($lineMetrics['descender'] ?? $descent);
+                $markH = $lineAscent + $lineDescent + ($padY * 2);
+                $markW = $textWidth + ($padX * 2);
+                $radius = self::caixaCornerRadius($markH, $markW, $size);
                 $mark->roundRectangle(
                     max(0, $tx - $padX),
-                    max(0, $ty - $ascent - $padY),
+                    max(0, $ty - $lineAscent - $padY),
                     $tx + $textWidth + $padX,
-                    max(0, $ty - $ascent - $padY) + $markH,
-                    (int) max(6, $markH / 2),
-                    (int) max(6, $markH / 2)
+                    max(0, $ty - $lineAscent - $padY) + $markH,
+                    $radius,
+                    $radius
                 );
             }
             $image->drawImage($mark);
@@ -205,7 +212,7 @@ final class StoryCard
     private static function layout(int $width, int $height, array $widths, int $size, string $place, string $style): array
     {
         $padY = (int) max(8, $size * 0.32);
-        $lineHeight = (int) ($size * 1.26);
+        $lineHeight = (int) ($size * 1.8);
         $tail = 0;
         $boxW = max(40, $width - 16);
         $boxH = (int) max(56, (int) round($height / 3) - $tail);
@@ -239,8 +246,8 @@ final class StoryCard
      */
     private static function bubble(array $layout, array $widths, int $size, int $lineCount, int $baseline, int $ascent): array
     {
-        $padX = (int) max(5, $size * 0.12);
-        $padY = (int) max(1, $size * 0.04);
+        $padX = (int) max(self::BUBBLE_TEXT_MARGIN, $size * 0.12);
+        $padY = (int) max(self::BUBBLE_TEXT_MARGIN, $size * 0.04);
         $textW = max(1, ...$widths);
         $w = $textW + ($padX * 2);
         $textH = $ascent + (int) max(2, $size * 0.2) + ($layout['lineHeight'] * max(0, $lineCount - 1));
@@ -405,7 +412,7 @@ final class StoryCard
                 $widths[] = max(1, $measure($size, $line));
             }
             $padY = (int) max(10, $size * 0.45);
-            $lineHeight = (int) ($size * 1.26);
+            $lineHeight = (int) ($size * 1.8);
             $boxH = ($padY * 2) + ($lineHeight * max(1, count($lines)));
             $tooWide = max($widths) > (int) ($width * 0.86);
             $tooTall = $boxH > (int) ($height * 0.28);
@@ -487,6 +494,29 @@ final class StoryCard
     private static function bubbleOpacity(): float
     {
         return 0.62;
+    }
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    private static function caixaPadding(int $size): array
+    {
+        return [
+            (int) max(self::CAIXA_TEXT_MARGIN, $size * 0.42),
+            (int) max(self::CAIXA_TEXT_MARGIN, $size * 0.08),
+        ];
+    }
+
+    private static function caixaCornerRadius(int $height, int $width, int $fontSize): int
+    {
+        $height = max(1, $height);
+        $width = max(1, $width);
+
+        return (int) max(4, min(
+            (int) ($height / 2),
+            (int) max(6, round($fontSize * 0.26)),
+            (int) ($width / 2),
+        ));
     }
 
     private static function font(): ?string
