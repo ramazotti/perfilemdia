@@ -76,7 +76,7 @@ final class PhotoPhrase
         $band = (int) max($size * 2.6, $height * 0.30);
         self::fadeImagick($image, $width, $height, $band, PhraseColor::lightWash($color), $place);
 
-        $lineHeight = (int) ($size * 1.18);
+        $lineHeight = (int) ($size * 1.28);
         $block = $lineHeight * count($lines);
         $start = self::textOrigin($height, $size, $block, $place);
         $center = (int) ($width / 2);
@@ -116,7 +116,7 @@ final class PhotoPhrase
         $height = $image->getImageHeight();
         $lines = self::lines($phrase, 18);
         $size = self::fitSize($width, $lines, 12);
-        $lineHeight = (int) ($size * 1.35);
+        $lineHeight = (int) ($size * 1.44);
         $center = (int) ($width / 2);
         $band = (int) max($size * 2.4, $height * 0.28);
         self::fadeImagick($image, $width, $height, $band, PhraseColor::lightWash($color), $place);
@@ -207,7 +207,7 @@ final class PhotoPhrase
             return;
         }
 
-        $lineHeight = (int) ($size * 1.28);
+        $lineHeight = (int) ($size * 1.38);
         $block = $lineHeight * count($lines);
         $y = self::textOrigin($height, $size, $block, $place);
         $box = imagettfbbox($size, 0, $font, $lines[0]);
@@ -254,7 +254,7 @@ final class PhotoPhrase
         $height = imagesy($image);
         $lines = self::lines($phrase, 18);
         $size = self::fitSize($width, $lines, 12);
-        $lineHeight = (int) ($size * 1.35);
+        $lineHeight = (int) ($size * 1.44);
         $band = (int) max(72, $height * 0.28);
         $from = self::washOrigin($height, $band, $place);
         self::washGd($image, $width, $from, $from + $band, PhraseColor::lightWash($color), $place);
@@ -436,7 +436,7 @@ final class PhotoPhrase
         $bubble = $style === PhraseStyle::BALAO;
         $padX = (int) max(14, $size * ($bubble ? 0.72 : 0.95));
         $padY = (int) max(12, $size * ($bubble ? 0.5 : 0.72));
-        $lineHeight = (int) ($size * ($bubble ? 1.22 : 1.38));
+        $lineHeight = (int) ($size * ($bubble ? 1.32 : 1.48));
         $maxW = 1;
         foreach ($widths as $w) {
             $maxW = max($maxW, $w);

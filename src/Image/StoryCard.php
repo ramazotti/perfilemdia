@@ -205,7 +205,7 @@ final class StoryCard
     private static function layout(int $width, int $height, array $widths, int $size, string $place, string $style): array
     {
         $padY = (int) max(8, $size * 0.32);
-        $lineHeight = (int) ($size * 1.12);
+        $lineHeight = (int) ($size * 1.26);
         $tail = 0;
         $boxW = max(40, $width - 16);
         $boxH = (int) max(56, (int) round($height / 3) - $tail);
@@ -405,7 +405,7 @@ final class StoryCard
                 $widths[] = max(1, $measure($size, $line));
             }
             $padY = (int) max(10, $size * 0.45);
-            $lineHeight = (int) ($size * 1.12);
+            $lineHeight = (int) ($size * 1.26);
             $boxH = ($padY * 2) + ($lineHeight * max(1, count($lines)));
             $tooWide = max($widths) > (int) ($width * 0.86);
             $tooTall = $boxH > (int) ($height * 0.28);
