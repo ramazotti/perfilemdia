@@ -1,0 +1,4 @@
+Quando você busca orientação jurídica com clareza, cada palavra do story precisa caber bem. Este texto de teste tem exatamente 270 caracteres, o máximo de um quadro. Assim dá para ver quebra de linha, faixa escura, balão e sombra no modo limpo. Abra no celular. Confira.
+
+# mb_strlen=270
+# partes=1
