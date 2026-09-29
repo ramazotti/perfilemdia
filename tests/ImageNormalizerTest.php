@@ -11,9 +11,9 @@ use PHPUnit\Framework\TestCase;
 
 final class ImageNormalizerTest extends TestCase
 {
-    private const FEED_RATIO = 16 / 9;
+    private const FEED_RATIO = 4 / 5;
     private const FEED_WIDTH = 1080;
-    private const FEED_HEIGHT = 608;
+    private const FEED_HEIGHT = 1350;
 
     private string $tempRoot;
 
@@ -34,7 +34,7 @@ final class ImageNormalizerTest extends TestCase
         parent::tearDown();
     }
 
-    public function testPortraitThreeByFourCropsToSixteenByNine(): void
+    public function testPortraitThreeByFourCropsToFourByFive(): void
     {
         $source = $this->createJpeg(750, 1000);
         $publicDir = $this->tempRoot . '/public';
@@ -45,7 +45,7 @@ final class ImageNormalizerTest extends TestCase
         $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testTallNineBySixteenCropsToSixteenByNine(): void
+    public function testTallNineBySixteenCropsToFourByFive(): void
     {
         $source = $this->createJpeg(900, 1600);
         $publicDir = $this->tempRoot . '/public';
@@ -56,7 +56,7 @@ final class ImageNormalizerTest extends TestCase
         $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testSquareOneByOneCropsToSixteenByNine(): void
+    public function testSquareOneByOneCropsToFourByFive(): void
     {
         $source = $this->createJpeg(1000, 1000);
         $publicDir = $this->tempRoot . '/public';
@@ -67,7 +67,7 @@ final class ImageNormalizerTest extends TestCase
         $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testSixteenByNineStaysSixteenByNine(): void
+    public function testLandscapeSixteenByNineCropsToFourByFive(): void
     {
         $source = $this->createJpeg(1600, 900);
         $publicDir = $this->tempRoot . '/public';
@@ -78,7 +78,7 @@ final class ImageNormalizerTest extends TestCase
         $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testUltraWideThreeByOneCropsToSixteenByNine(): void
+    public function testUltraWideThreeByOneCropsToFourByFive(): void
     {
         $source = $this->createJpeg(3000, 1000);
         $publicDir = $this->tempRoot . '/public';
@@ -89,7 +89,7 @@ final class ImageNormalizerTest extends TestCase
         $this->assertFeedOutput($results[0]->absolutePath, $results[0]->width, $results[0]->height, $results[0]->ratio);
     }
 
-    public function testCarouselForcesSixteenByNineOnEverySlide(): void
+    public function testCarouselForcesFourByFiveOnEverySlide(): void
     {
         $first = $this->createJpeg(750, 1000);
         $second = $this->createJpeg(1600, 900);
@@ -136,7 +136,7 @@ final class ImageNormalizerTest extends TestCase
     }
 
     #[DataProvider('aspectRatioProvider')]
-    public function testAllRequiredAspectsBecomeSixteenByNine(int $width, int $height): void
+    public function testAllRequiredAspectsBecomeFourByFive(int $width, int $height): void
     {
         $source = $this->createJpeg($width, $height);
         $results = $this->normalizer->normalize([$source], $this->tempRoot . '/public');
@@ -155,6 +155,7 @@ final class ImageNormalizerTest extends TestCase
             '9:16' => [900, 1600],
             '1:1' => [1000, 1000],
             '16:9' => [1600, 900],
+            '4:5' => [1080, 1350],
             '3:1' => [3000, 1000],
         ];
     }
@@ -199,6 +200,24 @@ final class ImageNormalizerTest extends TestCase
         $this->assertSame(self::FEED_WIDTH, $width);
         $this->assertSame(self::FEED_HEIGHT, $height);
         $this->assertEqualsWithDelta(self::FEED_RATIO, $ratio, 0.02);
+        $this->assertLessThan(1, $ratio);
+    }
+
+    public function testStoryCanvasStaysPortraitNineBySixteen(): void
+    {
+        $landscape = $this->createJpeg(1600, 900);
+        $portrait = $this->createJpeg(900, 1600);
+        $publicDir = $this->tempRoot . '/public';
+
+        $wide = $this->normalizer->normalize([$landscape], $publicDir, 'story')[0];
+        $tall = $this->normalizer->normalize([$portrait], $publicDir, 'story')[0];
+
+        $this->assertSame(1080, $wide->width);
+        $this->assertSame(1920, $wide->height);
+        $this->assertSame(1080, $tall->width);
+        $this->assertSame(1920, $tall->height);
+        $this->assertLessThan(1, $wide->ratio);
+        $this->assertLessThan(1, $tall->ratio);
     }
 
     private function removeTree(string $path): void

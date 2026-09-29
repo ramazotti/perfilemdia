@@ -121,7 +121,7 @@ final class Keyboards
             }
             $placeRow[] = ['text' => $label, 'callback_data' => 'pp:' . $key . ':' . $postId];
         }
-        $colors = ['dourado' => 'Letra dourada', 'branco' => 'Letra branca', 'preto' => 'Letra preta'];
+        $colors = ['branco' => 'Letra branca', 'preto' => 'Letra preta'];
         $colorRow = [];
         foreach ($colors as $key => $label) {
             if ($key === $color) {
@@ -202,7 +202,6 @@ final class Keyboards
             return ['text' => $text, 'callback_data' => 'f:' . $style . ':' . $postId];
         };
         $colors = [
-            'dourado' => 'Letra dourada',
             'branco' => 'Letra branca',
             'preto' => 'Letra preta',
         ];

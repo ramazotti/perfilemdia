@@ -183,10 +183,11 @@ final class ImageEditTest extends TestCase
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
         $this->assertSame('cursiva', $user['phrase_style']);
-        $service->choosePhraseColor($user, 930001, 'cb3', 'dourado', $postId);
+        $service->choosePhraseColor($user, 930001, 'cb3', 'preto', $postId);
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
-        $this->assertSame('dourado', $user['phrase_color']);
+        $this->assertSame('preto', $user['phrase_color']);
+        $this->assertSame('branco', \PerfilEmDia\Image\PhraseColor::normalize('dourado'));
         $this->assertTrue($service->handlePhraseText($user, 930001, 'Kefir de agua'));
         $texts = implode("\n", array_column($channel->sent, 'text'));
         $this->assertStringContainsString('Cursiva', $texts);
@@ -298,12 +299,12 @@ final class ImageEditTest extends TestCase
 
     public function testBlackTextSitsOnALightWash(): void
     {
-        $gold = $this->blankJpeg();
+        $white = $this->blankJpeg();
         $black = $this->blankJpeg();
-        PhotoPhrase::draw($gold, 'Kefir de agua', 'classica', 'dourado');
+        PhotoPhrase::draw($white, 'Kefir de agua', 'classica', 'branco');
         PhotoPhrase::draw($black, 'Kefir de agua', 'classica', 'preto');
-        $this->assertLessThan($this->bottomLuma($black), $this->bottomLuma($gold));
-        unlink($gold);
+        $this->assertLessThan($this->bottomLuma($black), $this->bottomLuma($white));
+        unlink($white);
         unlink($black);
     }
 

@@ -86,10 +86,16 @@ final class StoryCard
             if ($style === PhraseStyle::BALAO) {
                 self::paintBubbleGd($image, self::bubble($layout, $widths, $size, count($lines), $baseline, $ascent));
             }
-            $shadow = null;
+            $glyphs = [];
+            foreach ($lines as $i => $line) {
+                $box = imagettfbbox($size, 0, $font, $line);
+                $textWidth = is_array($box) ? (int) ($box[2] - $box[0]) : 0;
+                $tx = (int) ($layout['x'] + (($layout['boxW'] - $textWidth) / 2));
+                $ty = $baseline + ($i * $layout['lineHeight']);
+                $glyphs[] = [$tx, $ty, $size, $font, $line];
+            }
             if ($style === PhraseStyle::LIMPA) {
-                $sum = $ir + $ig + $ib;
-                $shadow = imagecolorallocate($image, $sum > 380 ? 12 : 255, $sum > 380 ? 12 : 255, $sum > 380 ? 12 : 255);
+                PhraseGlow::gd($image, $glyphs, ($ir + $ig + $ib) > 380);
             }
             foreach ($lines as $i => $line) {
                 $box = imagettfbbox($size, 0, $font, $line);
@@ -111,9 +117,6 @@ final class StoryCard
                         self::caixaCornerRadius($markH, $markW, $size),
                         $marker
                     );
-                }
-                if ($shadow !== false && $shadow !== null) {
-                    imagettftext($image, $size, 0, $tx + 2, $ty + 2, $shadow, $font, $line);
                 }
                 imagettftext($image, $size, 0, $tx, $ty, $ink, $font, $line);
             }
@@ -190,15 +193,15 @@ final class StoryCard
         }
         if ($style === PhraseStyle::LIMPA) {
             $rgb = PhraseColor::ink($color);
-            $shadowHex = ($rgb[0] + $rgb[1] + $rgb[2]) > 380 ? '#111111' : '#FFFFFF';
-            $shadow = new \ImagickDraw();
-            $shadow->setFont($font);
-            $shadow->setFontSize($size);
-            $shadow->setTextAlignment(\Imagick::ALIGN_CENTER);
-            $shadow->setFillColor(new \ImagickPixel($shadowHex));
+            $placed = [];
             foreach ($lines as $i => $line) {
-                $image->annotateImage($shadow, $cx + 2, $baseline + ($i * $layout['lineHeight']) + 2, 0, $line);
+                $placed[] = [
+                    'x' => $cx,
+                    'y' => $baseline + ($i * $layout['lineHeight']),
+                    'text' => $line,
+                ];
             }
+            PhraseGlow::imagick($image, $font, $size, $placed, true, ($rgb[0] + $rgb[1] + $rgb[2]) > 380);
         }
         $ink = new \ImagickDraw();
         $ink->setFont($font);

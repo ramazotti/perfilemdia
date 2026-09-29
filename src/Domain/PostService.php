@@ -1864,7 +1864,11 @@ class PostService
                 $source = $cleanNow;
             }
             if ($request->treatment !== '') {
-                $binary = $this->editor()->edit($isStory && is_file($cleanNow) ? $cleanNow : $current, $request->treatment);
+                $binary = $this->editor()->edit(
+                    $isStory && is_file($cleanNow) ? $cleanNow : $current,
+                    $request->treatment,
+                    $isStory ? '9:16' : '4:5',
+                );
                 $temp = tempnam(sys_get_temp_dir(), 'pd');
                 if ($temp === false) {
                     throw new ImageEditException('Cannot store edited photo');
@@ -1873,7 +1877,7 @@ class PostService
                 $source = $temp;
             }
             $publicDir = Config::root() . '/public/m';
-            $normalized = $this->normalizer->normalize([$source], $publicDir);
+            $normalized = $this->normalizer->normalize([$source], $publicDir, $isStory ? 'story' : 'feed');
             $image = $normalized[0] ?? null;
             if ($image === null) {
                 throw new ImageEditException('Normalizer returned no photo');
@@ -2058,7 +2062,7 @@ class PostService
         $savedRef = IdeaReference::postPath($postId);
         $reference = is_file($savedRef) ? $savedRef : (is_file($path) ? $path : null);
         try {
-            $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '16:9';
+            $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '4:5';
             $jpeg = ($this->ideas ?? new IdeaImage())->create(
                 (string) ($post['theme_text'] ?? ''),
                 $reference,
@@ -3338,7 +3342,7 @@ class PostService
         $reference = $this->resolveIdeaReference($user, $postId, $message);
 
         try {
-            $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '16:9';
+            $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '4:5';
             $jpeg = ($this->ideas ?? new IdeaImage())->create($idea, $reference, IdeaLook::brief($user), $aspect);
             $dest = Config::root() . '/storage/media/' . $postId . '_0.jpg';
             $dir = dirname($dest);

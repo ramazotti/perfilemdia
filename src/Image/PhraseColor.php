@@ -6,8 +6,6 @@ namespace PerfilEmDia\Image;
 
 final class PhraseColor
 {
-    public const DOURADO = 'dourado';
-
     public const BRANCO = 'branco';
 
     public const PRETO = 'preto';
@@ -15,19 +13,16 @@ final class PhraseColor
     public static function normalize(?string $value): string
     {
         $value = strtolower(trim((string) $value));
+        if ($value === 'dourado') {
+            return self::BRANCO;
+        }
 
-        return in_array($value, [self::DOURADO, self::BRANCO, self::PRETO], true)
-            ? $value
-            : self::BRANCO;
+        return $value === self::PRETO ? self::PRETO : self::BRANCO;
     }
 
     public static function label(string $color): string
     {
-        return match (self::normalize($color)) {
-            self::DOURADO => 'Dourado',
-            self::PRETO => 'Preto',
-            default => 'Branco',
-        };
+        return self::normalize($color) === self::PRETO ? 'Preto' : 'Branco';
     }
 
     public static function lightWash(string $color): bool
@@ -40,11 +35,7 @@ final class PhraseColor
      */
     public static function ink(string $color): array
     {
-        return match (self::normalize($color)) {
-            self::DOURADO => [232, 196, 106],
-            self::PRETO => [20, 16, 14],
-            default => [255, 255, 255],
-        };
+        return self::normalize($color) === self::PRETO ? [20, 16, 14] : [255, 255, 255];
     }
 
     public static function inkHex(string $color): string
@@ -54,7 +45,7 @@ final class PhraseColor
 
     public static function ruleHex(string $color): string
     {
-        return self::lightWash($color) ? '#2A241C' : '#E4C27A';
+        return self::lightWash($color) ? '#FFFFFF' : '#141414';
     }
 
     /**

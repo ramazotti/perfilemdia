@@ -19,14 +19,14 @@ final class IdeaImage implements IdeaImageGenerator
     public static function promptFor(string $idea, bool $hasReference, string $brand, string $aspect): string
     {
         $story = $aspect === '9:16';
-        $feedWide = $aspect === '16:9';
+        $feedPortrait = $aspect === '4:5';
         $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
         $clean = ' No text, letters, numbers, logos, or watermarks.';
         if ($hasReference) {
             $frame = $story
                 ? ' Photorealistic, natural color, shot on a camera, vertical full screen, 9:16.'
-                : ($feedWide
-                    ? ' Photorealistic, natural color, shot on a camera, horizontal 16:9.'
+                : ($feedPortrait
+                    ? ' Photorealistic, natural color, shot on a camera, vertical 4:5.'
                     : ' Photorealistic, natural color, shot on a camera.');
 
             return 'The attached photo is the real scene. Keep the same people, their ages, faces, clothing, uniforms, objects, and the same place. Keep the same level of care: do not replace the scene with a different school, courtyard, building, poorer, generic, or neglected location. If the idea mentions sky or looking up, show that mood with these same people in this same place, not a new wide shot of another school. You may adjust framing, light, and sky so the feeling matches the idea. Do not add clutter, props, or busy backgrounds that were not there.'
@@ -36,8 +36,8 @@ final class IdeaImage implements IdeaImageGenerator
 
         $open = $story
             ? 'Create one photorealistic vertical photo, full screen, 9:16, as if shot on a camera in a real, cared-for place.'
-            : ($feedWide
-                ? 'Create one photorealistic horizontal photo, 16:9, as if shot on a camera in a real, cared-for place.'
+            : ($feedPortrait
+                ? 'Create one photorealistic vertical photo, 4:5, as if shot on a camera in a real, cared-for place.'
                 : 'Create one photorealistic photo, as if shot on a camera in a real, cared-for place.');
 
         return $open . ' Natural color and real materials. Do not invent a rundown, neglected, or generic stock setting.'
@@ -68,7 +68,7 @@ final class IdeaImage implements IdeaImageGenerator
             'prompt' => self::promptFor($idea, $hasReference, $brand, $aspect),
             'output_format' => 'jpeg',
         ];
-        if ($aspect === '9:16' || $aspect === '16:9') {
+        if ($aspect === '9:16' || $aspect === '4:5') {
             $payload['aspect_ratio'] = $aspect;
             $payload['resolution'] = '2K';
         }

@@ -60,9 +60,12 @@ final class OpenRouterImageEditor implements ImageEditorInterface
     private function editPayload(string $instruction, string $bytes, string $aspect): array
     {
         $story = $aspect === '9:16';
+        $portrait = $aspect === '4:5';
         $prompt = $story
             ? 'Edit this vertical full-screen photo and keep the 9:16 frame. Do not add words, letters, numbers, logos, or watermarks. Keep the same people, objects, and place. Apply only this change: ' . $instruction
-            : 'Edit this photo. Do not add words, letters, numbers, logos, or watermarks. Keep the same people, objects, and place. Apply only this change: ' . $instruction;
+            : ($portrait
+                ? 'Edit this vertical photo and keep the 4:5 frame. Do not add words, letters, numbers, logos, or watermarks. Keep the same people, objects, and place. Apply only this change: ' . $instruction
+                : 'Edit this photo. Do not add words, letters, numbers, logos, or watermarks. Keep the same people, objects, and place. Apply only this change: ' . $instruction);
         $payload = [
             'model' => Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
             'prompt' => $prompt,
@@ -72,8 +75,8 @@ final class OpenRouterImageEditor implements ImageEditorInterface
             ]],
             'output_format' => 'jpeg',
         ];
-        if ($story) {
-            $payload['aspect_ratio'] = '9:16';
+        if ($story || $portrait) {
+            $payload['aspect_ratio'] = $aspect;
             $payload['resolution'] = '2K';
         }
 

@@ -86,7 +86,7 @@ copy($base, $outDir . '/00_sem_texto.jpg');
 
 $styles = [PhraseStyle::LIMPA, PhraseStyle::CAIXA, PhraseStyle::BALAO];
 $places = [PhrasePlace::TOPO, PhrasePlace::MEIO, PhrasePlace::RODAPE];
-$colors = [PhraseColor::DOURADO, PhraseColor::BRANCO, PhraseColor::PRETO];
+$colors = [PhraseColor::BRANCO, PhraseColor::PRETO];
 $count = 0;
 
 foreach ($styles as $style) {

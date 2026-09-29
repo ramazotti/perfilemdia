@@ -88,19 +88,18 @@ final class PhotoPhrase
         $ruleY = max(8, $start - $ascent - (int) max(12, $size * 0.34));
         self::ruleImagick($image, $center, $ruleY, (int) max(56, $width * 0.18), PhraseColor::ruleHex($color));
 
-        $shadow = new \ImagickDraw();
-        $fill = new \ImagickDraw();
-        foreach ([$shadow, $fill] as $draw) {
-            $draw->setFont($font);
-            $draw->setFontSize($size);
-            $draw->setTextAlignment(\Imagick::ALIGN_CENTER);
-        }
-        $shadow->setFillColor(new \ImagickPixel(PhraseColor::lightWash($color) ? 'rgba(255,255,255,0.55)' : 'rgba(20,10,4,0.55)'));
-        $fill->setFillColor(new \ImagickPixel(PhraseColor::inkHex($color)));
+        $placed = [];
         foreach ($lines as $i => $line) {
-            $y = $start + ($i * $lineHeight);
-            $image->annotateImage($shadow, $center + 2, $y + 3, 0, $line);
-            $image->annotateImage($fill, $center, $y, 0, $line);
+            $placed[] = ['x' => $center, 'y' => $start + ($i * $lineHeight), 'text' => $line];
+        }
+        PhraseGlow::imagick($image, $font, $size, $placed, true, !PhraseColor::lightWash($color));
+        $fill = new \ImagickDraw();
+        $fill->setFont($font);
+        $fill->setFontSize($size);
+        $fill->setTextAlignment(\Imagick::ALIGN_CENTER);
+        $fill->setFillColor(new \ImagickPixel(PhraseColor::inkHex($color)));
+        foreach ($placed as $line) {
+            $image->annotateImage($fill, $line['x'], $line['y'], 0, $line['text']);
         }
 
         $image->setImageFormat('jpeg');
@@ -122,19 +121,19 @@ final class PhotoPhrase
         self::fadeImagick($image, $width, $height, $band, PhraseColor::lightWash($color), $place);
         $y = self::textOrigin($height, $size, $lineHeight * count($lines), $place);
 
-        $shadow = new \ImagickDraw();
-        $fill = new \ImagickDraw();
-        foreach ([$shadow, $fill] as $draw) {
-            $draw->setFont($font);
-            $draw->setFontSize($size);
-            $draw->setTextAlignment(\Imagick::ALIGN_CENTER);
-        }
-        $shadow->setFillColor(new \ImagickPixel(PhraseColor::lightWash($color) ? 'rgba(255,255,255,0.55)' : 'rgba(20,12,8,0.55)'));
-        $fill->setFillColor(new \ImagickPixel(PhraseColor::inkHex($color)));
+        $placed = [];
         foreach ($lines as $line) {
-            $image->annotateImage($shadow, $center + 2, $y + 3, 0, $line);
-            $image->annotateImage($fill, $center, $y, 0, $line);
+            $placed[] = ['x' => $center, 'y' => $y, 'text' => $line];
             $y += $lineHeight;
+        }
+        PhraseGlow::imagick($image, $font, $size, $placed, true, !PhraseColor::lightWash($color));
+        $fill = new \ImagickDraw();
+        $fill->setFont($font);
+        $fill->setFontSize($size);
+        $fill->setTextAlignment(\Imagick::ALIGN_CENTER);
+        $fill->setFillColor(new \ImagickPixel(PhraseColor::inkHex($color)));
+        foreach ($placed as $line) {
+            $image->annotateImage($fill, $line['x'], $line['y'], 0, $line['text']);
         }
 
         $image->setImageFormat('jpeg');
@@ -214,25 +213,24 @@ final class PhotoPhrase
         $ascent = is_array($box) ? abs((int) $box[7]) : (int) ($size * 0.8);
         $ruleY = max(8, $y - $ascent - (int) max(10, $size * 0.34));
         $span = (int) max(48, $width * 0.18);
-        $rule = PhraseColor::lightWash($color) ? [42, 36, 28] : [228, 194, 122];
-        $gold = imagecolorallocate($image, $rule[0], $rule[1], $rule[2]);
-        imagefilledrectangle($image, (int) (($width - $span) / 2), $ruleY, (int) (($width + $span) / 2), $ruleY + 2, $gold);
+        $rule = PhraseColor::lightWash($color) ? [255, 255, 255] : [20, 20, 20];
+        $ruleInk = imagecolorallocate($image, $rule[0], $rule[1], $rule[2]);
+        imagefilledrectangle($image, (int) (($width - $span) / 2), $ruleY, (int) (($width + $span) / 2), $ruleY + 2, $ruleInk);
 
         [$ir, $ig, $ib] = PhraseColor::ink($color);
-        $light = PhraseColor::lightWash($color);
-        $shadow = imagecolorallocatealpha($image, $light ? 255 : 20, $light ? 255 : 10, $light ? 255 : 4, 40);
         $ink = imagecolorallocate($image, $ir, $ig, $ib);
-        $stroke = imagecolorallocate($image, $light ? 255 : 42, $light ? 255 : 22, $light ? 255 : 8);
+        $glyphs = [];
+        $cursor = $y;
         foreach ($lines as $line) {
             $box = imagettfbbox($size, 0, $font, $line);
             $textWidth = is_array($box) ? (int) ($box[2] - $box[0]) : 0;
             $x = (int) (($width - $textWidth) / 2);
-            imagettftext($image, $size, 0, $x + 2, $y + 3, $shadow, $font, $line);
-            foreach ([[-1, 0], [1, 0], [0, -1], [0, 1]] as [$dx, $dy]) {
-                imagettftext($image, $size, 0, $x + $dx, $y + $dy, $stroke, $font, $line);
-            }
-            imagettftext($image, $size, 0, $x, $y, $ink, $font, $line);
-            $y += $lineHeight;
+            $glyphs[] = [$x, $cursor, $size, $font, $line];
+            $cursor += $lineHeight;
+        }
+        PhraseGlow::gd($image, $glyphs, !PhraseColor::lightWash($color));
+        foreach ($glyphs as [$x, $glyphY, $glyphSize, $glyphFont, $line]) {
+            imagettftext($image, $glyphSize, 0, $x, $glyphY, $ink, $glyphFont, $line);
         }
         imagejpeg($image, $jpegPath, 90);
         imagedestroy($image);
@@ -259,17 +257,20 @@ final class PhotoPhrase
         $from = self::washOrigin($height, $band, $place);
         self::washGd($image, $width, $from, $from + $band, PhraseColor::lightWash($color), $place);
         $y = self::textOrigin($height, $size, $lineHeight * count($lines), $place);
-        $light = PhraseColor::lightWash($color);
         [$ir, $ig, $ib] = PhraseColor::ink($color);
-        $shadow = imagecolorallocatealpha($image, $light ? 255 : 20, $light ? 255 : 12, $light ? 255 : 8, 50);
         $ink = imagecolorallocate($image, $ir, $ig, $ib);
+        $glyphs = [];
+        $cursor = $y;
         foreach ($lines as $line) {
             $box = imagettfbbox($size, 0, $font, $line);
             $textWidth = is_array($box) ? (int) ($box[2] - $box[0]) : 0;
             $x = (int) (($width - $textWidth) / 2);
-            imagettftext($image, $size, 0, $x + 2, $y + 3, $shadow, $font, $line);
-            imagettftext($image, $size, 0, $x, $y, $ink, $font, $line);
-            $y += $lineHeight;
+            $glyphs[] = [$x, $cursor, $size, $font, $line];
+            $cursor += $lineHeight;
+        }
+        PhraseGlow::gd($image, $glyphs, !PhraseColor::lightWash($color));
+        foreach ($glyphs as [$x, $glyphY, $glyphSize, $glyphFont, $line]) {
+            imagettftext($image, $glyphSize, 0, $x, $glyphY, $ink, $glyphFont, $line);
         }
         imagejpeg($image, $jpegPath, 90);
         imagedestroy($image);

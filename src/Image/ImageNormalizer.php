@@ -12,8 +12,9 @@ use RuntimeException;
 
 final class ImageNormalizer implements ImageNormalizerInterface
 {
-    private const FEED_RATIO = 16 / 9;
+    private const FEED_RATIO = 4 / 5;
     private const TARGET_WIDTH = 1080;
+    private const FEED_HEIGHT = 1350;
     private const STORY_WIDTH = 1080;
     private const STORY_HEIGHT = 1920;
     private const STORY_RATIO = 9 / 16;
@@ -136,10 +137,7 @@ final class ImageNormalizer implements ImageNormalizerInterface
             return [self::STORY_WIDTH, self::STORY_HEIGHT];
         }
 
-        $outputWidth = self::TARGET_WIDTH;
-        $outputHeight = max(1, (int) round($outputWidth / self::FEED_RATIO));
-
-        return [$outputWidth, $outputHeight];
+        return [self::TARGET_WIDTH, self::FEED_HEIGHT];
     }
 
     private function makePublicName(): string
