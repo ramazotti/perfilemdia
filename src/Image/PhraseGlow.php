@@ -68,10 +68,10 @@ final class PhraseGlow
         for ($py = 0; $py < $height; $py++) {
             for ($px = 0; $px < $width; $px++) {
                 $luma = (imagecolorat($mask, $px, $py) >> 16) & 255;
-                if ($luma < 4) {
+                if ($luma < 2) {
                     continue;
                 }
-                $alpha = 127 - (int) min(118, (int) round($luma * 0.78));
+                $alpha = 127 - (int) min(127, (int) round($luma * 1.2));
                 $alpha = max(0, min(127, $alpha));
                 if (isset($shades[$alpha])) {
                     imagesetpixel($image, $px, $py, $shades[$alpha]);
@@ -103,7 +103,7 @@ final class PhraseGlow
             $layer->annotateImage($draw, $line['x'], $line['y'], 0, $line['text']);
         }
         $layer->blurImage(0, max(6.0, $size * 0.22));
-        $layer->evaluateImage(\Imagick::EVALUATE_MULTIPLY, 0.92, \Imagick::CHANNEL_ALPHA);
+        $layer->evaluateImage(\Imagick::EVALUATE_MULTIPLY, 1.8, \Imagick::CHANNEL_ALPHA);
         $image->compositeImage($layer, \Imagick::COMPOSITE_OVER, 0, 0);
         $layer->clear();
         $layer->destroy();

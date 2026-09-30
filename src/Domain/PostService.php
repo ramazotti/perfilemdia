@@ -1446,8 +1446,11 @@ class PostService
      */
     private function paintStoryCaption(array $user, int $postId, string $jpeg, string $caption): void
     {
-        $parts = StoryScript::parts($caption, (string) ($user['contact_cta'] ?? ''));
-        if ($parts === []) {
+        $post = $this->posts->find($postId) ?? ['destination' => 'story'];
+        $infographic = (int) ($post['creative'] ?? 0) === 1
+            && IdeaImage::isInfographic((string) ($post['theme_text'] ?? ''));
+        $parts = $infographic ? [''] : StoryScript::parts($caption, (string) ($user['contact_cta'] ?? ''));
+        if (!$infographic && $parts === []) {
             return;
         }
         $media = $this->posts->media($postId);
@@ -1464,7 +1467,6 @@ class PostService
         if (!is_dir($publicDir) && !mkdir($publicDir, 0775, true) && !is_dir($publicDir)) {
             return;
         }
-        $post = $this->posts->find($postId) ?? ['destination' => 'story'];
         $oldName = (string) ($first['public_name'] ?? '');
         $oldPath = $oldName !== '' ? $publicDir . '/' . $oldName . '.jpg' : '';
         $firstName = '';

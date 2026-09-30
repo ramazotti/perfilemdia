@@ -224,7 +224,7 @@ final class StoryCard
     private static function layout(int $width, int $height, array $widths, int $size, string $place, string $style): array
     {
         $padY = (int) max(8, $size * 0.32);
-        $lineHeight = (int) ($size * 1.8);
+        $lineHeight = (int) round($size * ($style === PhraseStyle::LIMPA ? 1.5 : 1.8));
         $tail = 0;
         $boxW = max(40, $width - (self::SIDE_MARGIN * 2));
         $boxH = (int) max(56, (int) round($height / 3) - $tail);

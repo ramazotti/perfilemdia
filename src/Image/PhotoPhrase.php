@@ -76,7 +76,7 @@ final class PhotoPhrase
         $band = (int) max($size * 2.6, $height * 0.30);
         self::fadeImagick($image, $width, $height, $band, PhraseColor::lightWash($color), $place);
 
-        $lineHeight = (int) ($size * 1.8);
+        $lineHeight = (int) round($size * 1.5);
         $block = $lineHeight * count($lines);
         $start = self::textOrigin($height, $size, $block, $place);
         $center = (int) ($width / 2);
@@ -115,7 +115,7 @@ final class PhotoPhrase
         $height = $image->getImageHeight();
         $lines = self::lines($phrase, 18);
         $size = self::fitSize($width, $lines, 12);
-        $lineHeight = (int) ($size * 1.8);
+        $lineHeight = (int) round($size * 1.5);
         $center = (int) ($width / 2);
         $band = (int) max($size * 2.4, $height * 0.28);
         self::fadeImagick($image, $width, $height, $band, PhraseColor::lightWash($color), $place);
@@ -206,7 +206,7 @@ final class PhotoPhrase
             return;
         }
 
-        $lineHeight = (int) ($size * 1.8);
+        $lineHeight = (int) round($size * 1.5);
         $block = $lineHeight * count($lines);
         $y = self::textOrigin($height, $size, $block, $place);
         $box = imagettfbbox($size, 0, $font, $lines[0]);
@@ -252,7 +252,7 @@ final class PhotoPhrase
         $height = imagesy($image);
         $lines = self::lines($phrase, 18);
         $size = self::fitSize($width, $lines, 12);
-        $lineHeight = (int) ($size * 1.8);
+        $lineHeight = (int) round($size * 1.5);
         $band = (int) max(72, $height * 0.28);
         $from = self::washOrigin($height, $band, $place);
         self::washGd($image, $width, $from, $from + $band, PhraseColor::lightWash($color), $place);

@@ -16,8 +16,17 @@ final class IdeaImage implements IdeaImageGenerator
     {
     }
 
+    public static function isInfographic(string $text): bool
+    {
+        return preg_match('/info\s*gr[aá]fic/iu', $text) === 1;
+    }
+
     public static function promptFor(string $idea, bool $hasReference, string $brand, string $aspect): string
     {
+        if (self::isInfographic($idea)) {
+            return self::infographicPrompt($idea, $hasReference, $brand, $aspect);
+        }
+
         $story = $aspect === '9:16';
         $feedPortrait = $aspect === '4:5';
         $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
@@ -45,6 +54,26 @@ final class IdeaImage implements IdeaImageGenerator
             . $clean . $look . ' The idea: ' . $idea;
     }
 
+    private static function infographicPrompt(string $idea, bool $hasReference, string $brand, string $aspect): string
+    {
+        $story = $aspect === '9:16';
+        $frame = $story
+            ? 'Full-screen vertical infographic, 9:16.'
+            : 'Vertical infographic, 4:5.';
+        $look = trim($brand) !== '' ? ' Follow this visual profile: ' . trim($brand) : '';
+        $source = $hasReference
+            ? 'The attached photo is only a reference for subject or color. Do not return that photo with a caption bar.'
+            : 'Do not make a photograph.';
+
+        return 'Design one clean infographic, not a photo and not a poster with a paragraph over a picture. '
+            . $frame . ' ' . $source
+            . ' Brazilian Portuguese only, spelled correctly, taken from the request. Do not print the word infográfico unless that word is the title they asked for.'
+            . ' Use a short title and at most five short lines. Large type, high contrast, generous margins, and every word fully inside the frame.'
+            . ' Flat or editorial layout, few colors, no watermark, no tiny footnotes, no English labels.'
+            . $look
+            . ' The request: ' . $idea;
+    }
+
     public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): string
     {
         Config::load();
@@ -70,7 +99,7 @@ final class IdeaImage implements IdeaImageGenerator
         ];
         if ($aspect === '9:16' || $aspect === '4:5') {
             $payload['aspect_ratio'] = $aspect;
-            $payload['resolution'] = '2K';
+            $payload['resolution'] = self::isInfographic($idea) ? '1K' : '2K';
         }
         if ($referenceUrl !== null) {
             $payload['input_references'] = [[
