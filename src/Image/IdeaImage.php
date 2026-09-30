@@ -59,7 +59,7 @@ final class IdeaImage implements IdeaImageGenerator
         $story = $aspect === '9:16';
         $frame = $story
             ? 'Full-screen vertical infographic, 9:16.'
-            : 'Vertical infographic, 4:5.';
+            : 'Vertical infographic, 3:4. Leave a clear empty band at the top and at the bottom.';
         $look = trim($brand) !== '' ? ' Follow this visual profile: ' . trim($brand) : '';
         $source = $hasReference
             ? 'The attached photo is only a reference for subject or color. Do not return that photo with a caption bar.'
@@ -72,6 +72,31 @@ final class IdeaImage implements IdeaImageGenerator
             . ' Flat or editorial layout, few colors, no watermark, no tiny footnotes, no English labels.'
             . $look
             . ' The request: ' . $idea;
+    }
+
+    /**
+     * @return array{model: ?string, output_format: ?string, aspect_ratio: ?string, resolution: ?string, quality: ?string}
+     */
+    public static function requestOptions(string $idea, string $aspect): array
+    {
+        $framed = $aspect === '9:16' || $aspect === '4:5';
+        if (!self::isInfographic($idea)) {
+            return [
+                'model' => null,
+                'output_format' => 'jpeg',
+                'aspect_ratio' => $framed ? $aspect : null,
+                'resolution' => $framed ? '2K' : null,
+                'quality' => null,
+            ];
+        }
+
+        return [
+            'model' => 'openai/gpt-image-2',
+            'output_format' => null,
+            'aspect_ratio' => $aspect === '9:16' ? '9:16' : ($aspect === '4:5' ? '3:4' : null),
+            'resolution' => null,
+            'quality' => 'medium',
+        ];
     }
 
     public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): string
@@ -92,14 +117,22 @@ final class IdeaImage implements IdeaImageGenerator
             }
         }
 
+        $options = self::requestOptions($idea, $aspect);
         $payload = [
-            'model' => Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
+            'model' => $options['model'] ?? Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
             'prompt' => self::promptFor($idea, $hasReference, $brand, $aspect),
-            'output_format' => 'jpeg',
         ];
-        if ($aspect === '9:16' || $aspect === '4:5') {
-            $payload['aspect_ratio'] = $aspect;
-            $payload['resolution'] = self::isInfographic($idea) ? '1K' : '2K';
+        if ($options['output_format'] !== null) {
+            $payload['output_format'] = $options['output_format'];
+        }
+        if ($options['aspect_ratio'] !== null) {
+            $payload['aspect_ratio'] = $options['aspect_ratio'];
+        }
+        if ($options['resolution'] !== null) {
+            $payload['resolution'] = $options['resolution'];
+        }
+        if ($options['quality'] !== null) {
+            $payload['quality'] = $options['quality'];
         }
         if ($referenceUrl !== null) {
             $payload['input_references'] = [[
@@ -110,7 +143,7 @@ final class IdeaImage implements IdeaImageGenerator
 
         $http = $this->http ?? new GuzzleHttpPoster();
         $response = $http->request('POST', self::API_URL, [
-            'timeout' => 120,
+            'timeout' => self::isInfographic($idea) ? 180 : 120,
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
                 'HTTP-Referer' => Config::get('APP_URL', 'https://perfilemdia.com.br'),
