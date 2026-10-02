@@ -8,8 +8,13 @@ use PDO;
 
 final class PostRepository
 {
-    public function __construct(private readonly PDO $pdo)
+    public function __construct(private PDO $pdo)
     {
+    }
+
+    public function bind(PDO $pdo): void
+    {
+        $this->pdo = $pdo;
     }
 
     public function create(int $userId, PostStatus $status, ?string $theme, ?string $mediaGroupId = null): int

@@ -10,8 +10,13 @@ use PDO;
 
 final class PlanAccess
 {
-    public function __construct(private readonly PDO $pdo)
+    public function __construct(private PDO $pdo)
     {
+    }
+
+    public function bind(PDO $pdo): void
+    {
+        $this->pdo = $pdo;
     }
 
     /**

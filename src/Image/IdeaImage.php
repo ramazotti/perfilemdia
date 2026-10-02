@@ -21,57 +21,22 @@ final class IdeaImage implements IdeaImageGenerator
         return preg_match('/info\s*gr[aá]fic/iu', $text) === 1;
     }
 
-    public static function promptFor(string $idea, bool $hasReference, string $brand, string $aspect): string
+    public static function isDesigned(string $text): bool
     {
-        if (self::isInfographic($idea)) {
-            return self::infographicPrompt($idea, $hasReference, $brand, $aspect);
-        }
-
-        $story = $aspect === '9:16';
-        $feedPortrait = $aspect === '4:5';
-        $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
-        $clean = ' No text, letters, numbers, logos, or watermarks.';
-        if ($hasReference) {
-            $frame = $story
-                ? ' Photorealistic, natural color, shot on a camera, vertical full screen, 9:16.'
-                : ($feedPortrait
-                    ? ' Photorealistic, natural color, shot on a camera, vertical 4:5.'
-                    : ' Photorealistic, natural color, shot on a camera.');
-
-            return 'The attached photo is the real scene. Keep the same people, their ages, faces, clothing, uniforms, objects, and the same place. Keep the same level of care: do not replace the scene with a different school, courtyard, building, poorer, generic, or neglected location. If the idea mentions sky or looking up, show that mood with these same people in this same place, not a new wide shot of another school. You may adjust framing, light, and sky so the feeling matches the idea. Do not add clutter, props, or busy backgrounds that were not there.'
-                . $frame . $clean . $look
-                . ' The idea describes the feeling, not a new place: ' . $idea;
-        }
-
-        $open = $story
-            ? 'Create one photorealistic vertical photo, full screen, 9:16, as if shot on a camera in a real, cared-for place.'
-            : ($feedPortrait
-                ? 'Create one photorealistic vertical photo, 4:5, as if shot on a camera in a real, cared-for place.'
-                : 'Create one photorealistic photo, as if shot on a camera in a real, cared-for place.');
-
-        return $open . ' Natural color and real materials. Do not invent a rundown, neglected, or generic stock setting.'
-            . ' Follow the tone and composition rules in the profile look below; if they ask for calm or simple, keep the scene minimal.'
-            . $clean . $look . ' The idea: ' . $idea;
+        return IdeaPieces::isDesigned($text);
     }
 
-    private static function infographicPrompt(string $idea, bool $hasReference, string $brand, string $aspect): string
+    /**
+     * @return list<array{kind: string, index: int, count: int}>
+     */
+    public static function pieces(string $idea, string $aspect): array
     {
-        $story = $aspect === '9:16';
-        $frame = $story
-            ? 'Full-screen vertical infographic, 9:16.'
-            : 'Vertical infographic, 3:4. Leave a clear empty band at the top and at the bottom.';
-        $look = trim($brand) !== '' ? ' Follow this visual profile: ' . trim($brand) : '';
-        $source = $hasReference
-            ? 'The attached photo is only a reference for subject or color. Do not return that photo with a caption bar.'
-            : 'Do not make a photograph.';
+        return IdeaPieces::pieces($idea, $aspect);
+    }
 
-        return 'Design one clean infographic, not a photo and not a poster with a paragraph over a picture. '
-            . $frame . ' ' . $source
-            . ' Brazilian Portuguese only, spelled correctly, taken from the request. Do not print the word infográfico unless that word is the title they asked for.'
-            . ' Use a short title and at most five short lines. Large type, high contrast, generous margins, and every word fully inside the frame.'
-            . ' Flat or editorial layout, few colors, no watermark, no tiny footnotes, no English labels.'
-            . $look
-            . ' The request: ' . $idea;
+    public static function promptFor(string $idea, bool $hasReference, string $brand, string $aspect, int $index = 1): string
+    {
+        return IdeaPieces::prompt($idea, $hasReference, $brand, $aspect, $index);
     }
 
     /**
@@ -80,7 +45,7 @@ final class IdeaImage implements IdeaImageGenerator
     public static function requestOptions(string $idea, string $aspect): array
     {
         $framed = $aspect === '9:16' || $aspect === '4:5';
-        if (!self::isInfographic($idea)) {
+        if (!self::isDesigned($idea)) {
             return [
                 'model' => null,
                 'output_format' => 'jpeg',
@@ -99,7 +64,25 @@ final class IdeaImage implements IdeaImageGenerator
         ];
     }
 
+    /**
+     * @return list<string>
+     */
+    public function createSet(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): array
+    {
+        $frames = [];
+        foreach (self::pieces($idea, $aspect) as $piece) {
+            $frames[] = $this->render($idea, $referenceJpeg, $brand, $aspect, $piece['index']);
+        }
+
+        return $frames;
+    }
+
     public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): string
+    {
+        return $this->render($idea, $referenceJpeg, $brand, $aspect, 1);
+    }
+
+    private function render(string $idea, ?string $referenceJpeg, string $brand, string $aspect, int $index): string
     {
         Config::load();
         $key = trim(Config::get('OPENROUTER_API_KEY', ''));
@@ -120,7 +103,7 @@ final class IdeaImage implements IdeaImageGenerator
         $options = self::requestOptions($idea, $aspect);
         $payload = [
             'model' => $options['model'] ?? Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
-            'prompt' => self::promptFor($idea, $hasReference, $brand, $aspect),
+            'prompt' => self::promptFor($idea, $hasReference, $brand, $aspect, $index),
         ];
         if ($options['output_format'] !== null) {
             $payload['output_format'] = $options['output_format'];
@@ -143,7 +126,7 @@ final class IdeaImage implements IdeaImageGenerator
 
         $http = $this->http ?? new GuzzleHttpPoster();
         $response = $http->request('POST', self::API_URL, [
-            'timeout' => self::isInfographic($idea) ? 180 : 120,
+            'timeout' => self::isDesigned($idea) ? 180 : 120,
             'headers' => [
                 'Authorization' => 'Bearer ' . $key,
                 'HTTP-Referer' => Config::get('APP_URL', 'https://perfilemdia.com.br'),

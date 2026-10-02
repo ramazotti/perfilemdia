@@ -41,7 +41,34 @@ final class Db
             $dsn = sprintf('mysql:host=db;dbname=%s;charset=utf8mb4', Config::get('DB_NAME'));
             self::$pdo = new PDO($dsn, $user, $pass, $options);
         }
+        self::keepAlive(self::$pdo);
 
         return self::$pdo;
+    }
+
+    public static function reconnect(): PDO
+    {
+        self::$pdo = null;
+
+        return self::pdo();
+    }
+
+    public static function alive(PDO $pdo): bool
+    {
+        try {
+            $pdo->query('SELECT 1');
+
+            return true;
+        } catch (\PDOException) {
+            return false;
+        }
+    }
+
+    private static function keepAlive(PDO $pdo): void
+    {
+        try {
+            $pdo->exec('SET SESSION wait_timeout = 600');
+        } catch (\Throwable) {
+        }
     }
 }

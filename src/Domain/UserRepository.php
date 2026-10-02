@@ -13,9 +13,14 @@ use PerfilEmDia\Security\Crypto;
 final class UserRepository
 {
     public function __construct(
-        private readonly PDO $pdo,
+        private PDO $pdo,
         private readonly Crypto $crypto,
     ) {
+    }
+
+    public function bind(PDO $pdo): void
+    {
+        $this->pdo = $pdo;
     }
 
     public function findByTelegramId(int $telegramUserId): ?array

@@ -87,7 +87,7 @@ final class Messages
             . "/excluirconta apagar seus dados e começar do zero\n"
             . "/chamado abrir ou ver um chamado\n/ideia ideia para o post de hoje\n/resultado alcance dos últimos dias\n/marca cor e estilo da marca\n"
             . "/ajuda esta lista\n\n"
-            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. /novo pergunta o tipo: foto única, carrossel, vídeo curto ou criado pela IA. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio.";
+            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. /novo pergunta o tipo: foto única, carrossel, vídeo curto ou criado pela IA. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio. Na ideia, estas palavras mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. 3 slides no feed, até 10, ou 3 telas no story, até 3. Se a ideia não disser nenhuma, o bot sorteia.";
     }
 
     public static function status(string $ig, int $used, int $limit): string
@@ -643,7 +643,7 @@ final class Messages
 
     public static function kindStoryIa(): string
     {
-        return 'Manda a ideia em uma mensagem. A imagem sai em tela cheia e o texto entra na foto, sem hashtag. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me.';
+        return 'Manda a ideia em uma mensagem. A imagem sai em tela cheia. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me.' . self::ideaFormats();
     }
 
     public static function kindAlbum(): string
@@ -658,7 +658,14 @@ final class Messages
 
     public static function kindIa(): string
     {
-        return 'Manda a ideia em uma mensagem. Esse texto é o pedido: a imagem e a legenda saem a partir dele. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me, que eu monto a foto, o texto e a marca.';
+        return 'Manda a ideia em uma mensagem. Esse texto é o pedido: a imagem e a legenda saem a partir dele. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me, que eu monto a foto, o texto e a marca.' . self::ideaFormats();
+    }
+
+
+    public static function ideaFormats(): string
+    {
+        return "\n\nPalavras que mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. "
+            . "3 slides no feed fazem uma sequência, até 10. No story, 3 telas, até 3, e a frase não entra por cima. Se a ideia não disser nenhuma, eu sorteio o desenho, e às vezes sai uma foto.";
     }
 
     public static function kindIaNeedText(): string
@@ -758,6 +765,24 @@ final class Messages
     }
 
 
+
+    public static function ideaFormatPicked(string $cue): string
+    {
+        $name = rtrim(trim($cue), ':');
+
+        return 'Sorteio do desenho: ' . $name . '.';
+    }
+
+    public static function surpriseStartedDesign(): string
+    {
+        return 'Vou montar o desenho a partir da ideia. Aviso quando a prévia ficar pronta.';
+    }
+
+    public static function surpriseReadyDesign(): string
+    {
+        return 'Pronto. O desenho está na prévia, com o texto dentro. Nada é publicado antes de você aprovar.';
+    }
+
     public static function surpriseStarted(): string
     {
         return 'Vou montar a ideia, a foto, o texto na imagem e a marca. Aviso quando a prévia ficar pronta.';
@@ -827,6 +852,22 @@ final class Messages
     public static function storyNeedsOne(): string
     {
         return 'O story aceita uma foto ou um vídeo. O carrossel continua no feed.';
+    }
+
+    public static function ideaSlidesStarted(int $count, bool $story): string
+    {
+        $unit = $story ? ($count === 1 ? 'tela' : 'telas') : ($count === 1 ? 'slide' : 'slides');
+
+        return 'Vou desenhar ' . $count . ' ' . $unit . ', um depois do outro. Pode levar um pouco mais.';
+    }
+
+    public static function ideaSlides(int $count, bool $story): string
+    {
+        if ($story) {
+            return 'São ' . $count . ' telas, uma depois da outra. O texto já está no desenho.';
+        }
+
+        return 'São ' . $count . ' slides, na ordem. O texto já está no desenho.';
     }
 
     public static function storyPages(int $count): string

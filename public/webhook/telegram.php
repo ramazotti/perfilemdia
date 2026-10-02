@@ -71,6 +71,9 @@ if (!Http::finishRequest()) {
 try {
     $handler = buildHandler($pdo);
     $handler->handle($update);
+    if (!Db::alive($pdo)) {
+        $store = new UpdateStore(Db::reconnect());
+    }
     $store->markProcessed($updateId);
 } catch (Throwable $e) {
     $store->markError($updateId, $e->getMessage());
