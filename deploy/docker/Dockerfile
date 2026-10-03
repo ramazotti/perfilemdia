@@ -32,7 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY deploy/docker/php.ini /usr/local/etc/php/conf.d/zz-perfilemdia.ini
 COPY deploy/docker/apache.conf /etc/apache2/sites-available/000-default.conf
 COPY deploy/docker/crontab /etc/cron.d/perfilemdia
-RUN chmod 0644 /etc/cron.d/perfilemdia
+RUN chmod 0644 /etc/cron.d/perfilemdia \
+    && ln -sf /usr/local/bin/php /usr/bin/php
 
 WORKDIR /var/www/html
 
