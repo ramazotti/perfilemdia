@@ -29,6 +29,7 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
+set_time_limit(0);
 Config::load();
 
 $lock = fopen(dirname(__DIR__) . '/storage/telegram-poll.lock', 'c');
@@ -37,32 +38,12 @@ if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
 }
 
 $client = new TelegramClient();
-$info = $client->request('getWebhookInfo');
-$url = (string) ($info['url'] ?? '');
-$error = (string) ($info['last_error_message'] ?? '');
-$pending = (int) ($info['pending_update_count'] ?? 0);
-$errorAt = (int) ($info['last_error_date'] ?? 0);
-$recentError = $error !== '' && $errorAt >= time() - 900;
-if ($url !== '' && ($pending > 0 || $recentError)) {
-    $client->request('deleteWebhook', ['drop_pending_updates' => false]);
-    Logger::get()->warning('Webhook do Telegram travado. Busca ativa no cron.', [
-        'erro' => $error,
-        'pendentes' => $pending,
-    ]);
-} elseif ($url !== '') {
+if (telegramWebhookOwnsUpdates($client)) {
     exit(0);
 }
 
 $offsetFile = dirname(__DIR__) . '/storage/telegram.offset';
 $offset = is_file($offsetFile) ? (int) trim((string) file_get_contents($offsetFile)) : 0;
-$updates = $client->request('getUpdates', [
-    'offset' => $offset,
-    'timeout' => 0,
-    'allowed_updates' => ['message', 'callback_query'],
-]);
-if ($updates === []) {
-    exit(0);
-}
 
 $pdo = Db::pdo();
 $store = new UpdateStore($pdo);
@@ -89,28 +70,72 @@ $handler = new UpdateHandler(
     new TicketService($pdo, $users),
 );
 
-foreach ($updates as $update) {
-    if (!is_array($update) || !isset($update['update_id'])) {
-        continue;
-    }
-    $updateId = (int) $update['update_id'];
-    $payload = json_encode($update, JSON_UNESCAPED_UNICODE) ?: '{}';
-    $fresh = $store->remember($updateId, $payload);
-    file_put_contents($offsetFile, (string) ($updateId + 1));
-    if (!$fresh) {
-        continue;
-    }
+while (true) {
     try {
-        $handler->handle($update);
-        $store->markProcessed($updateId);
-    } catch (Throwable $e) {
-        try {
-            $store->markError($updateId, $e->getMessage());
-        } catch (Throwable) {
+        if (telegramWebhookOwnsUpdates($client)) {
+            exit(0);
         }
+        if (!Db::alive($pdo)) {
+            exit(1);
+        }
+        $updates = $client->request('getUpdates', [
+            'offset' => $offset,
+            'timeout' => 20,
+            'allowed_updates' => ['message', 'callback_query'],
+        ]);
+    } catch (Throwable $e) {
         Logger::get()->error('Busca ativa do Telegram falhou', [
-            'update_id' => $updateId,
             'error' => SecretRedactor::redact($e->getMessage()),
         ]);
+        sleep(2);
+        continue;
     }
+
+    foreach ($updates as $update) {
+        if (!is_array($update) || !isset($update['update_id'])) {
+            continue;
+        }
+        $updateId = (int) $update['update_id'];
+        $payload = json_encode($update, JSON_UNESCAPED_UNICODE) ?: '{}';
+        $fresh = $store->remember($updateId, $payload);
+        $offset = $updateId + 1;
+        file_put_contents($offsetFile, (string) $offset);
+        if (!$fresh) {
+            continue;
+        }
+        try {
+            $handler->handle($update);
+            $store->markProcessed($updateId);
+        } catch (Throwable $e) {
+            try {
+                $store->markError($updateId, $e->getMessage());
+            } catch (Throwable) {
+            }
+            Logger::get()->error('Busca ativa do Telegram falhou', [
+                'update_id' => $updateId,
+                'error' => SecretRedactor::redact($e->getMessage()),
+            ]);
+        }
+    }
+}
+
+function telegramWebhookOwnsUpdates(TelegramClient $client): bool
+{
+    $info = $client->request('getWebhookInfo');
+    $url = (string) ($info['url'] ?? '');
+    $error = (string) ($info['last_error_message'] ?? '');
+    $pending = (int) ($info['pending_update_count'] ?? 0);
+    $errorAt = (int) ($info['last_error_date'] ?? 0);
+    $recentError = $error !== '' && $errorAt >= time() - 900;
+    if ($url !== '' && ($pending > 0 || $recentError)) {
+        $client->request('deleteWebhook', ['drop_pending_updates' => false]);
+        Logger::get()->warning('Webhook do Telegram travado. Busca ativa no cron.', [
+            'erro' => $error,
+            'pendentes' => $pending,
+        ]);
+
+        return false;
+    }
+
+    return $url !== '';
 }
