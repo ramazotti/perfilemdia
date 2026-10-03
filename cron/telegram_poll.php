@@ -40,12 +40,13 @@ $client = new TelegramClient();
 $info = $client->request('getWebhookInfo');
 $url = (string) ($info['url'] ?? '');
 $error = (string) ($info['last_error_message'] ?? '');
-if ($url !== '') {
-    if (!str_contains($error, '409')) {
-        exit(0);
-    }
+if ($url !== '' && $error !== '') {
     $client->request('deleteWebhook', ['drop_pending_updates' => false]);
-    Logger::get()->warning('Webhook do Telegram suspenso por 409. Busca ativa no cron.');
+    Logger::get()->warning('Webhook do Telegram com erro. Busca ativa no cron.', [
+        'erro' => $error,
+    ]);
+} elseif ($url !== '') {
+    exit(0);
 }
 
 $offsetFile = dirname(__DIR__) . '/storage/telegram.offset';
