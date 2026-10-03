@@ -1,0 +1,108 @@
+name: perfilemdia
+
+services:
+
+  php:
+    build:
+      context: /opt/docker-storage/perfilemdia.com.br/deploy
+      dockerfile: deploy/docker/Dockerfile
+    container_name: perfilemdia-php
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      TZ: America/Sao_Paulo
+    volumes:
+      - /opt/docker-storage/perfilemdia.com.br/storage:/var/www/html/storage
+      - /opt/docker-storage/perfilemdia.com.br/public-m:/var/www/html/public/m
+      - ./.env:/var/www/html/.env:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "80"
+    networks:
+      - traefik-public
+      - perfilemdia-internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      - traefik.http.routers.perfilemdia-http.rule=Host(`perfilemdia.com.br`) || Host(`www.perfilemdia.com.br`)
+      - traefik.http.routers.perfilemdia-http.entrypoints=web
+      - traefik.http.routers.perfilemdia-http.middlewares=redirect-to-https@file
+      - traefik.http.routers.perfilemdia-http.priority=100
+      - traefik.http.routers.perfilemdia-http.service=perfilemdia
+
+      - traefik.http.routers.perfilemdia.rule=Host(`perfilemdia.com.br`)
+      - traefik.http.routers.perfilemdia.entrypoints=websecure
+      - traefik.http.routers.perfilemdia.priority=100
+      - traefik.http.routers.perfilemdia.tls=true
+      - traefik.http.routers.perfilemdia.tls.certresolver=letsencrypt
+      - traefik.http.routers.perfilemdia.service=perfilemdia
+
+      - traefik.http.routers.perfilemdia-www.rule=Host(`www.perfilemdia.com.br`)
+      - traefik.http.routers.perfilemdia-www.entrypoints=websecure
+      - traefik.http.routers.perfilemdia-www.priority=100
+      - traefik.http.routers.perfilemdia-www.tls=true
+      - traefik.http.routers.perfilemdia-www.tls.certresolver=letsencrypt
+      - traefik.http.routers.perfilemdia-www.middlewares=www-to-apex@file
+      - traefik.http.routers.perfilemdia-www.service=perfilemdia
+
+      - traefik.http.services.perfilemdia.loadbalancer.server.port=80
+
+  cron:
+    build:
+      context: /opt/docker-storage/perfilemdia.com.br/deploy
+      dockerfile: deploy/docker/Dockerfile
+    container_name: perfilemdia-cron
+    restart: always
+    profiles: ["ao-vivo"]
+    command: ["cron", "-f"]
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      TZ: America/Sao_Paulo
+    volumes:
+      - /opt/docker-storage/perfilemdia.com.br/storage:/var/www/html/storage
+      - /opt/docker-storage/perfilemdia.com.br/public-m:/var/www/html/public/m
+      - ./.env:/var/www/html/.env:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - perfilemdia-internal
+
+  db:
+    image: mariadb:10.11
+    container_name: perfilemdia-db
+    restart: always
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASS}
+      MARIADB_AUTO_UPGRADE: 1
+      TZ: America/Sao_Paulo
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=-03:00
+    volumes:
+      - /opt/docker-storage/perfilemdia.com.br/mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - perfilemdia-internal
+
+networks:
+  traefik-public:
+    external: true
+  perfilemdia-internal:
+    driver: bridge

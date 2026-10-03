@@ -1,0 +1,9 @@
+.git
+.env
+tests
+vendor
+storage
+public/m
+.phpunit.cache
+.DS_Store
+deploy/vps

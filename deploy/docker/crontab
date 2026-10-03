@@ -1,0 +1,4 @@
+* * * * * root php /var/www/html/cron/telegram_poll.php
+*/18 * * * * root php /var/www/html/cron/worker.php
+0 * * * * root php /var/www/html/cron/cleanup_media.php
+30 3 * * * root php /var/www/html/cron/refresh_tokens.php
