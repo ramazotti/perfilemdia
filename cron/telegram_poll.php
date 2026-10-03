@@ -40,10 +40,14 @@ $client = new TelegramClient();
 $info = $client->request('getWebhookInfo');
 $url = (string) ($info['url'] ?? '');
 $error = (string) ($info['last_error_message'] ?? '');
-if ($url !== '' && $error !== '') {
+$pending = (int) ($info['pending_update_count'] ?? 0);
+$errorAt = (int) ($info['last_error_date'] ?? 0);
+$recentError = $error !== '' && $errorAt >= time() - 900;
+if ($url !== '' && ($pending > 0 || $recentError)) {
     $client->request('deleteWebhook', ['drop_pending_updates' => false]);
-    Logger::get()->warning('Webhook do Telegram com erro. Busca ativa no cron.', [
+    Logger::get()->warning('Webhook do Telegram travado. Busca ativa no cron.', [
         'erro' => $error,
+        'pendentes' => $pending,
     ]);
 } elseif ($url !== '') {
     exit(0);
