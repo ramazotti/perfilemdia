@@ -89,6 +89,27 @@ final class IdeaImagePromptTest extends TestCase
         $this->assertSame('quote', IdeaImage::pieces('Citacao: o perdao', '4:5')[0]['kind']);
     }
 
+    public function testAssignmentIsNotCopiedOntoTheImage(): void
+    {
+        $idea = "Passo a passo: Mostre o bastidor, antes de ficar pronto. Para Site examedeconsciencia.com.br. Visual: limpo e contemplativo.";
+        $prompt = IdeaImage::promptFor($idea, false, '', '4:5');
+
+        $this->assertStringContainsString('never printed', $prompt);
+        $this->assertStringContainsString('No sentence from the assignment may appear', $prompt);
+        $this->assertStringContainsString('Mostre o bastidor, antes de ficar pronto.', $prompt);
+        $this->assertStringNotContainsString('The request: Passo a passo:', $prompt);
+        $this->assertStringNotContainsString('taken from the request', $prompt);
+        $this->assertStringContainsString('Do not print the format name', $prompt);
+    }
+
+    public function testQuotedWordsAreTheOnlyExactText(): void
+    {
+        $prompt = IdeaImage::promptFor('Cita' . "\u{00e7}\u{00e3}" . 'o: use s' . "\u{00f3}" . ' a frase "Hoje, de perto."', false, '', '9:16');
+
+        $this->assertStringContainsString('Exact text on the image', $prompt);
+        $this->assertStringContainsString('"Hoje, de perto."', $prompt);
+    }
+
     public function testPhotoPromptStillForbidsText(): void
     {
         $prompt = IdeaImage::promptFor("Manh\u{00e3} calma na recep\u{00e7}\u{00e3}o", false, '', '4:5');

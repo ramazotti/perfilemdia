@@ -182,6 +182,43 @@ final class IdeaPieces
         return $value > 0 ? $value : 0;
     }
 
+    private static function imageBrief(string $idea): string
+    {
+        $body = self::stripFormatCue($idea);
+        $exact = self::exactWords($idea);
+        $parts = ['Before drawing, decide what the picture shows.'];
+        if ($exact !== '') {
+            $parts[] = 'Exact text on the image, spelled as written. Do not add any other sentence from the assignment: "' . $exact . '".';
+        } else {
+            $parts[] = 'No sentence from the assignment may appear on the image. If the layout needs words, write new short ones in Brazilian Portuguese about the idea.';
+        }
+        $parts[] = 'Idea to show, never printed: ' . $body . '.';
+        $parts[] = 'Do not print the format name, a sentence that starts with Mostre, the label Visual, or the label Para.';
+
+        return implode(' ', $parts);
+    }
+
+    private static function stripFormatCue(string $idea): string
+    {
+        $text = trim($idea);
+        $pattern = '/^(?:infogr[a\x{00e1}]fico(?:\s+com\s+\d+\s+slides?)?|story\s+com\s+\d+\s+telas?|cita[c\x{00e7}][a\x{00e3}]o|check\s*list|comparativo|antes\s+e\s+depois|passo\s+a\s+passo(?:\s+(?:com|de)\s+(?:[0-9]{1,2}|um|uma|dois|duas|tr[e\x{00ea}]s|quatro|cinco|seis|sete|oito|nove|dez))?)\s*:\s*/iu';
+        $stripped = preg_replace($pattern, '', $text, 1);
+
+        return trim(is_string($stripped) ? $stripped : $text);
+    }
+
+    private static function exactWords(string $idea): string
+    {
+        if (preg_match('/["\x{201c}]([^"\x{201d}]{2,160})["\x{201d}]/u', $idea, $match) === 1) {
+            return trim($match[1]);
+        }
+        if (preg_match('/\x{00ab}([^\x{00bb}]{2,160})\x{00bb}/u', $idea, $match) === 1) {
+            return trim($match[1]);
+        }
+
+        return '';
+    }
+
     private static function photoPrompt(string $idea, bool $hasReference, string $brand, string $aspect): string
     {
         $story = $aspect === '9:16';
@@ -197,7 +234,7 @@ final class IdeaPieces
 
             return 'The attached photo is the real scene. Keep the same people, their ages, faces, clothing, uniforms, objects, and the same place. Keep the same level of care: do not replace the scene with a different school, courtyard, building, poorer, generic, or neglected location. If the idea mentions sky or looking up, show that mood with these same people in this same place, not a new wide shot of another school. You may adjust framing, light, and sky so the feeling matches the idea. Do not add clutter, props, or busy backgrounds that were not there.'
                 . $frame . $clean . $look
-                . ' The idea describes the feeling, not a new place: ' . $idea;
+                . ' The idea describes the feeling, not a new place. ' . self::imageBrief($idea);
         }
 
         $open = $story
@@ -208,7 +245,7 @@ final class IdeaPieces
 
         return $open . ' Natural color and real materials. Do not invent a rundown, neglected, or generic stock setting.'
             . ' Follow the tone and composition rules in the profile look below; if they ask for calm or simple, keep the scene minimal.'
-            . $clean . $look . ' The idea: ' . $idea;
+            . $clean . $look . ' ' . self::imageBrief($idea);
     }
 
     private static function designedPrompt(
@@ -252,11 +289,10 @@ final class IdeaPieces
         $look = trim($brand) !== '' ? ' Follow this visual profile: ' . trim($brand) : '';
 
         return $job . ' ' . $frame . ' ' . $source . $place
-            . ' Brazilian Portuguese only, spelled correctly, taken from the request.'
-            . ' Do not print the format instruction unless those words are the title.'
+            . ' Brazilian Portuguese only, spelled correctly.'
             . ' Large type, high contrast, generous margins, and every word fully inside the frame.'
             . ' Flat or editorial layout, few colors, no watermark, no tiny footnotes, no English labels.'
             . $look
-            . ' The request: ' . $idea;
+            . ' ' . self::imageBrief($idea);
     }
 }
