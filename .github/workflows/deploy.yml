@@ -17,3 +17,6 @@ jobs:
       - name: Deploy via self-hosted runner
         run: |
           sudo -n bash -lc 'chmod +x /opt/docker-storage/perfilemdia.com.br/deploy/bin/deploy-vps.sh && /opt/docker-storage/perfilemdia.com.br/deploy/bin/deploy-vps.sh'
+      - name: Apply database migrations
+        run: |
+          sudo -n docker exec perfilemdia-php php /var/www/html/bin/migrate.php
