@@ -64,9 +64,8 @@ if (function_exists('fastcgi_finish_request') || function_exists('litespeed_fini
     @flush();
 }
 
-if (!Http::finishRequest()) {
-    exit;
-}
+ignore_user_abort(true);
+Http::finishRequest();
 
 try {
     $handler = buildHandler($pdo);
