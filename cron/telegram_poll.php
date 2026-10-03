@@ -45,50 +45,28 @@ if (telegramWebhookOwnsUpdates($client)) {
 $offsetFile = dirname(__DIR__) . '/storage/telegram.offset';
 $offset = is_file($offsetFile) ? (int) trim((string) file_get_contents($offsetFile)) : 0;
 
-$pdo = Db::pdo();
-$store = new UpdateStore($pdo);
-$users = new UserRepository($pdo, Crypto::fromConfig());
-$posts = new PostRepository($pdo);
-$channel = new TelegramChannel($client);
-$onboarding = new OnboardingService($users, $channel);
-$postService = new PostService(
-    $users,
-    $posts,
-    $channel,
-    new ImageNormalizer(),
-    new CaptionGenerator(),
-    new InstagramPublisher(new InstagramClient()),
-    new \PerfilEmDia\Billing\PlanAccess($pdo),
-);
-$handler = new UpdateHandler(
-    $users,
-    $posts,
-    $channel,
-    $onboarding,
-    $postService,
-    BillingFactory::service($pdo),
-    new TicketService($pdo, $users),
-);
+[$pdo, $store, $handler] = telegramPollStack($client);
 
 while (true) {
     try {
         if (telegramWebhookOwnsUpdates($client)) {
             exit(0);
         }
-        if (!Db::alive($pdo)) {
-            exit(1);
-        }
         $updates = $client->request('getUpdates', [
             'offset' => $offset,
             'timeout' => 20,
             'allowed_updates' => ['message', 'callback_query'],
-        ]);
+        ], 30);
     } catch (Throwable $e) {
         Logger::get()->error('Busca ativa do Telegram falhou', [
             'error' => SecretRedactor::redact($e->getMessage()),
         ]);
         sleep(2);
         continue;
+    }
+
+    if (!Db::alive($pdo)) {
+        [$pdo, $store, $handler] = telegramPollStack($client);
     }
 
     foreach ($updates as $update) {
@@ -103,20 +81,69 @@ while (true) {
         if (!$fresh) {
             continue;
         }
-        try {
-            $handler->handle($update);
-            $store->markProcessed($updateId);
-        } catch (Throwable $e) {
+        $attempt = 0;
+        while (true) {
             try {
-                $store->markError($updateId, $e->getMessage());
-            } catch (Throwable) {
+                $handler->handle($update);
+                $store->markProcessed($updateId);
+                break;
+            } catch (Throwable $e) {
+                $attempt++;
+                $message = $e->getMessage();
+                $gone = str_contains($message, '2006') || str_contains($message, 'gone away');
+                if ($gone && $attempt === 1) {
+                    [$pdo, $store, $handler] = telegramPollStack($client);
+                    continue;
+                }
+                try {
+                    $store->markError($updateId, $message);
+                } catch (Throwable) {
+                }
+                Logger::get()->error('Busca ativa do Telegram falhou', [
+                    'update_id' => $updateId,
+                    'error' => SecretRedactor::redact($message),
+                ]);
+                break;
             }
-            Logger::get()->error('Busca ativa do Telegram falhou', [
-                'update_id' => $updateId,
-                'error' => SecretRedactor::redact($e->getMessage()),
-            ]);
         }
     }
+}
+
+/**
+ * @return array{0: PDO, 1: UpdateStore, 2: UpdateHandler}
+ */
+function telegramPollStack(TelegramClient $client): array
+{
+    $pdo = Db::reconnect();
+    try {
+        $pdo->exec('SET SESSION wait_timeout = 28800');
+    } catch (Throwable) {
+    }
+    $store = new UpdateStore($pdo);
+    $users = new UserRepository($pdo, Crypto::fromConfig());
+    $posts = new PostRepository($pdo);
+    $channel = new TelegramChannel($client);
+    $onboarding = new OnboardingService($users, $channel);
+    $postService = new PostService(
+        $users,
+        $posts,
+        $channel,
+        new ImageNormalizer(),
+        new CaptionGenerator(),
+        new InstagramPublisher(new InstagramClient()),
+        new \PerfilEmDia\Billing\PlanAccess($pdo),
+    );
+    $handler = new UpdateHandler(
+        $users,
+        $posts,
+        $channel,
+        $onboarding,
+        $postService,
+        BillingFactory::service($pdo),
+        new TicketService($pdo, $users),
+    );
+
+    return [$pdo, $store, $handler];
 }
 
 function telegramWebhookOwnsUpdates(TelegramClient $client): bool

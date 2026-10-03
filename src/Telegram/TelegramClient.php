@@ -27,7 +27,7 @@ final class TelegramClient
      * @param array<string, mixed> $params
      * @return array<string, mixed>
      */
-    public function request(string $method, array $params = []): array
+    public function request(string $method, array $params = [], int $timeout = 45): array
     {
         $url = 'https://api.telegram.org/bot' . $this->token . '/' . $method;
         $hasFile = false;
@@ -65,7 +65,12 @@ final class TelegramClient
                 }
                 $response = $this->http->request('POST', $url, ['multipart' => $multipart, 'timeout' => 60]);
             } else {
-                $response = $this->http->request('POST', $url, ['json' => $params, 'timeout' => 45]);
+                $response = $this->http->request('POST', $url, [
+                    'json' => $params,
+                    'timeout' => $timeout,
+                    'connect_timeout' => 10,
+                    'read_timeout' => $timeout,
+                ]);
             }
         } catch (\Throwable $e) {
             throw new RuntimeException(SecretRedactor::redact($e->getMessage()), (int) $e->getCode(), $e);
