@@ -1,0 +1,19 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-perfilemdia-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, hostinger]
+    timeout-minutes: 25
+    steps:
+      - name: Deploy via self-hosted runner
+        run: |
+          sudo -n bash -lc 'chmod +x /opt/docker-storage/perfilemdia.com.br/deploy/bin/deploy-vps.sh && /opt/docker-storage/perfilemdia.com.br/deploy/bin/deploy-vps.sh'
