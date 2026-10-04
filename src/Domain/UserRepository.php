@@ -319,7 +319,9 @@ final class UserRepository
         if ($row === null || (string) ($row['status'] ?? '') !== 'active') {
             return false;
         }
-        $stmt = $this->pdo->prepare('UPDATE users SET active_instagram_account_id = ? WHERE id = ?');
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET active_instagram_account_id = ?, idea_text = NULL WHERE id = ?'
+        );
         $stmt->execute([$accountId, $userId]);
 
         return true;
@@ -364,6 +366,15 @@ final class UserRepository
         $stmt->execute([$accountId]);
         $profile = $stmt->fetch();
         if ($profile === false) {
+            if ($this->countInstagramAccounts((int) $user['id']) > 1) {
+                $merged = $user;
+                foreach (self::INSTAGRAM_PROFILE_FIELDS as $field) {
+                    $merged[$field] = $field === 'phrase_style' ? 'classica' : null;
+                }
+
+                return $merged;
+            }
+
             return $user;
         }
         $merged = $user;

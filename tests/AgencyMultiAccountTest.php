@@ -65,6 +65,59 @@ final class AgencyMultiAccountTest extends TestCase
         $this->assertSame('Profissional B', $view['display_name'] ?? '');
     }
 
+    public function testSwitchingActiveAccountClearsStoredIdea(): void
+    {
+        $users = new UserRepository($this->pdo, Crypto::fromConfig());
+        $userId = $users->create(88044204, 88044204, 'ideas');
+        $users->update($userId, [
+            'onboarding_step' => 'done',
+            'idea_text' => 'Ideia antiga da conta A',
+        ]);
+        $this->subscribeAgencia($userId);
+        $expires = new DateTimeImmutable('+30 days', new DateTimeZone('America/Sao_Paulo'));
+        $idA = $users->saveInstagramAccount($userId, 'ig-i-a-' . $userId, 'conta_ia', 'BUSINESS', 'tok-a', $expires, 5);
+        $idB = $users->saveInstagramAccount($userId, 'ig-i-b-' . $userId, 'conta_ib', 'BUSINESS', 'tok-b', $expires, 5);
+        $this->assertSame('Ideia antiga da conta A', $users->find($userId)['idea_text'] ?? '');
+        $users->setActiveInstagramAccount($userId, $idB);
+        $this->assertSame('', (string) ($users->find($userId)['idea_text'] ?? ''));
+        $this->assertSame($idB, (int) ($users->find($userId)['active_instagram_account_id'] ?? 0));
+        $users->setActiveInstagramAccount($userId, $idA);
+    }
+
+    public function testMigration035ClearsSecondaryProfileCopiedFromUser(): void
+    {
+        $users = new UserRepository($this->pdo, Crypto::fromConfig());
+        $userId = $users->create(88044203, 88044203, 'dup');
+        $users->update($userId, [
+            'onboarding_step' => 'done',
+            'display_name' => 'Marca A',
+            'profession' => 'Profissão A',
+            'about' => 'Texto sobre A',
+        ]);
+        $this->subscribeAgencia($userId);
+        $expires = new DateTimeImmutable('+30 days', new DateTimeZone('America/Sao_Paulo'));
+        $idA = $users->saveInstagramAccount($userId, 'ig-dup-a-' . $userId, 'conta_a', 'BUSINESS', 'tok-a', $expires, 5);
+        $idB = $users->saveInstagramAccount($userId, 'ig-dup-b-' . $userId, 'conta_b', 'BUSINESS', 'tok-b', $expires, 5);
+
+        $users->updateInstagramProfile($idB, [
+            'display_name' => 'Marca A',
+            'profession' => 'Profissão A',
+            'about' => 'Texto sobre A',
+        ]);
+
+        $sql = file_get_contents(dirname(__DIR__) . '/migrations/035_clear_secondary_instagram_profiles.sql');
+        $this->pdo->exec($sql);
+
+        $users->setActiveInstagramAccount($userId, $idB);
+        $viewB = $users->userForPerfil($users->find($userId) ?? []);
+        $this->assertSame('', (string) ($viewB['display_name'] ?? ''));
+        $this->assertSame('', (string) ($viewB['about'] ?? ''));
+
+        $users->setActiveInstagramAccount($userId, $idA);
+        $viewA = $users->userForPerfil($users->find($userId) ?? []);
+        $this->assertSame('Marca A', $viewA['display_name'] ?? '');
+    }
+
     public function testEssencialBlocksSecondInstagram(): void
     {
         $users = new UserRepository($this->pdo, Crypto::fromConfig());
@@ -114,7 +167,7 @@ final class AgencyMultiAccountTest extends TestCase
     {
         $this->pdo->exec("DELETE FROM subscriptions WHERE customer_id IN (SELECT id FROM customers WHERE email LIKE '%@test.local')");
         $this->pdo->exec("DELETE FROM customers WHERE email LIKE '%@test.local'");
-        foreach ([88044201, 88044202] as $telegramId) {
+        foreach ([88044201, 88044202, 88044203, 88044204] as $telegramId) {
             $stmt = $this->pdo->prepare('SELECT id FROM users WHERE telegram_user_id = ?');
             $stmt->execute([$telegramId]);
             $userId = $stmt->fetchColumn();
@@ -126,6 +179,9 @@ final class AgencyMultiAccountTest extends TestCase
             $this->pdo->prepare('DELETE FROM posts WHERE user_id = ?')->execute([$userId]);
             $this->pdo->prepare('DELETE FROM subscriptions WHERE customer_id IN (SELECT id FROM customers WHERE user_id = ?)')->execute([$userId]);
             $this->pdo->prepare('DELETE FROM customers WHERE user_id = ?')->execute([$userId]);
+            $this->pdo->prepare(
+                'DELETE FROM instagram_profiles WHERE instagram_account_id IN (SELECT id FROM instagram_accounts WHERE user_id = ?)'
+            )->execute([$userId]);
             $this->pdo->prepare('DELETE FROM instagram_accounts WHERE user_id = ?')->execute([$userId]);
             $this->pdo->prepare('DELETE FROM oauth_states WHERE user_id = ?')->execute([$userId]);
             $this->pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$userId]);

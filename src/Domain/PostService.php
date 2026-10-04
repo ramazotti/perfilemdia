@@ -1438,17 +1438,18 @@ class PostService
 
     /**
      * @param array<string, mixed> $user
-     */
-    /**
-     * @param array<string, mixed> $user
-     * @param array<string, mixed>|null $post
      * @return array<string, mixed>
      */
+    private function profileView(array $user): array
+    {
+        return $this->users->userForPerfil($this->users->find((int) $user['id']) ?? $user);
+    }
+
     private function profileContext(array $user, ?array $post = null): array
     {
         return $post !== null
             ? $this->captionContext($user, $post)
-            : $this->users->userForPerfil($this->users->find((int) $user['id']) ?? $user);
+            : $this->profileView($user);
     }
 
     /**
@@ -2178,9 +2179,10 @@ class PostService
         $reference = is_file($savedRef) ? $savedRef : (!$series && is_file($path) ? $path : null);
         try {
             $generator = $this->ideas ?? new IdeaImage();
+            $look = IdeaLook::brief($this->captionContext($user, $post));
             $frames = $generator instanceof IdeaImage
-                ? $generator->createSet($idea, $reference, IdeaLook::brief($user), $aspect)
-                : [$generator->create($idea, $reference, IdeaLook::brief($user), $aspect)];
+                ? $generator->createSet($idea, $reference, $look, $aspect)
+                : [$generator->create($idea, $reference, $look, $aspect)];
             $this->storeIdeaFrames($postId, $frames, 0);
 
             return true;
@@ -2436,7 +2438,7 @@ class PostService
     {
         $now = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
         $can = $this->aiAllowed((int) $user['id']);
-        $view = $this->users->userForPerfil($this->users->find((int) $user['id']) ?? $user);
+        $view = $this->profileView($user);
         $this->users->update((int) $user['id'], ['idea_text' => BenefitOrchestrator::suggestion($view, $now)]);
         $this->channel->sendText($chatId, BenefitOrchestrator::ideaMessage($view, $now, $can), Keyboards::ideaActions($can));
     }
@@ -2455,14 +2457,15 @@ class PostService
      */
     public function createFromStoredIdea(array $user, int $chatId): void
     {
-        $fresh = $this->users->find((int) $user['id']) ?? $user;
-        $idea = trim((string) ($fresh['idea_text'] ?? ''));
-        if ($idea === '') {
-            $this->showIdea($fresh, $chatId);
+        $view = $this->profileView($user);
+        $row = $this->users->find((int) $user['id']);
+        $idea = trim((string) (is_array($row) ? ($row['idea_text'] ?? '') : ''));
+        if ($idea === '' || !$this->storedIdeaMatchesProfile($idea, $view)) {
+            $this->showIdea($user, $chatId);
 
             return;
         }
-        $this->startIdea($fresh, $chatId, $idea, null);
+        $this->startIdea($view, $chatId, $idea, null);
     }
 
     /**
@@ -2503,7 +2506,8 @@ class PostService
             if ($chatId === 0) {
                 continue;
             }
-            $idea = BenefitOrchestrator::suggestion($user, $now);
+            $view = $this->users->userForPerfil($user);
+            $idea = BenefitOrchestrator::suggestion($view, $now);
             $last = $this->posts->lastPublishedAt((int) $user['id']);
             $quiet = true;
             if ($last !== null) {
@@ -2516,8 +2520,8 @@ class PostService
                 'idea_sent_on' => $now->format('Y-m-d'),
             ]);
             $text = $quiet
-                ? BenefitOrchestrator::nudge($user, $now, $can)
-                : BenefitOrchestrator::ideaMessage($user, $now, $can);
+                ? BenefitOrchestrator::nudge($view, $now, $can)
+                : BenefitOrchestrator::ideaMessage($view, $now, $can);
             $this->channel->sendText($chatId, $text, Keyboards::ideaActions($can));
         }
     }
@@ -2532,16 +2536,17 @@ class PostService
 
             return;
         }
-        $fresh = $this->users->find((int) $user['id']) ?? $user;
+        $view = $this->profileView($user);
         $now = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
-        $stored = trim((string) ($fresh['idea_text'] ?? ''));
-        if ($stored !== '') {
-            $this->startIdea($fresh, $chatId, mb_substr($stored, 0, 1000), null, BenefitOrchestrator::photoPhrase($fresh));
+        $row = $this->users->find((int) $user['id']);
+        $stored = trim((string) (is_array($row) ? ($row['idea_text'] ?? '') : ''));
+        if ($stored !== '' && $this->storedIdeaMatchesProfile($stored, $view)) {
+            $this->startIdea($view, $chatId, mb_substr($stored, 0, 1000), null, BenefitOrchestrator::photoPhrase($view));
 
             return;
         }
-        $brief = BenefitOrchestrator::surpriseBrief($fresh, $now);
-        $this->startIdea($fresh, $chatId, mb_substr($brief['idea'], 0, 1000), null, $brief['phrase']);
+        $brief = BenefitOrchestrator::surpriseBrief($view, $now);
+        $this->startIdea($view, $chatId, mb_substr($brief['idea'], 0, 1000), null, $brief['phrase']);
     }
 
     /**
@@ -3358,7 +3363,11 @@ class PostService
             }
         }
         try {
-            $prompt = $this->videoPrompt($idea, trim(BenefitOrchestrator::brandBrief($user)), $reference !== null);
+            $prompt = $this->videoPrompt(
+                $idea,
+                trim(BenefitOrchestrator::brandBrief($this->profileView($user))),
+                $reference !== null,
+            );
             $jobId = $this->videoGenerator()->submit($prompt, $seconds, $reference);
             $this->posts->update($postId, ['video_job_id' => $jobId]);
         } catch (\Throwable $e) {
@@ -3514,12 +3523,14 @@ class PostService
      */
     private function startIdea(array $user, int $chatId, string $idea, ?array $message, ?string $surprisePhrase = null): void
     {
-        if (!$this->aiAllowed((int) $user['id'])) {
+        $userId = (int) $user['id'];
+        if (!$this->aiAllowed($userId)) {
             $this->channel->sendText($chatId, Messages::aiPlan());
 
             return;
         }
-        $this->users->update((int) $user['id'], ['pending_action' => null]);
+        $profile = $this->profileView($user);
+        $this->users->update($userId, ['pending_action' => null]);
         $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '4:5';
         [$idea, $rolled] = IdeaPieces::dress($idea, $aspect, $surprisePhrase !== null);
         $designed = IdeaImage::isDesigned($idea);
@@ -3545,11 +3556,11 @@ class PostService
             }
             $generator = $this->ideas ?? new IdeaImage();
             $frames = $generator instanceof IdeaImage
-                ? $generator->createSet($idea, $reference, IdeaLook::brief($user), $aspect)
-                : [$generator->create($idea, $reference, IdeaLook::brief($user), $aspect)];
+                ? $generator->createSet($idea, $reference, IdeaLook::brief($profile), $aspect)
+                : [$generator->create($idea, $reference, IdeaLook::brief($profile), $aspect)];
             $this->wakeDatabase();
             $this->storeIdeaFrames($postId, $frames, (int) ($message['message_id'] ?? 0));
-            $this->generateAndPreview((int) $user['id'], $chatId, $postId, $surprisePhrase === null);
+            $this->generateAndPreview($userId, $chatId, $postId, $surprisePhrase === null);
             if ($surprisePhrase !== null) {
                 $this->dressSurprise($user, $chatId, $postId, $surprisePhrase);
             }
@@ -3916,6 +3927,20 @@ class PostService
             $user,
             $accountId > 0 ? $accountId : null,
         );
+    }
+
+    /**
+     * @param array<string, mixed> $view Perfil da @ ativa (userForPerfil).
+     */
+    private function storedIdeaMatchesProfile(string $stored, array $view): bool
+    {
+        $who = trim((string) ($view['profession'] ?? ''));
+        if ($who === '') {
+            return true;
+        }
+        $needle = mb_substr($who, 0, min(48, mb_strlen($who)));
+
+        return $needle !== '' && mb_stripos($stored, $needle) !== false;
     }
 
     private function aiAllowed(int $userId): bool
