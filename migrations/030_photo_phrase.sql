@@ -1,0 +1,1 @@
+ALTER TABLE posts MODIFY photo_phrase VARCHAR(270) NULL;
