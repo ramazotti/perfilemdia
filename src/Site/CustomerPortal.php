@@ -21,27 +21,33 @@ use Throwable;
 
 final class CustomerPortal
 {
-    private ?AccountOrchestrator $accounts = null;
+    private ?PortalOrchestrator $portal = null;
 
     public function __construct(private readonly PDO $pdo)
     {
     }
 
-    private function accounts(): AccountOrchestrator
+    private function portal(): PortalOrchestrator
     {
-        if ($this->accounts instanceof AccountOrchestrator) {
-            return $this->accounts;
+        if ($this->portal instanceof PortalOrchestrator) {
+            return $this->portal;
         }
         $users = new UserRepository($this->pdo, Crypto::fromConfig());
-        $this->accounts = new AccountOrchestrator(
+        $accounts = new AccountOrchestrator(
             $this->pdo,
             BillingFactory::service($this->pdo),
             new CustomerAccess($this->pdo),
             new TicketService($this->pdo, $users),
             $users,
         );
+        $this->portal = new PortalOrchestrator($this->pdo, $accounts);
 
-        return $this->accounts;
+        return $this->portal;
+    }
+
+    private function accounts(): AccountOrchestrator
+    {
+        return $this->portal()->billing();
     }
 
     public function dispatch(string $path): bool
@@ -71,10 +77,21 @@ final class CustomerPortal
             header('Location: ' . Layout::url('minha-conta'));
             exit;
         }
-        if ($path !== '/minha-conta') {
+        $customerId = $this->sessionCustomerId();
+        if ($path === '/minha-conta/logo') {
+            return $this->serveLogo($customerId);
+        }
+        if ($path === '/minha-conta/publicar/estado') {
+            return $this->studioJson($customerId);
+        }
+        $pages = [
+            '/minha-conta' => 'billing',
+            '/minha-conta/perfil' => 'profile',
+            '/minha-conta/publicar' => 'studio',
+        ];
+        if (!isset($pages[$path])) {
             return false;
         }
-        $customerId = (int) ($_SESSION['account_customer_id'] ?? 0);
         if ($customerId < 1) {
             Layout::page(
                 'Minha conta',
@@ -86,12 +103,12 @@ final class CustomerPortal
             return true;
         }
         if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-            $this->post($customerId);
-            header('Location: ' . Layout::url('minha-conta'));
-            exit;
+            $redirect = $this->post($customerId, $path);
+
+            return is_string($redirect) ? $this->redirect($redirect) : true;
         }
-        $view = $this->accounts()->view($customerId);
-        if ($view === null) {
+        $bundle = $this->portal()->profileBundle($customerId);
+        if ($bundle === null) {
             unset($_SESSION['account_customer_id']);
             Layout::page(
                 'Minha conta',
@@ -102,17 +119,92 @@ final class CustomerPortal
 
             return true;
         }
-        Layout::page('Minha conta', $this->html($view), '');
+        $tab = $pages[$path];
+        if ($tab === 'studio') {
+            $this->portal()->studioSeed($customerId);
+        }
+        $title = match ($tab) {
+            'profile' => 'Perfil e preferências',
+            'studio' => 'Publicar',
+            default => 'Minha conta',
+        };
+        $body = match ($tab) {
+            'profile' => $this->htmlProfile($bundle),
+            'studio' => $this->htmlStudio($customerId, $bundle),
+            default => $this->html($bundle),
+        };
+        Layout::page($title, $this->portalNav($tab) . $body, 'conta');
 
         return true;
     }
 
-    private function post(int $customerId): void
+    private function sessionCustomerId(): int
+    {
+        return (int) ($_SESSION['account_customer_id'] ?? 0);
+    }
+
+    private function redirect(string $path): bool
+    {
+        header('Location: ' . Layout::url(ltrim($path, '/')));
+        exit;
+    }
+
+    private function serveLogo(int $customerId): bool
+    {
+        if ($customerId < 1) {
+            http_response_code(401);
+
+            return true;
+        }
+        $path = $this->portal()->logoPathForCustomer($customerId);
+        if ($path === null) {
+            http_response_code(404);
+
+            return true;
+        }
+        header('Content-Type: image/png');
+        header('Cache-Control: private, max-age=3600');
+        readfile($path);
+
+        return true;
+    }
+
+    private function studioJson(int $customerId): bool
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($customerId < 1) {
+            http_response_code(401);
+            echo json_encode(['error' => 'unauthorized'], JSON_UNESCAPED_UNICODE);
+
+            return true;
+        }
+        $state = $this->portal()->studioState($customerId);
+        echo json_encode($state, JSON_UNESCAPED_UNICODE);
+
+        return true;
+    }
+
+    private function portalNav(string $active): string
+    {
+        $link = static function (string $slug, string $label, string $key) use ($active): string {
+            $current = $active === $key ? ' aria-current="page"' : '';
+
+            return '<a class="portal-tab" href="' . Layout::e(Layout::url('minha-conta' . ($slug === '' ? '' : '/' . $slug))) . '"' . $current . '>' . Layout::e($label) . '</a>';
+        };
+
+        return '<nav class="portal-tabs wrap" aria-label="Área do cliente">'
+            . $link('', 'Assinatura', 'billing')
+            . $link('perfil', 'Perfil', 'profile')
+            . $link('publicar', 'Publicar', 'studio')
+            . '</nav>';
+    }
+
+    private function post(int $customerId, string $path): ?string
     {
         if (!Layout::checkCsrf()) {
             $this->flash('A pÃ¡gina expirou. Abra de novo e tente outra vez.', true);
 
-            return;
+            return $this->redirectPath($path);
         }
         $action = (string) ($_POST['action'] ?? '');
         if ($action === 'ip') {
@@ -121,7 +213,7 @@ final class CustomerPortal
                 $_SESSION['appmax_ip'] = $ip;
             }
 
-            return;
+            return $this->redirectPath($path);
         }
         try {
             unset($_SESSION['account_error'], $_SESSION['account_notice']);
@@ -135,6 +227,16 @@ final class CustomerPortal
                 'pix' => $this->accounts()->beginPix($customerId),
                 'verificar' => $this->accounts()->refreshPix($customerId),
                 'pagar', 'cartao' => $this->card($customerId, $action),
+                'conta_ig' => $this->portal()->setActiveAccount($customerId, (int) ($_POST['account_id'] ?? 0)),
+                'perfil' => $this->portal()->saveProfile($customerId, $_POST),
+                'prefs' => $this->portal()->savePreferences($customerId, array_merge($_POST, [
+                    'idea_daily' => isset($_POST['idea_daily']) ? '1' : '0',
+                ])),
+                'logo' => $this->uploadLogo($customerId),
+                'studio_msg' => $this->portal()->studioChat($customerId, (string) ($_POST['message'] ?? '')),
+                'studio_cb' => $this->portal()->studioCallback($customerId, (string) ($_POST['callback'] ?? '')),
+                'studio_upload' => $this->studioUpload($customerId),
+                'studio_reset' => $this->portal()->studioReset($customerId),
                 default => throw new RuntimeException('AÃ§Ã£o desconhecida.'),
             };
             if (!isset($_SESSION['account_error'])) {
@@ -147,6 +249,45 @@ final class CustomerPortal
         } catch (Throwable) {
             $this->flash('NÃ£o foi possÃ­vel concluir. Tente de novo.', true);
         }
+
+        return $this->redirectPath($path, $action);
+    }
+
+    private function redirectPath(string $path, string $action = ''): string
+    {
+        if (str_starts_with($action, 'studio_')) {
+            return '/minha-conta/publicar';
+        }
+        if (in_array($action, ['perfil', 'prefs', 'logo', 'conta_ig'], true)) {
+            return '/minha-conta/perfil';
+        }
+
+        return $path === '' ? '/minha-conta' : $path;
+    }
+
+    private function uploadLogo(int $customerId): void
+    {
+        if (!isset($_FILES['logo']) || !is_array($_FILES['logo'])) {
+            throw new RuntimeException('Escolha uma imagem.');
+        }
+        $file = $_FILES['logo'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new RuntimeException('Não foi possível receber a logo.');
+        }
+        $tmp = (string) ($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            throw new RuntimeException('Upload inválido.');
+        }
+        $this->portal()->saveLogo($customerId, $tmp);
+    }
+
+    private function studioUpload(int $customerId): void
+    {
+        if (!isset($_FILES['media']) || !is_array($_FILES['media'])) {
+            throw new RuntimeException('Escolha uma foto ou vídeo.');
+        }
+        $caption = isset($_POST['caption']) ? (string) $_POST['caption'] : null;
+        $this->portal()->studioUpload($customerId, $_FILES['media'], $caption);
     }
 
     private function card(int $customerId, string $action): void
@@ -202,6 +343,12 @@ final class CustomerPortal
             'pagar' => 'Pagamento registrado.',
             'cartao' => 'CartÃ£o guardado para a prÃ³xima cobranÃ§a.',
             'ip' => '',
+            'conta_ig' => 'Conta Instagram ativa atualizada.',
+            'perfil' => 'Perfil salvo.',
+            'prefs' => 'Preferências salvas.',
+            'logo' => 'Logo atualizada.',
+            'studio_msg', 'studio_cb', 'studio_upload' => '',
+            'studio_reset' => 'Conversa reiniciada.',
             default => 'Pronto.',
         };
     }
@@ -233,7 +380,7 @@ final class CustomerPortal
         $customer = $view['customer'];
         $html = '<section class="page"><div class="wrap">';
         $html .= '<h1>Minha conta</h1>';
-        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' Â· <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
         if ($notice !== '') {
             $html .= '<p class="notice">' . Layout::e($notice) . '</p>';
         }
@@ -396,10 +543,23 @@ final class CustomerPortal
     {
         $ig = $view['instagram'];
         $html = '<div class="box" style="margin-top:20px"><h2>Instagram</h2>';
-        if ((string) $ig['username'] !== '' && (string) $ig['status'] === 'active') {
-            $html .= '<p>Conectado como @' . Layout::e(ltrim((string) $ig['username'], '@')) . '.</p>';
+        $accounts = is_array($view['instagram_accounts'] ?? null) ? $view['instagram_accounts'] : [];
+        if ($accounts === []) {
+            if ((string) $ig['username'] !== '' && (string) $ig['status'] === 'active') {
+                $html .= '<p>Conectado como @' . Layout::e(ltrim((string) $ig['username'], '@')) . '.</p>';
+            } else {
+                $html .= '<p>Nenhuma conta profissional conectada.</p>';
+            }
         } else {
-            $html .= '<p>Nenhuma conta profissional conectada.</p>';
+            $active = (int) ($view['active_account_id'] ?? 0);
+            $html .= '<p class="meta">Perfil, logo e posts usam a conta marcada como ativa. Edite em <a href="' . Layout::e(Layout::url('minha-conta/perfil')) . '">Perfil</a>.</p><div class="list">';
+            foreach ($accounts as $row) {
+                $username = ltrim((string) ($row['username'] ?? ''), '@');
+                $mark = (int) ($row['id'] ?? 0) === $active ? ' (ativa)' : '';
+                $status = (string) ($row['status'] ?? '');
+                $html .= $this->row('@' . $username . $mark, $status === 'active' ? 'conectada' : $status);
+            }
+            $html .= '</div>';
         }
         if ((string) $ig['url'] !== '') {
             $html .= '<p style="margin-top:12px"><a class="btn btn-ghost" href="' . Layout::e((string) $ig['url']) . '">Conectar Instagram</a></p>';
@@ -415,7 +575,7 @@ final class CustomerPortal
     private function contactBox(array $customer): string
     {
         $html = '<div class="box" style="margin-top:20px"><h2>Dados</h2>';
-        $html .= '<p class="hint">O contato da legenda se edita no bot, com /perfil. Aqui ficam o e-mail e o celular da assinatura. Documento: ' . Layout::e((string) $customer['document']) . '. Ele nÃ£o muda por aqui.</p>';
+        $html .= '<p class="hint">Nome, legenda e logo ficam em <a href="' . Layout::e(Layout::url('minha-conta/perfil')) . '">Perfil</a>. Aqui ficam e-mail e celular da assinatura. Documento: ' . Layout::e((string) $customer['document']) . '. Ele nÃ£o muda por aqui.</p>';
         $html .= $this->form('contato', '<div class="field"><label for="email">E-mail</label><input class="in" id="email" name="email" type="email" value="' . Layout::e((string) $customer['email']) . '" required></div>'
             . '<div class="field"><label for="phone">Celular</label><input class="in" id="phone" name="phone" type="tel" value="' . Layout::e(Phone::format((string) $customer['phone'])) . '" required></div>'
             . '<button class="btn btn-primary" type="submit">Salvar</button>');
@@ -546,5 +706,250 @@ final class CustomerPortal
             'estornado' => 'estornado',
             default => $status,
         };
+    }
+
+    /**
+     * @param array<string, mixed> $bundle
+     */
+    private function htmlProfile(array $bundle): string
+    {
+        $notice = (string) ($_SESSION['account_notice'] ?? '');
+        $error = (string) ($_SESSION['account_error'] ?? '');
+        unset($_SESSION['account_notice'], $_SESSION['account_error']);
+        $customer = $bundle['customer'];
+        $profile = is_array($bundle['profile'] ?? null) ? $bundle['profile'] : [];
+        $userId = (int) ($customer['user_id'] ?? 0);
+        $html = '<section class="page"><div class="wrap">';
+        $html .= '<h1>Perfil e preferências</h1>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        if ($notice !== '') {
+            $html .= '<p class="notice">' . Layout::e($notice) . '</p>';
+        }
+        if ($error !== '') {
+            $html .= '<p class="notice">' . Layout::e($error) . '</p>';
+        }
+        if ($userId < 1) {
+            $html .= '<p class="meta">Ative o código no Telegram para editar o perfil.</p></div></section>';
+
+            return $html;
+        }
+        $accounts = is_array($bundle['instagram_accounts'] ?? null) ? $bundle['instagram_accounts'] : [];
+        if ($accounts !== []) {
+            $html .= '<div class="box" style="margin-top:20px"><h2>Conta Instagram ativa</h2><p class="meta">Ideias, legendas e publicação usam o @ selecionado.</p>';
+            $options = '';
+            $active = (int) ($bundle['active_account_id'] ?? 0);
+            foreach ($accounts as $row) {
+                $id = (int) ($row['id'] ?? 0);
+                $username = ltrim((string) ($row['username'] ?? ''), '@');
+                $sel = $id === $active ? ' selected' : '';
+                $options .= '<option value="' . $id . '"' . $sel . '>@' . Layout::e($username) . '</option>';
+            }
+            $html .= $this->form('conta_ig', '<select class="in" name="account_id">' . $options . '</select><button class="btn btn-primary" type="submit">Usar esta conta</button>');
+            $ig = $bundle['instagram'];
+            if ((string) ($ig['url'] ?? '') !== '') {
+                $html .= '<p style="margin-top:12px"><a class="btn btn-ghost" href="' . Layout::e((string) $ig['url']) . '">Conectar outra conta</a></p>';
+            }
+            $html .= '</div>';
+        }
+        $val = static fn (string $key): string => Layout::e((string) ($profile[$key] ?? ''));
+        $html .= '<div class="box" style="margin-top:20px"><h2>Perfil da legenda</h2>';
+        $html .= $this->form(
+            'perfil',
+            '<div class="field"><label for="display_name">Nome</label><input class="in" id="display_name" name="display_name" value="' . $val('display_name') . '" required></div>'
+            . '<div class="field"><label for="profession">O que você faz</label><input class="in" id="profession" name="profession" value="' . $val('profession') . '" required></div>'
+            . '<div class="field"><label for="city">Cidade</label><input class="in" id="city" name="city" value="' . $val('city') . '" required></div>'
+            . '<div class="field"><label for="tone">Tom</label><select class="in" id="tone" name="tone">'
+            . $this->toneOption('profissional', (string) ($profile['tone'] ?? ''))
+            . $this->toneOption('descontraido', (string) ($profile['tone'] ?? ''))
+            . $this->toneOption('tecnico', (string) ($profile['tone'] ?? ''))
+            . $this->toneOption('acolhedor', (string) ($profile['tone'] ?? ''))
+            . '</select></div>'
+            . '<div class="field"><label for="contact_cta">Contato na legenda</label><input class="in" id="contact_cta" name="contact_cta" value="' . $val('contact_cta') . '"></div>'
+            . '<div class="field"><label for="about">Sobre</label><textarea class="in" id="about" name="about" rows="4">' . $val('about') . '</textarea></div>'
+            . '<div class="field"><label for="brand_style">Marca visual</label><input class="in" id="brand_style" name="brand_style" value="' . $val('brand_style') . '"></div>'
+            . '<div class="field"><label for="fixed_hashtags">Hashtags fixas</label><input class="in" id="fixed_hashtags" name="fixed_hashtags" value="' . $val('fixed_hashtags') . '"></div>'
+            . '<button class="btn btn-primary" type="submit">Salvar perfil</button>',
+        );
+        $html .= '</div>';
+        $logoUrl = (string) ($bundle['logo_url'] ?? '');
+        $html .= '<div class="box" style="margin-top:20px"><h2>Logo</h2>';
+        if ($logoUrl !== '') {
+            $html .= '<p><img class="portal-logo" src="' . Layout::e($logoUrl) . '" alt="Logo"></p>';
+        }
+        $html .= '<p class="meta">PNG ou JPEG. Usada na marca d\'água e no texto na foto.</p>';
+        $html .= '<form method="post" enctype="multipart/form-data">'
+            . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
+            . '<input type="hidden" name="action" value="logo">'
+            . '<div class="field"><label for="logo">Arquivo</label><input class="in" id="logo" name="logo" type="file" accept="image/*" required></div>'
+            . '<button class="btn btn-primary" type="submit">Enviar logo</button></form></div>';
+        $ideaOn = !empty($bundle['idea_daily']);
+        $html .= '<div class="box" style="margin-top:20px"><h2>Preferências de postagem</h2>';
+        $html .= $this->form(
+            'prefs',
+            '<div class="field"><label for="phrase_style">Estilo do texto na foto</label><select class="in" id="phrase_style" name="phrase_style">'
+            . $this->selectOption('classica', 'Clássica', (string) ($profile['phrase_style'] ?? ''))
+            . $this->selectOption('cursiva', 'Cursiva', (string) ($profile['phrase_style'] ?? ''))
+            . $this->selectOption('limpa', 'Limpa', (string) ($profile['phrase_style'] ?? ''))
+            . $this->selectOption('forte', 'Forte', (string) ($profile['phrase_style'] ?? ''))
+            . $this->selectOption('balao', 'Balão', (string) ($profile['phrase_style'] ?? ''))
+            . $this->selectOption('caixa', 'Caixa', (string) ($profile['phrase_style'] ?? ''))
+            . '</select></div>'
+            . '<div class="field"><label for="phrase_color">Cor do texto</label><select class="in" id="phrase_color" name="phrase_color">'
+            . $this->selectOption('branco', 'Branco', (string) ($profile['phrase_color'] ?? ''))
+            . $this->selectOption('preto', 'Preto', (string) ($profile['phrase_color'] ?? ''))
+            . '</select></div>'
+            . '<div class="field"><label for="phrase_place">Posição</label><select class="in" id="phrase_place" name="phrase_place">'
+            . $this->selectOption('topo', 'Topo', (string) ($profile['phrase_place'] ?? ''))
+            . $this->selectOption('meio', 'Meio', (string) ($profile['phrase_place'] ?? ''))
+            . $this->selectOption('rodape', 'Rodapé', (string) ($profile['phrase_place'] ?? ''))
+            . '</select></div>'
+            . '<div class="field"><label for="phrase_size">Tamanho</label><select class="in" id="phrase_size" name="phrase_size">'
+            . $this->selectOption('menor', 'Menor', (string) ($profile['phrase_size'] ?? ''))
+            . $this->selectOption('normal', 'Normal', (string) ($profile['phrase_size'] ?? ''))
+            . $this->selectOption('maior', 'Maior', (string) ($profile['phrase_size'] ?? ''))
+            . '</select></div>'
+            . '<div class="field"><label><input type="checkbox" name="idea_daily" value="1"' . ($ideaOn ? ' checked' : '') . '> Ideia do dia no Telegram (8h)</label></div>'
+            . '<button class="btn btn-primary" type="submit">Salvar preferências</button>',
+        );
+        $html .= '</div></div></section>';
+
+        return $html;
+    }
+
+    private function toneOption(string $value, string $current): string
+    {
+        $label = ucfirst($value);
+        $sel = $current === $value ? ' selected' : '';
+
+        return '<option value="' . Layout::e($value) . '"' . $sel . '>' . Layout::e($label) . '</option>';
+    }
+
+    private function selectOption(string $value, string $label, string $current): string
+    {
+        $sel = $current === $value || ($current === '' && $value === 'classica') ? ' selected' : '';
+
+        return '<option value="' . Layout::e($value) . '"' . $sel . '>' . Layout::e($label) . '</option>';
+    }
+
+    /**
+     * @param array<string, mixed> $bundle
+     */
+    private function htmlStudio(int $customerId, array $bundle): string
+    {
+        $notice = (string) ($_SESSION['account_notice'] ?? '');
+        $error = (string) ($_SESSION['account_error'] ?? '');
+        unset($_SESSION['account_notice'], $_SESSION['account_error']);
+        $customer = $bundle['customer'];
+        $state = $this->portal()->studioState($customerId);
+        $expect = (string) ($state['expecting'] ?? 'text');
+        $html = '<section class="page"><div class="wrap">';
+        $html .= '<h1>Publicar</h1>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · mesmo fluxo do bot · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        if ((int) ($customer['user_id'] ?? 0) < 1) {
+            $html .= '<p class="meta">Ative a conta no Telegram para publicar da web.</p></div></section>';
+
+            return $html;
+        }
+        if ($notice !== '') {
+            $html .= '<p class="notice">' . Layout::e($notice) . '</p>';
+        }
+        if ($error !== '') {
+            $html .= '<p class="notice">' . Layout::e($error) . '</p>';
+        }
+        $html .= '<div class="portal-studio" data-poll="' . Layout::e(Layout::url('minha-conta/publicar/estado')) . '">';
+        $html .= '<div class="portal-chat" id="portal-chat">';
+        foreach ($state['messages'] as $message) {
+            $html .= $this->chatBubble($message);
+        }
+        $html .= '</div>';
+        $html .= '<div class="portal-compose">';
+        $html .= $this->form('studio_msg', '<label class="sr" for="studio-message">Mensagem</label>'
+            . '<textarea class="in portal-input" id="studio-message" name="message" rows="2" placeholder="Tema, legenda ou /novo"></textarea>'
+            . '<button class="btn btn-primary" type="submit">Enviar</button>');
+        $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload">'
+            . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
+            . '<input type="hidden" name="action" value="studio_upload">'
+            . '<input type="file" name="media" accept="image/*,video/mp4" capture="environment">'
+            . '<input class="in" name="caption" placeholder="Legenda da foto (opcional)">'
+            . '<button class="btn btn-ghost" type="submit">Enviar mídia</button></form>';
+        $html .= $this->form('studio_reset', '<button class="btn btn-ghost" type="submit">Limpar conversa</button>');
+        $html .= '<p class="hint">Aguardando: ' . Layout::e($expect) . '. Publicação real vai para o Instagram conectado.</p>';
+        $html .= '</div></div></div></section>';
+        $html .= $this->studioScript();
+
+        return $html;
+    }
+
+    /**
+     * @param array<string, mixed> $message
+     */
+    private function chatBubble(array $message): string
+    {
+        $role = (string) ($message['role'] ?? 'bot');
+        $class = $role === 'user' ? 'portal-msg portal-msg-user' : 'portal-msg portal-msg-bot';
+        $inner = '';
+        $type = (string) ($message['type'] ?? 'text');
+        if ($type === 'photo' || $type === 'video') {
+            $url = (string) ($message['url'] ?? '');
+            if ($url !== '') {
+                if ($type === 'video') {
+                    $inner .= '<video controls src="' . Layout::e($url) . '"></video>';
+                } else {
+                    $inner .= '<img src="' . Layout::e($url) . '" alt="">';
+                }
+            }
+            $cap = (string) ($message['caption'] ?? '');
+            if ($cap !== '') {
+                $inner .= '<p>' . nl2br(Layout::e($cap)) . '</p>';
+            }
+        } elseif ($type === 'album') {
+            foreach ($message['urls'] ?? [] as $url) {
+                if (!is_string($url) || $url === '') {
+                    continue;
+                }
+                $inner .= '<img src="' . Layout::e($url) . '" alt="">';
+            }
+        } else {
+            $inner .= '<p>' . nl2br(Layout::e((string) ($message['text'] ?? ''))) . '</p>';
+        }
+        $buttons = $message['buttons'] ?? [];
+        if (is_array($buttons) && $buttons !== []) {
+            $inner .= '<div class="portal-actions">';
+            foreach ($buttons as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                foreach ($row as $button) {
+                    if (!is_array($button)) {
+                        continue;
+                    }
+                    $text = (string) ($button['text'] ?? '');
+                    if ($text === '') {
+                        continue;
+                    }
+                    if (!empty($button['url'])) {
+                        $inner .= '<a class="btn btn-ghost btn-sm" href="' . Layout::e((string) $button['url']) . '">' . Layout::e($text) . '</a>';
+                        continue;
+                    }
+                    $data = (string) ($button['data'] ?? '');
+                    if ($data === '') {
+                        continue;
+                    }
+                    $inner .= '<form method="post" class="portal-inline">'
+                        . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
+                        . '<input type="hidden" name="action" value="studio_cb">'
+                        . '<input type="hidden" name="callback" value="' . Layout::e($data) . '">'
+                        . '<button class="btn btn-ghost btn-sm" type="submit">' . Layout::e($text) . '</button></form>';
+                }
+            }
+            $inner .= '</div>';
+        }
+
+        return '<article class="' . $class . '">' . $inner . '</article>';
+    }
+
+    private function studioScript(): string
+    {
+        return '<script>(function(){var root=document.querySelector(".portal-studio");if(!root)return;var chat=document.getElementById("portal-chat");var url=root.getAttribute("data-poll");function scroll(){if(chat)chat.scrollTop=chat.scrollHeight;}scroll();if(!url)return;var busy=false;function tick(){if(busy||document.hidden)return;busy=true;fetch(url,{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(data){if(!data||!data.post)return;var st=(data.post.status||"");if(st==="GENERATING"||st==="COLLECTING"||st==="PUBLISHING"||st==="IMAGE_EDITING"){location.reload();}}).catch(function(){}).finally(function(){busy=false;});}setInterval(tick,4000);})();</script>';
     }
 }

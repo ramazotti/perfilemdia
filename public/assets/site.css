@@ -382,3 +382,21 @@ body.cookie-open .tg-dialog-card{bottom:calc(var(--tg-lift, 120px) + 68px + env(
 .tg-choice span{display:block;margin-top:4px;color:var(--ink2);font-size:14px;font-weight:500;line-height:1.4}
 .tg-choice:hover{border-color:var(--accent)}
 .tg-close{margin-top:14px;border:0;background:transparent;color:var(--ink2);font-weight:700;cursor:pointer;padding:0}
+
+/* minha conta: abas e studio */
+.portal-tabs{display:flex;flex-wrap:wrap;gap:10px;padding:18px 24px 0;max-width:1160px;margin:0 auto}
+.portal-tab{display:inline-flex;align-items:center;min-height:40px;padding:0 18px;border-radius:999px;border:1px solid var(--line);text-decoration:none;font-weight:700;color:var(--ink2);background:var(--paper)}
+.portal-tab[aria-current="page"]{border-color:var(--accent);color:var(--accent-text);background:var(--accent-soft)}
+.portal-logo{max-width:160px;max-height:160px;border-radius:12px;border:1px solid var(--line)}
+.portal-studio{margin-top:20px;display:grid;gap:16px}
+.portal-chat{background:var(--chat);border-radius:20px;padding:16px;min-height:320px;max-height:min(62vh,560px);overflow:auto;display:flex;flex-direction:column;gap:12px}
+.portal-msg{max-width:92%;padding:12px 14px;border-radius:16px;background:var(--paper);box-shadow:0 1px 0 rgba(0,0,0,.04)}
+.portal-msg-user{align-self:flex-end;background:var(--accent-soft)}
+.portal-msg img,.portal-msg video{max-width:100%;border-radius:12px;display:block;margin-top:8px}
+.portal-msg p{margin:0;white-space:pre-wrap;font-size:15px;line-height:1.45}
+.portal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.portal-inline{display:inline;margin:0}
+.portal-compose{display:grid;gap:12px}
+.portal-upload{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.portal-input{min-height:72px;resize:vertical}
+.btn-sm{min-height:40px;padding:0 14px;font-size:14px}
