@@ -3420,13 +3420,7 @@ class PostService
         }
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '4:5';
-        $rolled = '';
-        if (!IdeaImage::isDesigned($idea)) {
-            $rolled = IdeaPieces::randomCue($aspect);
-            if ($rolled !== '') {
-                $idea = $rolled . ' ' . $idea;
-            }
-        }
+        [$idea, $rolled] = IdeaPieces::dress($idea, $aspect, $surprisePhrase !== null);
         $designed = IdeaImage::isDesigned($idea);
         if ($surprisePhrase !== null) {
             $this->channel->sendText($chatId, $designed ? Messages::surpriseStartedDesign() : Messages::surpriseStarted());

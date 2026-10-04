@@ -87,7 +87,7 @@ final class Messages
             . "/excluirconta apagar seus dados e começar do zero\n"
             . "/chamado abrir ou ver um chamado\n/ideia ideia para o post de hoje\n/resultado alcance dos últimos dias\n/marca cor e estilo da marca\n"
             . "/ajuda esta lista\n\n"
-            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. /novo pergunta o tipo: foto única, carrossel, vídeo curto ou criado pela IA. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio. Na ideia, estas palavras mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. 3 slides no feed, até 10, ou 3 telas no story, até 3. Se a ideia não disser nenhuma, o bot sorteia.";
+            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. /novo pergunta o tipo: foto única, carrossel, vídeo curto ou criado pela IA. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio. Na ideia, estas palavras mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. 3 slides no feed, até 10, ou 3 telas no story, até 3. O sorteio do desenho fica só no Surpreenda-me.";
     }
 
     public static function status(string $ig, int $used, int $limit): string
@@ -665,7 +665,7 @@ final class Messages
     public static function ideaFormats(): string
     {
         return "\n\nPalavras que mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. "
-            . "3 slides no feed fazem uma sequência, até 10. No story, 3 telas, até 3, e a frase não entra por cima. Se a ideia não disser nenhuma, eu sorteio o desenho, e às vezes sai uma foto.";
+            . "3 slides no feed fazem uma sequência, até 10. No story, 3 telas, até 3, e a frase não entra por cima. O sorteio do desenho fica só no Surpreenda-me.";
     }
 
     public static function kindIaNeedText(): string
@@ -922,7 +922,17 @@ final class Messages
 
     public static function audioHeard(string $text): string
     {
-        return 'Ouvi: ' . $text;
+        return "Ouvi: {$text}\n\nÉ isso?";
+    }
+
+    public static function audioCorrect(): string
+    {
+        return 'Beleza. Manda de novo, em texto ou áudio.';
+    }
+
+    public static function audioMissing(): string
+    {
+        return 'Esse áudio já foi. Manda de novo, se ainda quiser.';
     }
 
     private static function show(mixed $value): string

@@ -64,9 +64,31 @@ final class AudioAcceptTest extends TestCase
         ]);
 
         $this->assertSame(1, $speech->calls);
-        $this->assertSame('estoque novo da semana', $posts->find($postId)['theme_text']);
+        $this->assertNull($posts->find($postId)['theme_text']);
         $heard = implode("\n", array_column($channel->sent, 'text'));
         $this->assertStringContainsString('Ouvi: estoque novo da semana', $heard);
+        $codes = [];
+        foreach ($channel->sent as $row) {
+            foreach ($row['buttons'] ?? [] as $line) {
+                foreach ($line as $button) {
+                    $codes[] = (string) ($button['callback_data'] ?? '');
+                }
+            }
+        }
+        $this->assertContains('au:ok', $codes);
+        $this->assertContains('au:fix', $codes);
+
+        $handler->handle([
+            'update_id' => 91,
+            'callback_query' => [
+                'id' => 'cb-audio',
+                'data' => 'au:ok',
+                'from' => ['id' => 930441, 'username' => 'ana'],
+                'message' => ['message_id' => 12, 'chat' => ['id' => 930441, 'type' => 'private']],
+            ],
+        ]);
+
+        $this->assertSame('estoque novo da semana', $posts->find($postId)['theme_text']);
     }
 
     public function testLongVoiceIsRefusedBeforeTranscription(): void
@@ -265,7 +287,7 @@ final class AudioTestChannel implements \PerfilEmDia\Channel\ChannelInterface
 
     public function sendText(int $chatId, string $text, ?array $buttons = null): int
     {
-        $this->sent[] = ['text' => $text];
+        $this->sent[] = ['text' => $text, 'buttons' => $buttons];
 
         return count($this->sent);
     }

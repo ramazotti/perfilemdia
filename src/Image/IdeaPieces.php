@@ -37,6 +37,22 @@ final class IdeaPieces
         return $cues[random_int(0, count($cues) - 1)];
     }
 
+    /**
+     * @return array{0:string,1:string}
+     */
+    public static function dress(string $idea, string $aspect, bool $surprise): array
+    {
+        if (!$surprise || self::isDesigned($idea)) {
+            return [$idea, ''];
+        }
+        $cue = self::randomCue($aspect);
+        if ($cue === '') {
+            return [$idea, ''];
+        }
+
+        return [$cue . ' ' . $idea, $cue];
+    }
+
     public static function isDesigned(string $text): bool
     {
         return self::kind($text) !== 'photo';

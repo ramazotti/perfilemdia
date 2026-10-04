@@ -12,6 +12,7 @@ use PerfilEmDia\Billing\PlanAccess;
 use PerfilEmDia\Db;
 use PerfilEmDia\Channel\ChannelInterface;
 use PerfilEmDia\Config;
+use PerfilEmDia\Domain\AudioDraft;
 use PerfilEmDia\Domain\OnboardingService;
 use PerfilEmDia\Domain\PostRepository;
 use PerfilEmDia\Domain\PostService;
@@ -111,6 +112,10 @@ final class UpdateHandler
             $text = $spoken;
         }
 
+        if ($spoken === null && $text !== '') {
+            AudioDraft::clear((int) $user['id']);
+        }
+
         if ($this->inTicketDraft($user)) {
             if ($spoken === null && $this->hasMedia($message)) {
                 $this->channel->sendText($chatId, Messages::ticketNeedText(), Keyboards::ticketCompose());
@@ -131,30 +136,43 @@ final class UpdateHandler
         }
 
         if ($text !== '') {
-            if ($this->onboarding->handleText($user, $chatId, $text)) {
-                return;
-            }
-            $user = $this->users->find((int) $user['id']) ?? $user;
-            if ($this->postsService->handleScheduleText($user, $chatId, $text)) {
-                return;
-            }
-            if ($this->postsService->handleLogoWait($user, $chatId)) {
-                return;
-            }
-            if ($this->postsService->handleAiVideoText($user, $chatId, $text)) {
-                return;
-            }
-            if ($this->postsService->handlePhraseText($user, $chatId, $text)) {
-                return;
-            }
-            if ($this->postsService->handleIdeaText($user, $chatId, $text)) {
-                return;
-            }
-            if ($this->postsService->handleThemeText($user, $chatId, $text)) {
-                return;
-            }
-            $this->postsService->replyWhenIdle($user, $chatId);
+            $this->resumeText($user, $chatId, $text);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function resumeText(array $user, int $chatId, string $text): void
+    {
+        if ($this->inTicketDraft($user)) {
+            $this->tickets?->receive($user, $chatId, $text, $this->channel);
+
+            return;
+        }
+        if ($this->onboarding->handleText($user, $chatId, $text)) {
+            return;
+        }
+        $user = $this->users->find((int) $user['id']) ?? $user;
+        if ($this->postsService->handleScheduleText($user, $chatId, $text)) {
+            return;
+        }
+        if ($this->postsService->handleLogoWait($user, $chatId)) {
+            return;
+        }
+        if ($this->postsService->handleAiVideoText($user, $chatId, $text)) {
+            return;
+        }
+        if ($this->postsService->handlePhraseText($user, $chatId, $text)) {
+            return;
+        }
+        if ($this->postsService->handleIdeaText($user, $chatId, $text)) {
+            return;
+        }
+        if ($this->postsService->handleThemeText($user, $chatId, $text)) {
+            return;
+        }
+        $this->postsService->replyWhenIdle($user, $chatId);
     }
 
     /**
@@ -165,6 +183,7 @@ final class UpdateHandler
         $parts = preg_split('/\s+/', trim($text), 2) ?: [];
         $command = strtolower((string) ($parts[0] ?? ''));
         $command = explode('@', $command)[0];
+        AudioDraft::clear((int) $user['id']);
         if (!in_array($command, ['/chamado', '/suporte'], true)) {
             $this->leaveTicketDraft($user);
         }
@@ -307,6 +326,13 @@ final class UpdateHandler
         if ($chatId === 0) {
             $chatId = (int) $user['telegram_chat_id'];
         }
+        if ($data === 'au:ok' || $data === 'au:fix') {
+            $this->channel->answerCallback($callbackId);
+            $this->resolveAudioChoice($user, $chatId, $data === 'au:ok');
+
+            return;
+        }
+        AudioDraft::clear((int) $user['id']);
         if (!str_starts_with($data, 'ch:')) {
             $this->leaveTicketDraft($user);
         }
@@ -516,6 +542,27 @@ final class UpdateHandler
     /**
      * @param array<string, mixed> $user
      */
+    private function resolveAudioChoice(array $user, int $chatId, bool $send): void
+    {
+        if (!$send) {
+            AudioDraft::clear((int) $user['id']);
+            $this->channel->sendText($chatId, Messages::audioCorrect());
+
+            return;
+        }
+        $text = AudioDraft::take((int) $user['id']);
+        if ($text === null || $text === '') {
+            $this->channel->sendText($chatId, Messages::audioMissing());
+
+            return;
+        }
+        $fresh = $this->users->find((int) $user['id']) ?? $user;
+        $this->resumeText($fresh, $chatId, $text);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
     private function audioAllowed(array $user): bool
     {
         $window = (new PlanAccess(Db::pdo()))->window((int) $user['id']);
@@ -608,9 +655,14 @@ final class UpdateHandler
 
             return '';
         }
-        $this->channel->sendText($chatId, Messages::audioHeard($text));
+        if (!AudioDraft::save((int) $user['id'], $text)) {
+            $this->channel->sendText($chatId, Messages::audioFailed());
 
-        return $text;
+            return '';
+        }
+        $this->channel->sendText($chatId, Messages::audioHeard($text), Keyboards::audioChoice());
+
+        return '';
     }
 
     /**

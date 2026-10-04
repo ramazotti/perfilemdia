@@ -471,4 +471,15 @@ final class Keyboards
     {
         return [[['text' => 'Surpreenda-me (IA decide)', 'callback_data' => 'pk:surpresa']]];
     }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
+    public static function audioChoice(): array
+    {
+        return [[
+            ['text' => 'Enviar', 'callback_data' => 'au:ok'],
+            ['text' => 'Corrigir', 'callback_data' => 'au:fix'],
+        ]];
+    }
 }
