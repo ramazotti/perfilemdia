@@ -21,7 +21,7 @@ use PerfilEmDia\Image\PhraseStyle;
 use RuntimeException;
 
 /**
- * Orquestra assinatura (via AccountOrchestrator), perfil por @, preferÍncias e studio web.
+ * Orquestra assinatura (via AccountOrchestrator), perfil por @, prefer√™ncias e studio web.
  */
 final class PortalOrchestrator
 {
@@ -106,7 +106,7 @@ final class PortalOrchestrator
     {
         $userId = $this->requireUser($customerId);
         if (!$this->users->setActiveInstagramAccount($userId, $accountId)) {
-            throw new RuntimeException('Conta Instagram inv·lida.');
+            throw new RuntimeException('Conta Instagram inv√°lida.');
         }
     }
 
@@ -124,14 +124,14 @@ final class PortalOrchestrator
             $clean = trim(strip_tags($fields[$key]));
             if ($key === 'tone') {
                 if (!in_array($clean, self::TONES, true)) {
-                    throw new RuntimeException('Escolha um tom v·lido.');
+                    throw new RuntimeException('Escolha um tom v√°lido.');
                 }
                 $patch['tone'] = $clean;
                 continue;
             }
             $limit = self::LIMITS[$key] ?? 120;
             if (in_array($key, ['display_name', 'profession', 'city'], true) && $clean === '') {
-                throw new RuntimeException('Preencha os campos obrigatÛrios.');
+                throw new RuntimeException('Preencha os campos obrigat√≥rios.');
             }
             if (mb_strlen($clean) > $limit) {
                 throw new RuntimeException('Texto longo demais em ' . $key . '.');
@@ -296,18 +296,18 @@ final class PortalOrchestrator
         $user = $this->requireUserRow($customerId);
         $userId = (int) $user['id'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('N„o foi possÌvel receber o arquivo.');
+            throw new RuntimeException('N√£o foi poss√≠vel receber o arquivo.');
         }
         $tmp = (string) ($file['tmp_name'] ?? '');
         if ($tmp === '' || !is_uploaded_file($tmp)) {
-            throw new RuntimeException('Upload inv·lido.');
+            throw new RuntimeException('Upload inv√°lido.');
         }
         $mime = $this->detectMime($tmp, (string) ($file['type'] ?? ''));
         if (!$this->allowedMime($mime)) {
-            throw new RuntimeException('Use foto (JPEG, PNG, WebP) ou vÌdeo (MP4).');
+            throw new RuntimeException('Use foto (JPEG, PNG, WebP) ou v√≠deo (MP4).');
         }
         $stored = $this->storeUpload($userId, $tmp, $mime);
-        $this->appendUserMessage($userId, $caption !== null && $caption !== '' ? $caption : '[mÌdia enviada]');
+        $this->appendUserMessage($userId, $caption !== null && $caption !== '' ? $caption : '[m√≠dia enviada]');
         $message = WebMediaMessage::fromUpload($stored, $mime, $caption);
         $channel = new WebStudioChannel();
         $posts = PortalFactory::postService($this->pdo, $channel);
@@ -341,7 +341,7 @@ final class PortalOrchestrator
         $who = $name !== '' ? $name : 'por aqui';
         $this->appendBotMessage($userId, [
             'type' => 'text',
-            'text' => "Ol·, {$who}. Este È o mesmo fluxo do Telegram: escolha feed ou story, envie a foto ou peÁa Surpreenda-me, revise e publique.\n\nToque em Novo post ou escreva /novo.",
+            'text' => "Ol√°, {$who}. Este √© o mesmo fluxo do Telegram: escolha feed ou story, envie a foto ou pe√ßa Surpreenda-me, revise e publique.\n\nToque em Novo post ou escreva /novo.",
             'buttons' => [[
                 ['text' => 'Novo post', 'data' => 'cmd:novo'],
             ]],
@@ -468,7 +468,7 @@ final class PortalOrchestrator
     {
         $userId = $this->userIdForCustomer($customerId);
         if ($userId < 1) {
-            throw new RuntimeException('Ative a conta no Telegram antes de usar perfil e publicaÁ„o.');
+            throw new RuntimeException('Ative a conta no Telegram antes de usar perfil e publica√ß√£o.');
         }
 
         return $userId;
@@ -482,7 +482,7 @@ final class PortalOrchestrator
         $userId = $this->requireUser($customerId);
         $user = $this->users->find($userId);
         if ($user === null) {
-            throw new RuntimeException('Usu·rio n„o encontrado.');
+            throw new RuntimeException('Usu√°rio n√£o encontrado.');
         }
 
         return $user;
@@ -536,12 +536,12 @@ final class PortalOrchestrator
         $ext = str_starts_with($mime, 'video/') ? 'mp4' : 'jpg';
         $dir = Config::root() . '/storage/media';
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
-            throw new RuntimeException('Pasta de mÌdia indisponÌvel.');
+            throw new RuntimeException('Pasta de m√≠dia indispon√≠vel.');
         }
         $dest = $dir . '/u' . $userId . '_web_' . bin2hex(random_bytes(4)) . '.' . $ext;
         if (!move_uploaded_file($tmp, $dest)) {
             if (!rename($tmp, $dest)) {
-                throw new RuntimeException('N„o foi possÌvel guardar o arquivo.');
+                throw new RuntimeException('N√£o foi poss√≠vel guardar o arquivo.');
             }
         }
 

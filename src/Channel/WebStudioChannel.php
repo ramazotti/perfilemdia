@@ -7,7 +7,7 @@ namespace PerfilEmDia\Channel;
 use RuntimeException;
 
 /**
- * SaÌda do PostService na web: mensagens ficam na outbox em vez do Telegram.
+ * Sa√≠da do PostService na web: mensagens ficam na outbox em vez do Telegram.
  * file_id com prefixo webfile: aponta para arquivo local no servidor.
  */
 final class WebStudioChannel implements ChannelInterface
@@ -95,18 +95,18 @@ final class WebStudioChannel implements ChannelInterface
     public function download(string $fileId, string $destPath): void
     {
         if (!str_starts_with($fileId, self::FILE_PREFIX)) {
-            throw new RuntimeException('Arquivo da web inv·lido.');
+            throw new RuntimeException('Arquivo da web inv√°lido.');
         }
         $source = substr($fileId, strlen(self::FILE_PREFIX));
         if ($source === '' || str_contains($source, '..') || !is_file($source)) {
-            throw new RuntimeException('Arquivo n„o encontrado.');
+            throw new RuntimeException('Arquivo n√£o encontrado.');
         }
         $dir = dirname($destPath);
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
-            throw new RuntimeException('N„o foi possÌvel preparar a pasta.');
+            throw new RuntimeException('N√£o foi poss√≠vel preparar a pasta.');
         }
         if (!copy($source, $destPath)) {
-            throw new RuntimeException('N„o foi possÌvel copiar o arquivo.');
+            throw new RuntimeException('N√£o foi poss√≠vel copiar o arquivo.');
         }
     }
 

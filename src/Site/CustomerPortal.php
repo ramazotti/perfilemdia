@@ -124,7 +124,7 @@ final class CustomerPortal
             $this->portal()->studioSeed($customerId);
         }
         $title = match ($tab) {
-            'profile' => 'Perfil e preferências',
+            'profile' => 'Perfil e preferÃªncias',
             'studio' => 'Publicar',
             default => 'Minha conta',
         };
@@ -192,7 +192,7 @@ final class CustomerPortal
             return '<a class="portal-tab" href="' . Layout::e(Layout::url('minha-conta' . ($slug === '' ? '' : '/' . $slug))) . '"' . $current . '>' . Layout::e($label) . '</a>';
         };
 
-        return '<nav class="portal-tabs wrap" aria-label="Área do cliente">'
+        return '<nav class="portal-tabs wrap" aria-label="Ãrea do cliente">'
             . $link('', 'Assinatura', 'billing')
             . $link('perfil', 'Perfil', 'profile')
             . $link('publicar', 'Publicar', 'studio')
@@ -272,11 +272,11 @@ final class CustomerPortal
         }
         $file = $_FILES['logo'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('Não foi possível receber a logo.');
+            throw new RuntimeException('NÃ£o foi possÃ­vel receber a logo.');
         }
         $tmp = (string) ($file['tmp_name'] ?? '');
         if ($tmp === '' || !is_uploaded_file($tmp)) {
-            throw new RuntimeException('Upload inválido.');
+            throw new RuntimeException('Upload invÃ¡lido.');
         }
         $this->portal()->saveLogo($customerId, $tmp);
     }
@@ -284,7 +284,7 @@ final class CustomerPortal
     private function studioUpload(int $customerId): void
     {
         if (!isset($_FILES['media']) || !is_array($_FILES['media'])) {
-            throw new RuntimeException('Escolha uma foto ou vídeo.');
+            throw new RuntimeException('Escolha uma foto ou vÃ­deo.');
         }
         $caption = isset($_POST['caption']) ? (string) $_POST['caption'] : null;
         $this->portal()->studioUpload($customerId, $_FILES['media'], $caption);
@@ -345,7 +345,7 @@ final class CustomerPortal
             'ip' => '',
             'conta_ig' => 'Conta Instagram ativa atualizada.',
             'perfil' => 'Perfil salvo.',
-            'prefs' => 'Preferências salvas.',
+            'prefs' => 'PreferÃªncias salvas.',
             'logo' => 'Logo atualizada.',
             'studio_msg', 'studio_cb', 'studio_upload' => '',
             'studio_reset' => 'Conversa reiniciada.',
@@ -380,7 +380,7 @@ final class CustomerPortal
         $customer = $view['customer'];
         $html = '<section class="page"><div class="wrap">';
         $html .= '<h1>Minha conta</h1>';
-        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' Â· <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
         if ($notice !== '') {
             $html .= '<p class="notice">' . Layout::e($notice) . '</p>';
         }
@@ -720,8 +720,8 @@ final class CustomerPortal
         $profile = is_array($bundle['profile'] ?? null) ? $bundle['profile'] : [];
         $userId = (int) ($customer['user_id'] ?? 0);
         $html = '<section class="page"><div class="wrap">';
-        $html .= '<h1>Perfil e preferências</h1>';
-        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        $html .= '<h1>Perfil e preferÃªncias</h1>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' Â· <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
         if ($notice !== '') {
             $html .= '<p class="notice">' . Layout::e($notice) . '</p>';
         }
@@ -729,13 +729,13 @@ final class CustomerPortal
             $html .= '<p class="notice">' . Layout::e($error) . '</p>';
         }
         if ($userId < 1) {
-            $html .= '<p class="meta">Ative o código no Telegram para editar o perfil.</p></div></section>';
+            $html .= '<p class="meta">Ative o cÃ³digo no Telegram para editar o perfil.</p></div></section>';
 
             return $html;
         }
         $accounts = is_array($bundle['instagram_accounts'] ?? null) ? $bundle['instagram_accounts'] : [];
         if ($accounts !== []) {
-            $html .= '<div class="box" style="margin-top:20px"><h2>Conta Instagram ativa</h2><p class="meta">Ideias, legendas e publicação usam o @ selecionado.</p>';
+            $html .= '<div class="box" style="margin-top:20px"><h2>Conta Instagram ativa</h2><p class="meta">Ideias, legendas e publicaÃ§Ã£o usam o @ selecionado.</p>';
             $options = '';
             $active = (int) ($bundle['active_account_id'] ?? 0);
             foreach ($accounts as $row) {
@@ -756,7 +756,7 @@ final class CustomerPortal
         $html .= $this->form(
             'perfil',
             '<div class="field"><label for="display_name">Nome</label><input class="in" id="display_name" name="display_name" value="' . $val('display_name') . '" required></div>'
-            . '<div class="field"><label for="profession">O que você faz</label><input class="in" id="profession" name="profession" value="' . $val('profession') . '" required></div>'
+            . '<div class="field"><label for="profession">O que vocÃª faz</label><input class="in" id="profession" name="profession" value="' . $val('profession') . '" required></div>'
             . '<div class="field"><label for="city">Cidade</label><input class="in" id="city" name="city" value="' . $val('city') . '" required></div>'
             . '<div class="field"><label for="tone">Tom</label><select class="in" id="tone" name="tone">'
             . $this->toneOption('profissional', (string) ($profile['tone'] ?? ''))
@@ -776,32 +776,32 @@ final class CustomerPortal
         if ($logoUrl !== '') {
             $html .= '<p><img class="portal-logo" src="' . Layout::e($logoUrl) . '" alt="Logo"></p>';
         }
-        $html .= '<p class="meta">PNG ou JPEG. Usada na marca d\'água e no texto na foto.</p>';
+        $html .= '<p class="meta">PNG ou JPEG. Usada na marca d\'Ã¡gua e no texto na foto.</p>';
         $html .= '<form method="post" enctype="multipart/form-data">'
             . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
             . '<input type="hidden" name="action" value="logo">'
             . '<div class="field"><label for="logo">Arquivo</label><input class="in" id="logo" name="logo" type="file" accept="image/*" required></div>'
             . '<button class="btn btn-primary" type="submit">Enviar logo</button></form></div>';
         $ideaOn = !empty($bundle['idea_daily']);
-        $html .= '<div class="box" style="margin-top:20px"><h2>Preferências de postagem</h2>';
+        $html .= '<div class="box" style="margin-top:20px"><h2>PreferÃªncias de postagem</h2>';
         $html .= $this->form(
             'prefs',
             '<div class="field"><label for="phrase_style">Estilo do texto na foto</label><select class="in" id="phrase_style" name="phrase_style">'
-            . $this->selectOption('classica', 'Clássica', (string) ($profile['phrase_style'] ?? ''))
+            . $this->selectOption('classica', 'ClÃ¡ssica', (string) ($profile['phrase_style'] ?? ''))
             . $this->selectOption('cursiva', 'Cursiva', (string) ($profile['phrase_style'] ?? ''))
             . $this->selectOption('limpa', 'Limpa', (string) ($profile['phrase_style'] ?? ''))
             . $this->selectOption('forte', 'Forte', (string) ($profile['phrase_style'] ?? ''))
-            . $this->selectOption('balao', 'Balão', (string) ($profile['phrase_style'] ?? ''))
+            . $this->selectOption('balao', 'BalÃ£o', (string) ($profile['phrase_style'] ?? ''))
             . $this->selectOption('caixa', 'Caixa', (string) ($profile['phrase_style'] ?? ''))
             . '</select></div>'
             . '<div class="field"><label for="phrase_color">Cor do texto</label><select class="in" id="phrase_color" name="phrase_color">'
             . $this->selectOption('branco', 'Branco', (string) ($profile['phrase_color'] ?? ''))
             . $this->selectOption('preto', 'Preto', (string) ($profile['phrase_color'] ?? ''))
             . '</select></div>'
-            . '<div class="field"><label for="phrase_place">Posição</label><select class="in" id="phrase_place" name="phrase_place">'
+            . '<div class="field"><label for="phrase_place">PosiÃ§Ã£o</label><select class="in" id="phrase_place" name="phrase_place">'
             . $this->selectOption('topo', 'Topo', (string) ($profile['phrase_place'] ?? ''))
             . $this->selectOption('meio', 'Meio', (string) ($profile['phrase_place'] ?? ''))
-            . $this->selectOption('rodape', 'Rodapé', (string) ($profile['phrase_place'] ?? ''))
+            . $this->selectOption('rodape', 'RodapÃ©', (string) ($profile['phrase_place'] ?? ''))
             . '</select></div>'
             . '<div class="field"><label for="phrase_size">Tamanho</label><select class="in" id="phrase_size" name="phrase_size">'
             . $this->selectOption('menor', 'Menor', (string) ($profile['phrase_size'] ?? ''))
@@ -809,7 +809,7 @@ final class CustomerPortal
             . $this->selectOption('maior', 'Maior', (string) ($profile['phrase_size'] ?? ''))
             . '</select></div>'
             . '<div class="field"><label><input type="checkbox" name="idea_daily" value="1"' . ($ideaOn ? ' checked' : '') . '> Ideia do dia no Telegram (8h)</label></div>'
-            . '<button class="btn btn-primary" type="submit">Salvar preferências</button>',
+            . '<button class="btn btn-primary" type="submit">Salvar preferÃªncias</button>',
         );
         $html .= '</div></div></section>';
 
@@ -844,7 +844,7 @@ final class CustomerPortal
         $expect = (string) ($state['expecting'] ?? 'text');
         $html = '<section class="page"><div class="wrap">';
         $html .= '<h1>Publicar</h1>';
-        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · mesmo fluxo do bot · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' Â· mesmo fluxo do bot Â· <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
         if ((int) ($customer['user_id'] ?? 0) < 1) {
             $html .= '<p class="meta">Ative a conta no Telegram para publicar da web.</p></div></section>';
 
@@ -871,9 +871,9 @@ final class CustomerPortal
             . '<input type="hidden" name="action" value="studio_upload">'
             . '<input type="file" name="media" accept="image/*,video/mp4" capture="environment">'
             . '<input class="in" name="caption" placeholder="Legenda da foto (opcional)">'
-            . '<button class="btn btn-ghost" type="submit">Enviar mídia</button></form>';
+            . '<button class="btn btn-ghost" type="submit">Enviar mÃ­dia</button></form>';
         $html .= $this->form('studio_reset', '<button class="btn btn-ghost" type="submit">Limpar conversa</button>');
-        $html .= '<p class="hint">Aguardando: ' . Layout::e($expect) . '. Publicação real vai para o Instagram conectado.</p>';
+        $html .= '<p class="hint">Aguardando: ' . Layout::e($expect) . '. PublicaÃ§Ã£o real vai para o Instagram conectado.</p>';
         $html .= '</div></div></div></section>';
         $html .= $this->studioScript();
 
