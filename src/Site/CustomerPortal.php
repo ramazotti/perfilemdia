@@ -87,6 +87,9 @@ final class CustomerPortal
         if ($path === '/minha-conta/publicar/estado') {
             return $this->studioJson($customerId);
         }
+        if ($path === '/minha-conta/publicar/acao') {
+            return $this->studioActionJson($customerId);
+        }
         $pages = [
             '/minha-conta' => 'billing',
             '/minha-conta/perfil' => 'profile',
@@ -233,10 +236,115 @@ final class CustomerPortal
 
             return true;
         }
-        $state = $this->portal()->studioState($customerId);
-        echo json_encode($state, JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'state' => $this->enrichStudioState($customerId)], JSON_UNESCAPED_UNICODE);
 
         return true;
+    }
+
+    private function studioActionJson(int $customerId): bool
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['ok' => false, 'error' => 'method'], JSON_UNESCAPED_UNICODE);
+
+            return true;
+        }
+        if ($customerId < 1) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'error' => 'unauthorized'], JSON_UNESCAPED_UNICODE);
+
+            return true;
+        }
+        if (!Layout::checkCsrf()) {
+            http_response_code(403);
+            echo json_encode([
+                'ok' => false,
+                'error' => 'A sessão expirou. Recarregue a página e tente de novo.',
+                'state' => $this->enrichStudioState($customerId),
+            ], JSON_UNESCAPED_UNICODE);
+
+            return true;
+        }
+        $action = (string) ($_POST['action'] ?? '');
+        $notice = '';
+        try {
+            match ($action) {
+                'studio_msg' => $this->portal()->studioChat($customerId, (string) ($_POST['message'] ?? '')),
+                'studio_cb' => $this->portal()->studioCallback($customerId, (string) ($_POST['callback'] ?? '')),
+                'studio_upload' => $this->studioUpload($customerId),
+                'studio_reset' => $this->portal()->studioReset($customerId),
+                default => throw new RuntimeException('Ação desconhecida.'),
+            };
+            if ($action === 'studio_reset') {
+                $notice = 'Conversa reiniciada.';
+            }
+            echo json_encode([
+                'ok' => true,
+                'notice' => $notice,
+                'state' => $this->enrichStudioState($customerId),
+            ], JSON_UNESCAPED_UNICODE);
+        } catch (RuntimeException $e) {
+            echo json_encode([
+                'ok' => false,
+                'error' => $e->getMessage(),
+                'state' => $this->enrichStudioState($customerId),
+            ], JSON_UNESCAPED_UNICODE);
+        } catch (Throwable) {
+            echo json_encode([
+                'ok' => false,
+                'error' => 'Não foi possível concluir. Tente de novo.',
+                'state' => $this->enrichStudioState($customerId),
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        return true;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function enrichStudioState(int $customerId): array
+    {
+        $state = $this->portal()->studioState($customerId);
+        $expect = (string) ($state['expecting'] ?? 'text');
+        $state['expecting_label'] = $this->studioExpectingLabel($expect);
+        $post = $state['post'] ?? null;
+        $state['busy'] = $this->studioIsBusy(is_array($post) ? $post : null);
+        if (is_array($post)) {
+            $state['post'] = [
+                'id' => (int) ($post['id'] ?? 0),
+                'status' => (string) ($post['status'] ?? ''),
+            ];
+        }
+
+        return $state;
+    }
+
+    private function studioExpectingLabel(string $expect): string
+    {
+        return match ($expect) {
+            'theme' => 'Descreva o tema do post na caixa de mensagem.',
+            'feedback' => 'Diga o que mudar na legenda ou na arte (mensagem escrita).',
+            'caption' => 'Envie o texto final da legenda na caixa de mensagem.',
+            'image_edit' => 'Descreva a mudança que quer na imagem (mensagem escrita).',
+            'media' => 'Envie foto ou vídeo no painel ao lado (legenda opcional).',
+            'idea' => 'Descreva a ideia na mensagem ou use os botões do assistente.',
+            default => 'Comece com Novo post ou escreva /novo na mensagem escrita.',
+        };
+    }
+
+    /**
+     * @param array<string, mixed>|null $post
+     */
+    private function studioIsBusy(?array $post): bool
+    {
+        if ($post === null) {
+            return false;
+        }
+        $status = (string) ($post['status'] ?? '');
+
+        return in_array($status, ['GENERATING', 'COLLECTING', 'PUBLISHING', 'IMAGE_EDITING'], true);
     }
 
     private function portalNav(string $active): string
@@ -993,57 +1101,81 @@ final class CustomerPortal
         $error = (string) ($_SESSION['account_error'] ?? '');
         unset($_SESSION['account_notice'], $_SESSION['account_error']);
         $customer = $bundle['customer'];
-        $state = $this->portal()->studioState($customerId);
+        $state = $this->enrichStudioState($customerId);
         $expect = (string) ($state['expecting'] ?? 'text');
+        $expectLabel = (string) ($state['expecting_label'] ?? '');
         $html = '<section class="page"><div class="wrap">';
         $html .= '<h1>Publicar</h1>';
-        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' Â· mesmo fluxo do bot Â· <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · mesmo fluxo do bot · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
         if ((int) ($customer['user_id'] ?? 0) < 1) {
             $html .= '<p class="meta">Ative a conta no Telegram para publicar da web.</p></div></section>';
 
             return $html;
         }
+        $html .= '<div class="portal-studio" id="portal-studio"'
+            . ' data-poll="' . Layout::e(Layout::url('minha-conta/publicar/estado')) . '"'
+            . ' data-action="' . Layout::e(Layout::url('minha-conta/publicar/acao')) . '"'
+            . ' data-csrf="' . Layout::e(Layout::csrf()) . '"'
+            . ' data-expecting="' . Layout::e($expect) . '">';
+        $html .= '<p class="portal-studio-lead">Leia o assistente acima e responda em <strong>mensagem escrita</strong> ou <strong>foto/vídeo</strong>, conforme a dica abaixo. A publicação final vai para o Instagram conectado.</p>';
+        $html .= '<div id="portal-studio-alert" class="portal-studio-alert" hidden role="status"></div>';
         if ($notice !== '') {
-            $html .= '<p class="notice">' . Layout::e($notice) . '</p>';
+            $html .= '<p class="notice portal-studio-notice">' . Layout::e($notice) . '</p>';
         }
         if ($error !== '') {
-            $html .= '<p class="notice">' . Layout::e($error) . '</p>';
+            $html .= '<p class="notice portal-studio-notice portal-studio-notice--err">' . Layout::e($error) . '</p>';
         }
-        $html .= '<div class="portal-studio" data-poll="' . Layout::e(Layout::url('minha-conta/publicar/estado')) . '">';
-        $html .= '<div class="portal-chat" id="portal-chat">';
+        $html .= '<div class="portal-chat" id="portal-chat" aria-live="polite" aria-relevant="additions">';
         foreach ($state['messages'] as $message) {
             $html .= $this->chatBubble($message);
         }
         $html .= '</div>';
-        $html .= '<div class="portal-compose">';
-        $html .= $this->form(
-            'studio_msg',
-            '<label class="sr" for="studio-message">Mensagem</label>'
-            . '<textarea class="in portal-input" id="studio-message" name="message" rows="3" placeholder="Tema, legenda, /novo ou resposta ao bot"></textarea>'
-            . '<div class="portal-form-actions portal-form-actions--split">'
-            . '<button class="btn btn-primary" type="submit">Enviar texto</button>'
-            . '</div>',
-            '',
-            'portal-msg-form',
-        );
-        $html .= '<div class="portal-media-panel">';
-        $html .= '<h3 class="portal-panel-title">Foto ou vÃ­deo</h3>';
-        $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload-form">';
+        $html .= '<div class="portal-status" id="portal-studio-status" data-busy="' . (!empty($state['busy']) ? '1' : '0') . '">';
+        $html .= '<span class="portal-status-dot" aria-hidden="true"></span>';
+        $html .= '<p class="portal-status-text" id="portal-status-text">' . Layout::e($expectLabel) . '</p>';
+        $html .= '</div>';
+        $html .= '<div class="portal-compose-split">';
+        $textActive = $expect !== 'media' ? ' portal-compose-card--active' : '';
+        $mediaActive = $expect === 'media' ? ' portal-compose-card--active' : '';
+        $html .= '<section class="portal-compose-card portal-compose-card--text' . $textActive . '" data-for="text">';
+        $html .= '<h2 class="portal-compose-title">Mensagem escrita</h2>';
+        $html .= '<p class="portal-compose-desc">Tema do post, ajustes pedidos pelo bot, legenda quando solicitada, ou comandos como <code>/novo</code> e <code>/cancelar</code>.</p>';
+        $html .= '<form method="post" class="portal-msg-form" id="portal-form-text" data-studio-form="text">';
+        $html .= '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">';
+        $html .= '<input type="hidden" name="action" value="studio_msg">';
+        $html .= '<label class="sr" for="studio-message">Mensagem</label>';
+        $html .= '<textarea class="in portal-input" id="studio-message" name="message" rows="3" placeholder="Ex.: post sobre consultoria em Maringá, ou /novo"></textarea>';
+        $html .= '<div class="portal-form-actions portal-form-actions--split">';
+        $html .= '<button class="btn btn-primary" type="submit" data-studio-submit>Enviar mensagem</button>';
+        $html .= '</div></form></section>';
+        $html .= '<section class="portal-compose-card portal-compose-card--media' . $mediaActive . '" data-for="media">';
+        $html .= '<h2 class="portal-compose-title">Foto ou vídeo</h2>';
+        $html .= '<p class="portal-compose-desc">Use quando o assistente pedir mídia. A legenda abaixo vira tema ou texto que acompanha o arquivo.</p>';
+        $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload-form" id="portal-form-media" data-studio-form="media">';
         $html .= '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">';
         $html .= '<input type="hidden" name="action" value="studio_upload">';
         $html .= $this->fileUploadField('studio-media', 'media', 'image/*,video/mp4');
         $html .= '<div class="field"><label for="studio-caption">Legenda (opcional)</label>';
-        $html .= '<input class="in" id="studio-caption" name="caption" placeholder="Tema ou legenda que vai com a mÃ­dia"></div>';
-        $html .= '<div class="portal-form-actions"><button class="btn btn-primary" type="submit">Enviar mÃ­dia</button></div>';
-        $html .= '</form></div>';
+        $html .= '<input class="in" id="studio-caption" name="caption" placeholder="Tema ou legenda que vai com a mídia"></div>';
+        $html .= '<div class="portal-form-actions"><button class="btn btn-primary" type="submit" data-studio-submit>Enviar foto ou vídeo</button>';
+        $html .= '</div></form></section>';
+        $html .= '</div>';
         $html .= '<div class="portal-compose-foot">';
-        $html .= $this->form('studio_reset', '<button class="btn btn-ghost" type="submit">Limpar conversa</button>', '', 'portal-inline-form');
-        $html .= '<p class="hint">Aguardando: ' . Layout::e($expect) . '. PublicaÃ§Ã£o real vai para o Instagram conectado.</p>';
+        $html .= '<button class="btn btn-ghost" type="button" id="portal-studio-reset" data-confirm="Limpar toda a conversa e recomeçar?">Limpar conversa</button>';
+        $html .= '<p class="hint">Dúvida? No Telegram o fluxo é o mesmo; aqui você só escolhe texto ou arquivo conforme a dica.</p>';
         $html .= '</div></div></div></section>';
         $html .= $this->portalFileScript();
-        $html .= $this->studioScript();
+        $html .= '<script src="' . Layout::e($this->versionedPublicAsset('assets/portal-studio.js')) . '" defer></script>';
 
         return $html;
+    }
+
+    private function versionedPublicAsset(string $relative): string
+    {
+        $path = dirname(__DIR__, 2) . '/public/' . ltrim($relative, '/');
+        $version = is_file($path) ? (string) filemtime($path) : '1';
+
+        return Layout::url($relative) . '?v=' . $version;
     }
 
     /**
@@ -1101,11 +1233,7 @@ final class CustomerPortal
                     if ($data === '') {
                         continue;
                     }
-                    $inner .= '<form method="post" class="portal-inline">'
-                        . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
-                        . '<input type="hidden" name="action" value="studio_cb">'
-                        . '<input type="hidden" name="callback" value="' . Layout::e($data) . '">'
-                        . '<button class="btn btn-ghost btn-sm" type="submit">' . Layout::e($text) . '</button></form>';
+                    $inner .= '<button class="btn btn-ghost btn-sm" type="button" data-studio-callback="' . Layout::e($data) . '">' . Layout::e($text) . '</button>';
                 }
             }
             $inner .= '</div>';
@@ -1114,8 +1242,4 @@ final class CustomerPortal
         return '<article class="' . $class . '">' . $inner . '</article>';
     }
 
-    private function studioScript(): string
-    {
-        return '<script>(function(){var root=document.querySelector(".portal-studio");if(!root)return;var chat=document.getElementById("portal-chat");var url=root.getAttribute("data-poll");function scroll(){if(chat)chat.scrollTop=chat.scrollHeight;}scroll();if(!url)return;var busy=false;function tick(){if(busy||document.hidden)return;busy=true;fetch(url,{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(data){if(!data||!data.post)return;var st=(data.post.status||"");if(st==="GENERATING"||st==="COLLECTING"||st==="PUBLISHING"||st==="IMAGE_EDITING"){location.reload();}}).catch(function(){}).finally(function(){busy=false;});}setInterval(tick,4000);})();</script>';
-    }
 }

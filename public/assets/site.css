@@ -389,7 +389,26 @@ body.cookie-open .tg-dialog-card{bottom:calc(var(--tg-lift, 120px) + 68px + env(
 .portal-tab[aria-current="page"]{border-color:var(--accent);color:var(--accent-text);background:var(--accent-soft)}
 .portal-logo{max-width:160px;max-height:160px;border-radius:12px;border:1px solid var(--line)}
 .portal-studio{margin-top:20px;display:grid;gap:16px}
-.portal-chat{background:var(--chat);border-radius:20px;padding:16px;min-height:320px;max-height:min(62vh,560px);overflow:auto;display:flex;flex-direction:column;gap:12px}
+.portal-studio-lead{margin:0;font-size:16px;color:var(--ink2);max-width:52rem}
+.portal-studio-lead code{font-size:.92em;background:var(--paper);padding:2px 6px;border-radius:6px;border:1px solid var(--line2)}
+.portal-studio-alert{margin:0;padding:12px 14px;border-radius:12px;background:var(--accent-soft);color:var(--ink);font-size:15px}
+.portal-studio-alert--err{background:var(--danger-soft);color:var(--danger)}
+.portal-studio--loading{opacity:.92;pointer-events:auto}
+.portal-studio--loading [data-studio-submit]{opacity:.7}
+.portal-status{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:14px;background:var(--paper);border:1px solid var(--line2)}
+.portal-status[data-busy="1"]{border-color:var(--accent);background:var(--accent-soft)}
+.portal-status-dot{width:10px;height:10px;border-radius:50%;background:var(--muted);margin-top:6px;flex-shrink:0}
+.portal-status[data-busy="1"] .portal-status-dot{background:var(--accent);animation:portal-pulse 1.2s ease-in-out infinite}
+@keyframes portal-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.portal-status-text{margin:0;font-size:15px;line-height:1.45;color:var(--ink2);flex:1}
+.portal-compose-split{display:grid;gap:16px}
+@media (min-width:768px){.portal-compose-split{grid-template-columns:1fr 1fr;align-items:start}}
+.portal-compose-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px 18px;transition:border-color .15s,box-shadow .15s}
+.portal-compose-card--active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-soft)}
+.portal-compose-title{margin:0 0 8px;font-size:17px;font-weight:700;font-family:var(--body)}
+.portal-compose-desc{margin:0 0 14px;font-size:14px;line-height:1.45;color:var(--muted)}
+.portal-compose-desc code{font-size:.92em;background:var(--bg);padding:2px 6px;border-radius:6px}
+.portal-chat{background:var(--chat);border-radius:20px;padding:16px;min-height:320px;max-height:min(62vh,560px);overflow:auto;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth}
 .portal-msg{max-width:92%;padding:12px 14px;border-radius:16px;background:var(--paper);box-shadow:0 1px 0 rgba(0,0,0,.04)}
 .portal-msg-user{align-self:flex-end;background:var(--accent-soft)}
 .portal-msg img,.portal-msg video{max-width:100%;border-radius:12px;display:block;margin-top:8px}
