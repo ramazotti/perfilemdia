@@ -178,11 +178,11 @@ final class CustomerPortal
         }
         $file = $_FILES['extra_image'];
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-            throw new RuntimeException('Não foi possível receber a imagem.');
+            throw new RuntimeException('NÃ£o foi possÃ­vel receber a imagem.');
         }
         $tmp = (string) ($file['tmp_name'] ?? '');
         if ($tmp === '' || !is_uploaded_file($tmp)) {
-            throw new RuntimeException('Upload inválido.');
+            throw new RuntimeException('Upload invÃ¡lido.');
         }
         $this->portal()->savePromptExtraImage($customerId, (int) ($_POST['extra_id'] ?? 0), $tmp);
     }
@@ -260,7 +260,7 @@ final class CustomerPortal
             http_response_code(403);
             echo json_encode([
                 'ok' => false,
-                'error' => 'A sessão expirou. Recarregue a página e tente de novo.',
+                'error' => 'A sessÃ£o expirou. Recarregue a pÃ¡gina e tente de novo.',
                 'state' => $this->enrichStudioState($customerId),
             ], JSON_UNESCAPED_UNICODE);
 
@@ -274,7 +274,7 @@ final class CustomerPortal
                 'studio_cb' => $this->portal()->studioCallback($customerId, (string) ($_POST['callback'] ?? '')),
                 'studio_upload' => $this->studioUpload($customerId),
                 'studio_reset' => $this->portal()->studioReset($customerId),
-                default => throw new RuntimeException('Ação desconhecida.'),
+                default => throw new RuntimeException('AÃ§Ã£o desconhecida.'),
             };
             if ($action === 'studio_reset') {
                 $notice = 'Conversa reiniciada.';
@@ -293,7 +293,7 @@ final class CustomerPortal
         } catch (Throwable) {
             echo json_encode([
                 'ok' => false,
-                'error' => 'Não foi possível concluir. Tente de novo.',
+                'error' => 'NÃ£o foi possÃ­vel concluir. Tente de novo.',
                 'state' => $this->enrichStudioState($customerId),
             ], JSON_UNESCAPED_UNICODE);
         }
@@ -327,9 +327,9 @@ final class CustomerPortal
             'theme' => 'Descreva o tema do post na caixa de mensagem.',
             'feedback' => 'Diga o que mudar na legenda ou na arte (mensagem escrita).',
             'caption' => 'Envie o texto final da legenda na caixa de mensagem.',
-            'image_edit' => 'Descreva a mudança que quer na imagem (mensagem escrita).',
-            'media' => 'Envie foto ou vídeo no painel ao lado (legenda opcional).',
-            'idea' => 'Descreva a ideia na mensagem ou use os botões do assistente.',
+            'image_edit' => 'Descreva a mudanÃ§a que quer na imagem (mensagem escrita).',
+            'media' => 'Envie foto ou vÃ­deo no painel ao lado (legenda opcional).',
+            'idea' => 'Descreva a ideia na mensagem ou use os botÃµes do assistente.',
             default => 'Comece com Novo post ou escreva /novo na mensagem escrita.',
         };
     }
@@ -1106,7 +1106,7 @@ final class CustomerPortal
         $expectLabel = (string) ($state['expecting_label'] ?? '');
         $html = '<section class="page"><div class="wrap">';
         $html .= '<h1>Publicar</h1>';
-        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' · mesmo fluxo do bot · <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
+        $html .= '<p class="meta">' . Layout::e((string) $customer['name']) . ' | mesmo fluxo do bot | <a href="' . Layout::e(Layout::url('minha-conta/sair')) . '">Sair</a></p>';
         if ((int) ($customer['user_id'] ?? 0) < 1) {
             $html .= '<p class="meta">Ative a conta no Telegram para publicar da web.</p></div></section>';
 
@@ -1117,7 +1117,7 @@ final class CustomerPortal
             . ' data-action="' . Layout::e(Layout::url('minha-conta/publicar/acao')) . '"'
             . ' data-csrf="' . Layout::e(Layout::csrf()) . '"'
             . ' data-expecting="' . Layout::e($expect) . '">';
-        $html .= '<p class="portal-studio-lead">Leia o assistente acima e responda em <strong>mensagem escrita</strong> ou <strong>foto/vídeo</strong>, conforme a dica abaixo. A publicação final vai para o Instagram conectado.</p>';
+        $html .= '<p class="portal-studio-lead">Leia o assistente acima e responda em <strong>mensagem escrita</strong> ou <strong>foto/vÃ­deo</strong>, conforme a dica abaixo. A publicaÃ§Ã£o final vai para o Instagram conectado.</p>';
         $html .= '<div id="portal-studio-alert" class="portal-studio-alert" hidden role="status"></div>';
         if ($notice !== '') {
             $html .= '<p class="notice portal-studio-notice">' . Layout::e($notice) . '</p>';
@@ -1144,25 +1144,25 @@ final class CustomerPortal
         $html .= '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">';
         $html .= '<input type="hidden" name="action" value="studio_msg">';
         $html .= '<label class="sr" for="studio-message">Mensagem</label>';
-        $html .= '<textarea class="in portal-input" id="studio-message" name="message" rows="3" placeholder="Ex.: post sobre consultoria em Maringá, ou /novo"></textarea>';
+        $html .= '<textarea class="in portal-input" id="studio-message" name="message" rows="3" placeholder="Ex.: post sobre consultoria em MaringÃ¡, ou /novo"></textarea>';
         $html .= '<div class="portal-form-actions portal-form-actions--split">';
         $html .= '<button class="btn btn-primary" type="submit" data-studio-submit>Enviar mensagem</button>';
         $html .= '</div></form></section>';
         $html .= '<section class="portal-compose-card portal-compose-card--media' . $mediaActive . '" data-for="media">';
-        $html .= '<h2 class="portal-compose-title">Foto ou vídeo</h2>';
-        $html .= '<p class="portal-compose-desc">Use quando o assistente pedir mídia. A legenda abaixo vira tema ou texto que acompanha o arquivo.</p>';
+        $html .= '<h2 class="portal-compose-title">Foto ou vÃ­deo</h2>';
+        $html .= '<p class="portal-compose-desc">Use quando o assistente pedir mÃ­dia. A legenda abaixo vira tema ou texto que acompanha o arquivo.</p>';
         $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload-form" id="portal-form-media" data-studio-form="media">';
         $html .= '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">';
         $html .= '<input type="hidden" name="action" value="studio_upload">';
         $html .= $this->fileUploadField('studio-media', 'media', 'image/*,video/mp4');
         $html .= '<div class="field"><label for="studio-caption">Legenda (opcional)</label>';
-        $html .= '<input class="in" id="studio-caption" name="caption" placeholder="Tema ou legenda que vai com a mídia"></div>';
-        $html .= '<div class="portal-form-actions"><button class="btn btn-primary" type="submit" data-studio-submit>Enviar foto ou vídeo</button>';
+        $html .= '<input class="in" id="studio-caption" name="caption" placeholder="Tema ou legenda que vai com a mÃ­dia"></div>';
+        $html .= '<div class="portal-form-actions"><button class="btn btn-primary" type="submit" data-studio-submit>Enviar foto ou vÃ­deo</button>';
         $html .= '</div></form></section>';
         $html .= '</div>';
         $html .= '<div class="portal-compose-foot">';
-        $html .= '<button class="btn btn-ghost" type="button" id="portal-studio-reset" data-confirm="Limpar toda a conversa e recomeçar?">Limpar conversa</button>';
-        $html .= '<p class="hint">Dúvida? No Telegram o fluxo é o mesmo; aqui você só escolhe texto ou arquivo conforme a dica.</p>';
+        $html .= '<button class="btn btn-ghost" type="button" id="portal-studio-reset" data-confirm="Limpar toda a conversa e recomeÃ§ar?">Limpar conversa</button>';
+        $html .= '<p class="hint">DÃºvida? No Telegram o fluxo Ã© o mesmo; aqui vocÃª sÃ³ escolhe texto ou arquivo conforme a dica.</p>';
         $html .= '</div></div></div></section>';
         $html .= $this->portalFileScript();
         $html .= '<script src="' . Layout::e($this->versionedPublicAsset('assets/portal-studio.js')) . '" defer></script>';

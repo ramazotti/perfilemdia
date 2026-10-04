@@ -133,7 +133,7 @@ final class PortalOrchestrator
     {
         $accountId = $this->requireProfileAccountId($customerId);
         if ($this->promptExtraRepo()->findForAccount($extraId, $accountId) === null) {
-            throw new RuntimeException('Extra não encontrado.');
+            throw new RuntimeException('Extra nÃ£o encontrado.');
         }
         $saved = $this->storeExtraImage($accountId, $extraId, $sourcePath);
         if ($saved === null) {
