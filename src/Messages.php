@@ -98,11 +98,14 @@ final class Messages
         return "Conta: {$conta}\nPosts neste mês: {$used} de {$limit}\nRestam {$rest}.";
     }
 
-    public static function perfil(array $user): string
+    public static function perfil(array $user, string $instagramUsername = ''): string
     {
         $tone = (string) ($user['tone'] ?? 'não definido');
+        $head = $instagramUsername !== ''
+            ? 'Perfil para @' . ltrim($instagramUsername, '@') . ":\n"
+            : "Seu perfil:\n";
 
-        return "Seu perfil:\nNome: " . self::show($user['display_name'] ?? null)
+        return $head . 'Nome: ' . self::show($user['display_name'] ?? null)
             . "\nO que faz: " . self::show($user['profession'] ?? null)
             . "\nCidade: " . self::show($user['city'] ?? null)
             . "\nTom: {$tone}\nContato: " . self::show($user['contact_cta'] ?? null)
@@ -304,7 +307,7 @@ Toque para usar uma @ nos próximos posts, adicionar outra ou desconectar.";
     {
         $u = ltrim($username, '@');
 
-        return "Beleza. Os próximos posts vão para @{$u}.";
+        return "Beleza. Os próximos posts vão para @{$u}.\nUse /perfil para ver e editar os dados desta conta.";
     }
 
     public static function instagramDisconnected(string $username): string

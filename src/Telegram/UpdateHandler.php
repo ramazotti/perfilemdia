@@ -191,7 +191,7 @@ final class UpdateHandler
         match ($command) {
             '/start' => $this->startCommand($user, $chatId, (string) ($parts[1] ?? '')),
             '/novo' => $this->cmdNovo($user, $chatId),
-            '/perfil' => $this->channel->sendText($chatId, Messages::perfil($user), Keyboards::perfilFields()),
+            '/perfil' => $this->onboarding->sendPerfil($user, $chatId),
             '/conectar' => $this->cmdConectar($user, $chatId),
             '/contas' => $this->postsService->showInstagramAccounts($user, $chatId),
             '/status' => $this->cmdStatus($user, $chatId),

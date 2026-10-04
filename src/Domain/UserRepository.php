@@ -12,6 +12,23 @@ use PerfilEmDia\Security\Crypto;
 
 final class UserRepository
 {
+    /** @var list<string> */
+    private const INSTAGRAM_PROFILE_FIELDS = [
+        'display_name',
+        'profession',
+        'city',
+        'tone',
+        'contact_cta',
+        'fixed_hashtags',
+        'about',
+        'brand_style',
+        'phrase_style',
+        'phrase_color',
+        'phrase_place',
+        'phrase_size',
+        'logo_path',
+    ];
+
     public function __construct(
         private PDO $pdo,
         private readonly Crypto $crypto,
@@ -87,6 +104,19 @@ final class UserRepository
             'pending_action',
             'status',
         ];
+        $profilePatch = [];
+        foreach (self::INSTAGRAM_PROFILE_FIELDS as $column) {
+            if (array_key_exists($column, $fields)) {
+                $profilePatch[$column] = $fields[$column];
+            }
+        }
+        $accountId = $this->resolveProfileAccountId($id);
+        if ($profilePatch !== [] && $accountId !== null) {
+            $this->updateInstagramProfile($accountId, $profilePatch);
+            foreach (array_keys($profilePatch) as $column) {
+                unset($fields[$column]);
+            }
+        }
         $set = [];
         $values = [];
         foreach ($allowed as $column) {
@@ -102,21 +132,6 @@ final class UserRepository
         $values[] = $id;
         $sql = 'UPDATE users SET ' . implode(', ', $set) . ' WHERE id = ?';
         $this->pdo->prepare($sql)->execute($values);
-        $profileFields = ['tone', 'contact_cta', 'fixed_hashtags', 'about', 'profession', 'city'];
-        foreach ($profileFields as $column) {
-            if (!array_key_exists($column, $fields)) {
-                continue;
-            }
-            $user = $this->find($id);
-            if ($user === null) {
-                break;
-            }
-            $accountId = (int) ($user['active_instagram_account_id'] ?? 0);
-            if ($accountId > 0) {
-                $this->syncInstagramProfileFromUser($id, $accountId);
-            }
-            break;
-        }
     }
 
     public function createOauthState(int $userId, string $connectMode = 'connect'): string
@@ -352,13 +367,72 @@ final class UserRepository
             return $user;
         }
         $merged = $user;
-        foreach (['tone', 'contact_cta', 'fixed_hashtags', 'about', 'profession', 'city'] as $field) {
-            if (array_key_exists($field, $profile) && $profile[$field] !== null && (string) $profile[$field] !== '') {
+        foreach (self::INSTAGRAM_PROFILE_FIELDS as $field) {
+            if (array_key_exists($field, $profile)) {
                 $merged[$field] = $profile[$field];
             }
         }
 
         return $merged;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function userForPerfil(array $user): array
+    {
+        return $this->userWithInstagramProfile($user, null);
+    }
+
+    public function activeInstagramUsername(int $userId): string
+    {
+        $ig = $this->instagramAccount($userId);
+
+        return is_array($ig) ? (string) ($ig['username'] ?? '') : '';
+    }
+
+    public function resolveProfileAccountId(int $userId): ?int
+    {
+        $user = $this->find($userId);
+        if ($user === null) {
+            return null;
+        }
+        $activeId = (int) ($user['active_instagram_account_id'] ?? 0);
+        if ($activeId > 0 && $this->instagramAccountById($activeId, $userId) !== null) {
+            return $activeId;
+        }
+        $ig = $this->instagramAccount($userId);
+
+        return $ig !== null ? (int) $ig['id'] : null;
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     */
+    public function updateInstagramProfile(int $accountId, array $fields): void
+    {
+        $allowed = array_flip(self::INSTAGRAM_PROFILE_FIELDS);
+        $patch = [];
+        foreach ($fields as $column => $value) {
+            if (isset($allowed[$column])) {
+                $patch[$column] = $value;
+            }
+        }
+        if ($patch === []) {
+            return;
+        }
+        $columns = array_keys($patch);
+        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+        $updates = implode(', ', array_map(static fn (string $c): string => $c . ' = VALUES(' . $c . ')', $columns));
+        $sql = 'INSERT INTO instagram_profiles (instagram_account_id, ' . implode(', ', $columns) . ')
+                VALUES (?, ' . $placeholders . ')
+                ON DUPLICATE KEY UPDATE ' . $updates;
+        $values = [$accountId];
+        foreach ($columns as $column) {
+            $values[] = $patch[$column];
+        }
+        $this->pdo->prepare($sql)->execute($values);
     }
 
     public function syncInstagramProfileFromUser(int $userId, int $accountId): void
@@ -367,26 +441,13 @@ final class UserRepository
         if ($user === null) {
             return;
         }
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO instagram_profiles (instagram_account_id, tone, contact_cta, fixed_hashtags, about, profession, city)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE
-                tone = VALUES(tone),
-                contact_cta = VALUES(contact_cta),
-                fixed_hashtags = VALUES(fixed_hashtags),
-                about = VALUES(about),
-                profession = VALUES(profession),
-                city = VALUES(city)'
-        );
-        $stmt->execute([
-            $accountId,
-            $user['tone'] ?? null,
-            $user['contact_cta'] ?? null,
-            $user['fixed_hashtags'] ?? null,
-            $user['about'] ?? null,
-            $user['profession'] ?? null,
-            $user['city'] ?? null,
-        ]);
+        $patch = [];
+        foreach (self::INSTAGRAM_PROFILE_FIELDS as $column) {
+            if (array_key_exists($column, $user)) {
+                $patch[$column] = $user[$column];
+            }
+        }
+        $this->updateInstagramProfile($accountId, $patch);
     }
 
     public function updateInstagramToken(int $accountId, string $accessToken, DateTimeImmutable $expiresAt): void
@@ -504,7 +565,26 @@ final class UserRepository
         if ($check->fetch() !== false) {
             return;
         }
-        $this->syncInstagramProfileFromUser($userId, $accountId);
+        if ($this->countInstagramAccounts($userId) <= 1) {
+            $this->syncInstagramProfileFromUser($userId, $accountId);
+
+            return;
+        }
+        $this->updateInstagramProfile($accountId, [
+            'display_name' => null,
+            'profession' => null,
+            'city' => null,
+            'tone' => null,
+            'contact_cta' => null,
+            'fixed_hashtags' => null,
+            'about' => null,
+            'brand_style' => null,
+            'phrase_style' => 'classica',
+            'phrase_color' => null,
+            'phrase_place' => null,
+            'phrase_size' => null,
+            'logo_path' => null,
+        ]);
     }
 
     /**
@@ -518,6 +598,21 @@ final class UserRepository
         $logo->execute([$userId]);
         $logoPath = $logo->fetchColumn();
         if (is_string($logoPath) && $logoPath !== '' && !str_contains($logoPath, '..')) {
+            $paths[] = str_starts_with($logoPath, '/')
+                ? $logoPath
+                : Config::root() . '/' . ltrim($logoPath, '/');
+        }
+        $profileLogos = $this->pdo->prepare(
+            'SELECT ip.logo_path FROM instagram_profiles ip
+             INNER JOIN instagram_accounts ia ON ia.id = ip.instagram_account_id
+             WHERE ia.user_id = ? AND ip.logo_path IS NOT NULL AND ip.logo_path <> ?'
+        );
+        $profileLogos->execute([$userId, '']);
+        foreach ($profileLogos->fetchAll() as $row) {
+            $logoPath = (string) ($row['logo_path'] ?? '');
+            if ($logoPath === '' || str_contains($logoPath, '..')) {
+                continue;
+            }
             $paths[] = str_starts_with($logoPath, '/')
                 ? $logoPath
                 : Config::root() . '/' . ltrim($logoPath, '/');

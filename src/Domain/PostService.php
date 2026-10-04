@@ -1319,7 +1319,7 @@ class PostService
 
             return;
         }
-        $hasLogo = $this->logoFile($user) !== null;
+        $hasLogo = $this->logoFile($user, $post) !== null;
         $this->channel->sendText(
             $chatId,
             Messages::askMarkSource($hasLogo),
@@ -1346,7 +1346,7 @@ class PostService
             return;
         }
         if ($source === 'ok') {
-            if ($this->logoFile($user) === null) {
+            if ($this->logoFile($user, $post) === null) {
                 $this->users->update((int) $user['id'], ['pending_action' => 'logo:' . $postId]);
                 $this->channel->sendText($chatId, Messages::askLogoUpload());
 
@@ -1356,7 +1356,7 @@ class PostService
 
             return;
         }
-        $ig = $this->users->instagramAccount((int) $user['id']);
+        $ig = $this->resolveInstagram($user, $post);
         if (!is_array($ig) || ($ig['status'] ?? '') !== 'active' || empty($ig['access_token'])) {
             $this->channel->sendText($chatId, Messages::markNeedsInstagram());
 
@@ -1398,7 +1398,19 @@ class PostService
         }
         try {
             $this->channel->download($file['file_id'], $temp);
-            $saved = $this->storeLogo((int) $user['id'], $temp);
+            $postRow = $this->posts->find($postId);
+            $accountId = is_array($postRow)
+                ? (int) ($postRow['instagram_account_id'] ?? 0)
+                : 0;
+            if ($accountId <= 0) {
+                $accountId = $this->users->resolveProfileAccountId((int) $user['id']) ?? 0;
+            }
+            if ($accountId <= 0) {
+                $this->channel->sendText($chatId, Messages::logoFailed());
+
+                return;
+            }
+            $saved = $this->storeLogo($accountId, $temp);
             if ($saved === null) {
                 $this->channel->sendText($chatId, Messages::logoFailed());
 
@@ -1427,19 +1439,36 @@ class PostService
     /**
      * @param array<string, mixed> $user
      */
-    private function phraseStyleOf(array $user): string
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $post
+     * @return array<string, mixed>
+     */
+    private function profileContext(array $user, ?array $post = null): array
     {
-        $fresh = $this->users->find((int) $user['id']) ?? $user;
+        return $post !== null
+            ? $this->captionContext($user, $post)
+            : $this->users->userForPerfil($this->users->find((int) $user['id']) ?? $user);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $post
+     */
+    private function phraseStyleOf(array $user, ?array $post = null): string
+    {
+        $fresh = $this->profileContext($user, $post);
 
         return PhraseStyle::normalize((string) ($fresh['phrase_style'] ?? ''));
     }
 
     /**
      * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $post
      */
-    private function phraseColorOf(array $user): string
+    private function phraseColorOf(array $user, ?array $post = null): string
     {
-        $fresh = $this->users->find((int) $user['id']) ?? $user;
+        $fresh = $this->profileContext($user, $post);
 
         return PhraseColor::normalize((string) ($fresh['phrase_color'] ?? ''));
     }
@@ -1447,19 +1476,20 @@ class PostService
     /**
      * @param array<string, mixed> $user
      */
-    private function phrasePlaceOf(array $user): string
+    private function phrasePlaceOf(array $user, ?array $post = null): string
     {
-        $fresh = $this->users->find((int) $user['id']) ?? $user;
+        $fresh = $this->profileContext($user, $post);
 
         return PhrasePlace::normalize((string) ($fresh['phrase_place'] ?? ''));
     }
 
     /**
      * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $post
      */
-    private function phraseSizeOf(array $user): string
+    private function phraseSizeOf(array $user, ?array $post = null): string
     {
-        $fresh = $this->users->find((int) $user['id']) ?? $user;
+        $fresh = $this->profileContext($user, $post);
 
         return PhraseSize::normalize((string) ($fresh['phrase_size'] ?? ''));
     }
@@ -1501,10 +1531,10 @@ class PostService
      */
     private function drawPhrase(array $user, array $post, string $dest, string $phrase): void
     {
-        $style = $this->phraseStyleOf($user);
-        $color = $this->phraseColorOf($user);
-        $place = $this->phrasePlaceOf($user);
-        $size = $this->phraseSizeOf($user);
+        $style = $this->phraseStyleOf($user, $post);
+        $color = $this->phraseColorOf($user, $post);
+        $place = $this->phrasePlaceOf($user, $post);
+        $size = $this->phraseSizeOf($user, $post);
         if ((string) ($post['destination'] ?? 'feed') === 'story') {
             StoryCard::draw($dest, $phrase, $color, $place, $size, PhraseStyle::storyChoice($style));
 
@@ -1522,7 +1552,8 @@ class PostService
         if ((int) ($post['creative'] ?? 0) === 1 && IdeaImage::isDesigned((string) ($post['theme_text'] ?? ''))) {
             return;
         }
-        $parts = StoryScript::parts($caption, (string) ($user['contact_cta'] ?? ''));
+        $ctx = $this->profileContext($user, is_array($post) ? $post : null);
+        $parts = StoryScript::parts($caption, (string) ($ctx['contact_cta'] ?? ''));
         if ($parts === []) {
             return;
         }
@@ -1632,11 +1663,11 @@ class PostService
      */
     private function sendPhrasePrompt(array $user, int $chatId, int $postId, bool $saved): void
     {
-        $style = $this->phraseStyleOf($user);
-        $color = $this->phraseColorOf($user);
-        $place = $this->phrasePlaceOf($user);
-        $size = $this->phraseSizeOf($user);
         $post = $this->posts->find($postId);
+        $style = $this->phraseStyleOf($user, $post);
+        $color = $this->phraseColorOf($user, $post);
+        $place = $this->phrasePlaceOf($user, $post);
+        $size = $this->phraseSizeOf($user, $post);
         $isStory = is_array($post) && (string) ($post['destination'] ?? 'feed') === 'story';
         if ($isStory) {
             $this->channel->sendText(
@@ -1706,9 +1737,10 @@ class PostService
     /**
      * @param array<string, mixed> $user
      */
-    private function logoFile(array $user): ?string
+    private function logoFile(array $user, ?array $post = null): ?string
     {
-        $relative = trim((string) ($user['logo_path'] ?? ''));
+        $ctx = $this->profileContext($user, $post);
+        $relative = trim((string) ($ctx['logo_path'] ?? ''));
         if ($relative === '' || str_contains($relative, '..')) {
             return null;
         }
@@ -1717,13 +1749,13 @@ class PostService
         return is_file($path) ? $path : null;
     }
 
-    private function storeLogo(int $userId, string $source): ?string
+    private function storeLogo(int $accountId, string $source): ?string
     {
         $dir = Config::root() . '/storage/logos';
         if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
             return null;
         }
-        $dest = $dir . '/' . $userId . '.png';
+        $dest = $dir . '/a' . $accountId . '.png';
         if (extension_loaded('imagick') && class_exists(\Imagick::class)) {
             try {
                 $image = new \Imagick($source);
@@ -1731,7 +1763,7 @@ class PostService
                 $image->writeImage($dest);
                 $image->clear();
 
-                return 'storage/logos/' . $userId . '.png';
+                return 'storage/logos/a' . $accountId . '.png';
             } catch (\Throwable) {
             }
         }
@@ -1744,7 +1776,7 @@ class PostService
         $ok = imagepng($gd, $dest);
         imagedestroy($gd);
 
-        return $ok ? 'storage/logos/' . $userId . '.png' : null;
+        return $ok ? 'storage/logos/a' . $accountId . '.png' : null;
     }
 
     /**
@@ -2358,9 +2390,9 @@ class PostService
 
         return Keyboards::storyLook(
             $postId,
-            PhraseStyle::storyChoice($this->phraseStyleOf($owner)),
-            $this->phrasePlaceOf($owner),
-            $this->phraseColorOf($owner),
+            PhraseStyle::storyChoice($this->phraseStyleOf($owner, $post)),
+            $this->phrasePlaceOf($owner, $post),
+            $this->phraseColorOf($owner, $post),
         );
     }
 
@@ -2404,8 +2436,9 @@ class PostService
     {
         $now = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
         $can = $this->aiAllowed((int) $user['id']);
-        $this->users->update((int) $user['id'], ['idea_text' => BenefitOrchestrator::suggestion($user, $now)]);
-        $this->channel->sendText($chatId, BenefitOrchestrator::ideaMessage($user, $now, $can), Keyboards::ideaActions($can));
+        $view = $this->users->userForPerfil($this->users->find((int) $user['id']) ?? $user);
+        $this->users->update((int) $user['id'], ['idea_text' => BenefitOrchestrator::suggestion($view, $now)]);
+        $this->channel->sendText($chatId, BenefitOrchestrator::ideaMessage($view, $now, $can), Keyboards::ideaActions($can));
     }
 
     /**

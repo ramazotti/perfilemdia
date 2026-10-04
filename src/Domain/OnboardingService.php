@@ -120,8 +120,7 @@ final class OnboardingService
                 'tone' => $tone,
                 'pending_action' => null,
             ]);
-            $fresh = $this->users->find((int) $user['id']) ?? $user;
-            $this->channel->sendText($chatId, Messages::perfil($fresh), Keyboards::perfilFields());
+            $this->sendPerfil($user, $chatId);
 
             return;
         }
@@ -335,10 +334,24 @@ final class OnboardingService
             $column => $clean,
             'pending_action' => null,
         ]);
-        $fresh = $this->users->find((int) $user['id']) ?? $user;
-        $this->channel->sendText($chatId, Messages::perfil($fresh), Keyboards::perfilFields());
+        $this->sendPerfil($user, $chatId);
 
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function sendPerfil(array $user, int $chatId): void
+    {
+        $userId = (int) $user['id'];
+        $fresh = $this->users->find($userId) ?? $user;
+        $view = $this->users->userForPerfil($fresh);
+        $this->channel->sendText(
+            $chatId,
+            Messages::perfil($view, $this->users->activeInstagramUsername($userId)),
+            Keyboards::perfilFields(),
+        );
     }
 
     /**

@@ -182,11 +182,11 @@ final class ImageEditTest extends TestCase
         $service->choosePhraseStyle($user, 930001, 'cb2', 'cursiva', $postId);
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
-        $this->assertSame('cursiva', $user['phrase_style']);
+        $this->assertSame('cursiva', $users->userForPerfil($user)['phrase_style']);
         $service->choosePhraseColor($user, 930001, 'cb3', 'preto', $postId);
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
-        $this->assertSame('preto', $user['phrase_color']);
+        $this->assertSame('preto', $users->userForPerfil($user)['phrase_color']);
         $this->assertSame('branco', \PerfilEmDia\Image\PhraseColor::normalize('dourado'));
         $this->assertTrue($service->handlePhraseText($user, 930001, 'Kefir de agua'));
         $texts = implode("\n", array_column($channel->sent, 'text'));
@@ -231,13 +231,13 @@ final class ImageEditTest extends TestCase
         $service->choosePhraseStyle($user, 930001, 'cb2', 'balao', $postId);
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
-        $this->assertSame('balao', $user['phrase_style']);
-        $this->assertSame('preto', $user['phrase_color']);
+        $this->assertSame('balao', $users->userForPerfil($user)['phrase_style']);
+        $this->assertSame('preto', $users->userForPerfil($user)['phrase_color']);
         $service->choosePhraseStyle($user, 930001, 'cb3', 'caixa', $postId);
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
-        $this->assertSame('caixa', $user['phrase_style']);
-        $this->assertSame('branco', $user['phrase_color']);
+        $this->assertSame('caixa', $users->userForPerfil($user)['phrase_style']);
+        $this->assertSame('branco', $users->userForPerfil($user)['phrase_color']);
         $texts = implode("\n", array_column($channel->sent, 'text'));
         $this->assertStringContainsString("Bal\u{00e3}o", $texts);
         $this->assertStringContainsString('Caixa', $texts);
@@ -256,7 +256,7 @@ final class ImageEditTest extends TestCase
         $service->choosePhrasePlace($user, 930001, 'cb2', 'meio', $postId);
         $user = $users->find((int) $user['id']);
         $this->assertIsArray($user);
-        $this->assertSame('meio', $user['phrase_place']);
+        $this->assertSame('meio', $users->userForPerfil($user)['phrase_place']);
         $saved = implode("\n", array_column($channel->sent, 'text'));
         $this->assertStringContainsString('no meio', $saved);
     }
@@ -330,11 +330,16 @@ final class ImageEditTest extends TestCase
         ]);
         $user = $users->find($userId);
         $this->assertIsArray($user);
-        $this->assertSame('storage/logos/' . $userId . '.png', $user['logo_path']);
+        $post = $posts->find($postId);
+        $this->assertIsArray($post);
+        $accountId = (int) ($post['instagram_account_id'] ?? 0);
+        $this->assertGreaterThan(0, $accountId);
+        $view = $users->userForPerfil($user);
+        $this->assertSame('storage/logos/a' . $accountId . '.png', $view['logo_path'] ?? null);
         $this->assertNull($user['pending_action']);
         $service->placeMark($user, 930001, 'cb', 'br', 'lg', $postId);
         $this->assertSame(PostStatus::AwaitingApproval->value, $posts->find($postId)['status']);
-        $logo = dirname(__DIR__) . '/storage/logos/' . $userId . '.png';
+        $logo = dirname(__DIR__) . '/storage/logos/a' . $accountId . '.png';
         if (is_file($logo)) {
             unlink($logo);
         }
@@ -428,8 +433,10 @@ final class ImageEditTest extends TestCase
         $userId = $users->create(930001, 930001, 'Foto');
         $users->update($userId, ['display_name' => 'Ana', 'onboarding_step' => 'done']);
         $this->subscribe($userId, $slug);
+        $expires = new \DateTimeImmutable('+30 days', new \DateTimeZone('America/Sao_Paulo'));
+        $accountId = $users->saveInstagramAccount($userId, 'ig-' . $userId, 'ana_ig', 'BUSINESS', 'token', $expires, 5);
 
-        $postId = $posts->create($userId, PostStatus::AwaitingApproval, 'tema');
+        $postId = $posts->create($userId, PostStatus::AwaitingApproval, 'tema', null, $accountId);
         $posts->update($postId, ['caption' => 'Legenda', 'alt_text' => 'alt']);
         $posts->addMedia($postId, 0, 'file-a', 1);
         $media = $posts->media($postId);

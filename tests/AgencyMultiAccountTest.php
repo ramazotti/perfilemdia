@@ -11,7 +11,6 @@ use PerfilEmDia\Billing\PlanAccess;
 use PerfilEmDia\Config;
 use PerfilEmDia\Db;
 use PerfilEmDia\Domain\PostRepository;
-use PerfilEmDia\Domain\PostService;
 use PerfilEmDia\Domain\PostStatus;
 use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Instagram\InstagramAccountLimitException;
@@ -58,6 +57,12 @@ final class AgencyMultiAccountTest extends TestCase
         $access = new PlanAccess($this->pdo);
         $this->assertSame(5, $access->maxInstagramAccounts($userId));
         $this->assertTrue($access->canCreateWithAi($userId));
+
+        $users->updateInstagramProfile($idA, ['display_name' => 'Profissional A']);
+        $users->updateInstagramProfile($idB, ['display_name' => 'Profissional B']);
+        $users->setActiveInstagramAccount($userId, $idB);
+        $view = $users->userForPerfil($users->find($userId) ?? []);
+        $this->assertSame('Profissional B', $view['display_name'] ?? '');
     }
 
     public function testEssencialBlocksSecondInstagram(): void
