@@ -487,26 +487,34 @@ final class CustomerPortal
         if (!$view['mutable'] || $sub === null) {
             return '';
         }
-        $html = '<div class="box" style="margin-top:20px"><h2>Plano e ciclo</h2>';
+        $html = '<div class="box portal-plan" style="margin-top:20px"><h2>Plano e ciclo</h2>';
         $html .= '<p class="meta">A troca de preço vale na próxima cobrança. Um plano com mais posts libera o limite na hora. Um plano com menos posts muda o limite só no próximo período. Estúdio inclui o post criado a partir de uma ideia, com Surpreenda-me. A ideia do dia chega a partir das 8h, e um lembrete se passar de 1 dia sem postar. Vídeo curto, texto na foto, tratamento da foto e a marca d\'água ficam no Profissional e no Estúdio. Agendar vale em todos os planos.</p>';
         $options = '';
         foreach ($view['plans'] as $plan) {
             $selected = (int) $plan['id'] === (int) $sub['plan_id'] ? ' selected' : '';
             $options .= '<option value="' . (int) $plan['id'] . '"' . $selected . '>' . Layout::e((string) $plan['name']) . ' ' . Layout::e(Layout::money((int) $plan['price_cents'])) . '/mês</option>';
         }
-        $html .= $this->form('plano', '<select class="in" name="plan_id">' . $options . '</select><button class="btn btn-primary" type="submit">Usar este plano</button>');
+        $html .= '<div class="field"><label for="plan_id">Plano</label><select class="in" id="plan_id" name="plan_id" form="portal-plan-form">' . $options . '</select></div>';
         if (!empty($sub['next_plan_id'])) {
             $html .= '<p class="hint">Há um plano diferente marcado para a próxima cobrança.</p>';
         }
         $monthly = (string) $sub['cycle'] === 'mensal' ? 'btn-primary' : 'btn-ghost';
         $yearly = (string) $sub['cycle'] === 'anual' ? 'btn-primary' : 'btn-ghost';
-        $html .= '<div class="account-actions">';
-        $html .= $this->form('ciclo', '<input type="hidden" name="cycle" value="mensal"><button class="btn ' . $monthly . '" type="submit">Mensal</button>');
-        $html .= $this->form('ciclo', '<input type="hidden" name="cycle" value="anual"><button class="btn ' . $yearly . '" type="submit">Anual, 10 meses</button>');
+        $html .= '<p class="portal-field-label">Ciclo de cobrança</p>';
+        $html .= '<div class="account-actions portal-cycle-actions">';
+        $html .= $this->form('ciclo', '<input type="hidden" name="cycle" value="mensal"><button class="btn ' . $monthly . '" type="submit">Mensal</button>', '', 'portal-inline-form');
+        $html .= $this->form('ciclo', '<input type="hidden" name="cycle" value="anual"><button class="btn ' . $yearly . '" type="submit">Anual, 10 meses</button>', '', 'portal-inline-form');
         $html .= '</div>';
         if (!empty($sub['next_cycle'])) {
             $html .= '<p class="hint">Na próxima cobrança o ciclo passa para ' . Layout::e((string) $sub['next_cycle']) . '.</p>';
         }
+        $html .= $this->form(
+            'plano',
+            '<div class="portal-form-actions"><button class="btn btn-primary" type="submit">Usar este plano</button></div>',
+            '',
+            '',
+            'portal-plan-form',
+        );
         $html .= '</div>';
 
         return $html;
@@ -625,15 +633,33 @@ final class CustomerPortal
         return $this->form($action, $fields);
     }
 
-    private function form(string $action, string $inner, string $confirm = ''): string
+    private function form(string $action, string $inner, string $confirm = '', string $class = '', string $id = ''): string
     {
         $onsubmit = $confirm !== '' ? ' onsubmit="return confirm(' . htmlspecialchars(json_encode($confirm), ENT_QUOTES, 'UTF-8') . ')"' : '';
+        $classAttr = $class !== '' ? ' class="' . Layout::e($class) . '"' : '';
+        $idAttr = $id !== '' ? ' id="' . Layout::e($id) . '"' : '';
 
-        return '<form method="post"' . $onsubmit . '>'
+        return '<form method="post"' . $idAttr . $classAttr . $onsubmit . '>'
             . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
             . '<input type="hidden" name="action" value="' . Layout::e($action) . '">'
             . $inner
             . '</form>';
+    }
+
+    private function fileUploadField(string $id, string $name, string $accept, bool $required = false): string
+    {
+        $req = $required ? ' required' : '';
+
+        return '<div class="portal-file">'
+            . '<label class="portal-file-btn btn btn-ghost" for="' . Layout::e($id) . '">Escolher arquivo</label>'
+            . '<input class="portal-file-input" type="file" id="' . Layout::e($id) . '" name="' . Layout::e($name) . '" accept="' . Layout::e($accept) . '" data-file-label' . $req . '>'
+            . '<span class="portal-file-name">Nenhum arquivo escolhido</span>'
+            . '</div>';
+    }
+
+    private function portalFileScript(): string
+    {
+        return '<script>(function(){document.querySelectorAll("[data-file-label]").forEach(function(input){var name=input.closest(".portal-file");if(!name)return;var out=name.querySelector(".portal-file-name");if(!out)return;function sync(){if(!input.files||!input.files[0]){out.textContent="Nenhum arquivo escolhido";return;}out.textContent=input.files[0].name;}input.addEventListener("change",sync);});})();</script>';
     }
 
     private function row(string $label, string $value): string
@@ -773,20 +799,24 @@ final class CustomerPortal
         $html .= '</div>';
         $logoUrl = (string) ($bundle['logo_url'] ?? '');
         $html .= '<div class="box" style="margin-top:20px"><h2>Logo</h2>';
+        $html .= '<div class="portal-logo-row">';
         if ($logoUrl !== '') {
-            $html .= '<p><img class="portal-logo" src="' . Layout::e($logoUrl) . '" alt="Logo"></p>';
+            $html .= '<img class="portal-logo" src="' . Layout::e($logoUrl) . '" alt="Logo atual">';
         }
+        $html .= '<div class="portal-logo-upload">';
         $html .= '<p class="meta">PNG ou JPEG. Usada na marca d\'água e no texto na foto.</p>';
-        $html .= '<form method="post" enctype="multipart/form-data">'
+        $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload-form">'
             . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
             . '<input type="hidden" name="action" value="logo">'
-            . '<div class="field"><label for="logo">Arquivo</label><input class="in" id="logo" name="logo" type="file" accept="image/*" required></div>'
-            . '<button class="btn btn-primary" type="submit">Enviar logo</button></form></div>';
+            . $this->fileUploadField('logo-file', 'logo', 'image/*', true)
+            . '<div class="portal-form-actions"><button class="btn btn-primary" type="submit">Enviar logo</button></div>'
+            . '</form></div></div></div>';
         $ideaOn = !empty($bundle['idea_daily']);
         $html .= '<div class="box" style="margin-top:20px"><h2>Preferências de postagem</h2>';
         $html .= $this->form(
             'prefs',
-            '<div class="field"><label for="phrase_style">Estilo do texto na foto</label><select class="in" id="phrase_style" name="phrase_style">'
+            '<div class="portal-prefs-grid">'
+            . '<div class="field"><label for="phrase_style">Estilo do texto na foto</label><select class="in" id="phrase_style" name="phrase_style">'
             . $this->selectOption('classica', 'Clássica', (string) ($profile['phrase_style'] ?? ''))
             . $this->selectOption('cursiva', 'Cursiva', (string) ($profile['phrase_style'] ?? ''))
             . $this->selectOption('limpa', 'Limpa', (string) ($profile['phrase_style'] ?? ''))
@@ -808,10 +838,12 @@ final class CustomerPortal
             . $this->selectOption('normal', 'Normal', (string) ($profile['phrase_size'] ?? ''))
             . $this->selectOption('maior', 'Maior', (string) ($profile['phrase_size'] ?? ''))
             . '</select></div>'
-            . '<div class="field"><label><input type="checkbox" name="idea_daily" value="1"' . ($ideaOn ? ' checked' : '') . '> Ideia do dia no Telegram (8h)</label></div>'
-            . '<button class="btn btn-primary" type="submit">Salvar preferências</button>',
+            . '</div>'
+            . '<label class="portal-check"><input type="checkbox" name="idea_daily" value="1"' . ($ideaOn ? ' checked' : '') . '><span>Ideia do dia no Telegram (8h)</span></label>'
+            . '<div class="portal-form-actions"><button class="btn btn-primary" type="submit">Salvar preferências</button></div>',
         );
         $html .= '</div></div></section>';
+        $html .= $this->portalFileScript();
 
         return $html;
     }
@@ -863,18 +895,31 @@ final class CustomerPortal
         }
         $html .= '</div>';
         $html .= '<div class="portal-compose">';
-        $html .= $this->form('studio_msg', '<label class="sr" for="studio-message">Mensagem</label>'
-            . '<textarea class="in portal-input" id="studio-message" name="message" rows="2" placeholder="Tema, legenda ou /novo"></textarea>'
-            . '<button class="btn btn-primary" type="submit">Enviar</button>');
-        $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload">'
-            . '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">'
-            . '<input type="hidden" name="action" value="studio_upload">'
-            . '<input type="file" name="media" accept="image/*,video/mp4" capture="environment">'
-            . '<input class="in" name="caption" placeholder="Legenda da foto (opcional)">'
-            . '<button class="btn btn-ghost" type="submit">Enviar mídia</button></form>';
-        $html .= $this->form('studio_reset', '<button class="btn btn-ghost" type="submit">Limpar conversa</button>');
+        $html .= $this->form(
+            'studio_msg',
+            '<label class="sr" for="studio-message">Mensagem</label>'
+            . '<textarea class="in portal-input" id="studio-message" name="message" rows="3" placeholder="Tema, legenda, /novo ou resposta ao bot"></textarea>'
+            . '<div class="portal-form-actions portal-form-actions--split">'
+            . '<button class="btn btn-primary" type="submit">Enviar texto</button>'
+            . '</div>',
+            '',
+            'portal-msg-form',
+        );
+        $html .= '<div class="portal-media-panel">';
+        $html .= '<h3 class="portal-panel-title">Foto ou vídeo</h3>';
+        $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload-form">';
+        $html .= '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">';
+        $html .= '<input type="hidden" name="action" value="studio_upload">';
+        $html .= $this->fileUploadField('studio-media', 'media', 'image/*,video/mp4');
+        $html .= '<div class="field"><label for="studio-caption">Legenda (opcional)</label>';
+        $html .= '<input class="in" id="studio-caption" name="caption" placeholder="Tema ou legenda que vai com a mídia"></div>';
+        $html .= '<div class="portal-form-actions"><button class="btn btn-primary" type="submit">Enviar mídia</button></div>';
+        $html .= '</form></div>';
+        $html .= '<div class="portal-compose-foot">';
+        $html .= $this->form('studio_reset', '<button class="btn btn-ghost" type="submit">Limpar conversa</button>', '', 'portal-inline-form');
         $html .= '<p class="hint">Aguardando: ' . Layout::e($expect) . '. Publicação real vai para o Instagram conectado.</p>';
         $html .= '</div></div></div></section>';
+        $html .= $this->portalFileScript();
         $html .= $this->studioScript();
 
         return $html;
