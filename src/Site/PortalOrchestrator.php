@@ -360,6 +360,11 @@ final class PortalOrchestrator
         $channel = new WebStudioChannel();
         $posts = PortalFactory::postService($this->pdo, $channel);
         $chatId = (int) ($user['telegram_chat_id'] ?? $userId);
+        if ($posts->handleSurpriseText($user, $chatId, $trim)) {
+            $this->flushBot($userId, $channel);
+
+            return;
+        }
         if ($posts->handleThemeText($user, $chatId, $trim)) {
             $this->flushBot($userId, $channel);
 
@@ -474,6 +479,11 @@ final class PortalOrchestrator
 
             return;
         }
+        if (str_starts_with($data, 'sur:')) {
+            $posts->handleSurprisePreviewCallback($user, $chatId, null, $data);
+
+            return;
+        }
         if ($data === 'id:sur') {
             $posts->surprise($user, $chatId);
 
@@ -558,6 +568,12 @@ final class PortalOrchestrator
             }
         }
         $pending = (string) ($user['pending_action'] ?? '');
+        if ($pending === 'surprise:add') {
+            return 'surprise_add';
+        }
+        if ($pending === 'surprise:wait') {
+            return 'surprise_confirm';
+        }
         if (str_starts_with($pending, 'kind:')) {
             return 'media';
         }

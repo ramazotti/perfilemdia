@@ -515,13 +515,15 @@ class PostService
         $wizard = str_starts_with($pendingAction, 'where:')
             || str_starts_with($pendingAction, 'kind:')
             || str_starts_with($pendingAction, 'aiv:')
-            || str_starts_with($pendingAction, 'newpost:');
+            || str_starts_with($pendingAction, 'newpost:')
+            || str_starts_with($pendingAction, 'surprise:');
         if (!$wizard) {
             return false;
         }
         $this->users->update($userId, ['pending_action' => null]);
         IncomingMediaStash::clear($userId);
         IdeaReference::clearStash($userId);
+        SurpriseDraft::clear($userId);
 
         return true;
     }
@@ -2551,12 +2553,149 @@ class PostService
         $row = $this->users->find((int) $user['id']);
         $stored = trim((string) (is_array($row) ? ($row['idea_text'] ?? '') : ''));
         if ($stored !== '' && $this->storedIdeaMatchesProfile($stored, $view)) {
-            $this->startIdea($view, $chatId, mb_substr($stored, 0, 1000), null, BenefitOrchestrator::photoPhrase($view));
+            $this->offerSurprisePreview(
+                $view,
+                $chatId,
+                mb_substr($stored, 0, 1000),
+                BenefitOrchestrator::photoPhrase($view),
+            );
 
             return;
         }
         $brief = BenefitOrchestrator::surpriseBrief($view, $now);
-        $this->startIdea($view, $chatId, mb_substr($brief['idea'], 0, 1000), null, $brief['phrase']);
+        $this->offerSurprisePreview($view, $chatId, mb_substr($brief['idea'], 0, 1000), $brief['phrase']);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function handleSurprisePreviewCallback(array $user, int $chatId, ?string $callbackId, string $data): void
+    {
+        if ($callbackId !== null && $callbackId !== '') {
+            $this->channel->answerCallback($callbackId);
+        }
+        $userId = (int) $user['id'];
+        if ($data === 'sur:cancel') {
+            SurpriseDraft::clear($userId);
+            $this->users->update($userId, ['pending_action' => null]);
+            $this->channel->sendText($chatId, Messages::surprisePreviewCancelled());
+
+            return;
+        }
+        if ($data === 'sur:add') {
+            $this->users->update($userId, ['pending_action' => 'surprise:add']);
+            $this->channel->sendText($chatId, Messages::surpriseAskComplement());
+
+            return;
+        }
+        if ($data !== 'sur:go') {
+            return;
+        }
+        $draft = SurpriseDraft::load($userId);
+        if ($draft === null) {
+            $this->users->update($userId, ['pending_action' => null]);
+            $this->channel->sendText($chatId, Messages::surpriseDraftExpired());
+
+            return;
+        }
+        SurpriseDraft::clear($userId);
+        $this->users->update($userId, ['pending_action' => null]);
+        $view = $this->profileView($user);
+        $phrase = (string) ($draft['phrase'] ?? '');
+        $idea = (string) ($draft['idea'] ?? '');
+        $this->startIdea(
+            $view,
+            $chatId,
+            mb_substr($idea, 0, 1000),
+            null,
+            $phrase !== '' ? $phrase : null,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function handleSurpriseText(array $user, int $chatId, string $text): bool
+    {
+        $pending = (string) ($user['pending_action'] ?? '');
+        if ($pending !== 'surprise:add') {
+            return false;
+        }
+        $complement = trim(strip_tags($text));
+        if ($complement === '') {
+            $this->channel->sendText($chatId, Messages::surpriseAskComplement());
+
+            return true;
+        }
+        if (!SurpriseDraft::appendComplement((int) $user['id'], mb_substr($complement, 0, 400))) {
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+            $this->channel->sendText($chatId, Messages::surpriseDraftExpired());
+
+            return true;
+        }
+        $draft = SurpriseDraft::load((int) $user['id']);
+        if ($draft === null) {
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+            $this->channel->sendText($chatId, Messages::surpriseDraftExpired());
+
+            return true;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => 'surprise:wait']);
+        $this->channel->sendText(
+            $chatId,
+            Messages::surpriseComplementSaved() . "\n\n" . $this->surprisePreviewText($user, (string) $draft['idea'], (string) $draft['phrase']),
+            Keyboards::surprisePreview(),
+        );
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function offerSurprisePreview(array $user, int $chatId, string $idea, string $phrase): void
+    {
+        $userId = (int) $user['id'];
+        SurpriseDraft::clear($userId);
+        if (!SurpriseDraft::save($userId, $idea, $phrase)) {
+            $this->channel->sendText($chatId, Messages::ideaFailed());
+
+            return;
+        }
+        $this->users->update($userId, ['pending_action' => 'surprise:wait']);
+        $this->channel->sendText($chatId, $this->surprisePreviewText($user, $idea, $phrase), Keyboards::surprisePreview());
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function surprisePreviewText(array $user, string $idea, string $phrase): string
+    {
+        $accountId = $this->users->resolveProfileAccountId((int) $user['id']) ?? 0;
+        $matched = $accountId > 0
+            ? PromptExtras::matched($this->promptExtraRepo()->listForAccount($accountId), $idea)
+            : [];
+        $captionExtra = PromptExtras::formatForCaption($matched);
+        $parts = [
+            Messages::surprisePreviewHeader(),
+            '',
+            'Ideia (imagem e legenda):',
+            $idea,
+        ];
+        if ($phrase !== '' && !IdeaImage::isDesigned($idea)) {
+            $parts[] = '';
+            $parts[] = 'Frase sugerida na foto:';
+            $parts[] = $phrase;
+        }
+        if ($captionExtra !== '') {
+            $parts[] = '';
+            $parts[] = 'Contexto extra (gatilhos):';
+            $parts[] = $captionExtra;
+        }
+        $parts[] = '';
+        $parts[] = Messages::surprisePreviewFooter();
+
+        return implode("\n", $parts);
     }
 
     /**
@@ -3085,9 +3224,13 @@ class PostService
                 || str_starts_with($pending, 'phrase:')
                 || str_starts_with($pending, 'sched:')
                 || str_starts_with($pending, 'aiv:')
+                || str_starts_with($pending, 'surprise:')
             )
         ) {
             $this->users->update((int) $user['id'], ['pending_action' => null]);
+            if (str_starts_with($pending, 'surprise:')) {
+                SurpriseDraft::clear((int) $user['id']);
+            }
         }
         $this->channel->sendText($chatId, Messages::askWhere(), Keyboards::where());
     }
@@ -3227,6 +3370,24 @@ class PostService
     public function replyWhenIdle(array $user, int $chatId): void
     {
         $pending = (string) ($user['pending_action'] ?? '');
+        if ($pending === 'surprise:wait') {
+            $draft = SurpriseDraft::load((int) $user['id']);
+            if ($draft !== null) {
+                $this->channel->sendText(
+                    $chatId,
+                    Messages::surprisePreviewReminder() . "\n\n" . $this->surprisePreviewText($user, (string) $draft['idea'], (string) $draft['phrase']),
+                    Keyboards::surprisePreview(),
+                );
+
+                return;
+            }
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+        }
+        if ($pending === 'surprise:add') {
+            $this->channel->sendText($chatId, Messages::surpriseAskComplement());
+
+            return;
+        }
         if (str_starts_with($pending, 'where:')) {
             $this->sendKindMenu($user, $chatId, substr($pending, 6) === 'story' ? 'story' : 'feed');
 

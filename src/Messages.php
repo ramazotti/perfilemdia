@@ -851,6 +851,41 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
         return 'Sorteio do desenho: ' . $name . '.';
     }
 
+    public static function surprisePreviewHeader(): string
+    {
+        return 'Antes de gerar, confira o pedido que vou mandar para a IA:';
+    }
+
+    public static function surprisePreviewFooter(): string
+    {
+        return 'Quer complementar algo antes de eu gerar? Toque em Complementar pedido ou em Gerar agora.';
+    }
+
+    public static function surpriseAskComplement(): string
+    {
+        return 'Mande em uma mensagem o que quer acrescentar ao pedido (tema, marca, formato, detalhe). Depois eu mostro de novo e você confirma.';
+    }
+
+    public static function surpriseComplementSaved(): string
+    {
+        return 'Complemento incluído. Confira o pedido atualizado:';
+    }
+
+    public static function surprisePreviewCancelled(): string
+    {
+        return 'Surpreenda-me cancelado. Quando quiser, toque de novo em Surpreenda-me.';
+    }
+
+    public static function surpriseDraftExpired(): string
+    {
+        return 'Esse rascunho expirou. Toque em Surpreenda-me de novo.';
+    }
+
+    public static function surprisePreviewReminder(): string
+    {
+        return 'Use os botões abaixo: Gerar agora, Complementar pedido ou Cancelar.';
+    }
+
     public static function surpriseStartedDesign(): string
     {
         return 'Vou montar o desenho a partir da ideia. Aviso quando a prÃ©via ficar pronta.';

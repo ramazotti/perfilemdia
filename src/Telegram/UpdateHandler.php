@@ -166,6 +166,9 @@ final class UpdateHandler
         if ($this->postsService->handlePhraseText($user, $chatId, $text)) {
             return;
         }
+        if ($this->postsService->handleSurpriseText($user, $chatId, $text)) {
+            return;
+        }
         if ($this->postsService->handleIdeaText($user, $chatId, $text)) {
             return;
         }
@@ -459,6 +462,11 @@ final class UpdateHandler
         }
         if (preg_match('/^w:(tl|tr|bl|br|c):(ig|lg):(\d+)$/', $data, $m) === 1) {
             $this->postsService->placeMark($user, $chatId, $callbackId, $m[1], $m[2], (int) $m[3]);
+
+            return;
+        }
+        if (str_starts_with($data, 'sur:')) {
+            $this->postsService->handleSurprisePreviewCallback($user, $chatId, $callbackId, $data);
 
             return;
         }

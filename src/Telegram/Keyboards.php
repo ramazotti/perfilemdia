@@ -504,6 +504,18 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
+    public static function surprisePreview(): array
+    {
+        return [
+            [['text' => 'Gerar agora', 'callback_data' => 'sur:go']],
+            [['text' => 'Complementar pedido', 'callback_data' => 'sur:add']],
+            [['text' => 'Cancelar', 'callback_data' => 'sur:cancel']],
+        ];
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
     public static function audioChoice(): array
     {
         return [[

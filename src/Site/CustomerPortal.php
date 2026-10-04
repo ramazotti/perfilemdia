@@ -329,7 +329,9 @@ final class CustomerPortal
             'caption' => 'Envie o texto final da legenda na caixa de mensagem.',
             'image_edit' => 'Descreva a mudanÃ§a que quer na imagem (mensagem escrita).',
             'media' => 'Envie foto ou vÃ­deo no painel ao lado (legenda opcional).',
-            'idea' => 'Descreva a ideia na mensagem ou use os botÃµes do assistente.',
+            'idea' => 'Descreva a ideia na mensagem ou use os botões do assistente.',
+            'surprise_add' => 'Escreva o complemento do Surpreenda-me na mensagem escrita.',
+            'surprise_confirm' => 'Use os botões do assistente: Gerar agora, Complementar ou Cancelar.',
             default => 'Comece com Novo post ou escreva /novo na mensagem escrita.',
         };
     }
