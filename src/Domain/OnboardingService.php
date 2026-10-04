@@ -190,11 +190,12 @@ final class OnboardingService
     /**
      * @param array<string, mixed> $user
      */
-    public function offerInstagram(array $user, int $chatId): void
+    public function offerInstagram(array $user, int $chatId, bool $add = false): void
     {
-        $state = $this->users->createOauthState((int) $user['id']);
+        $state = $this->users->createOauthState((int) $user['id'], $add ? 'add' : 'connect');
         $url = rtrim(Config::get('APP_URL'), '/') . '/conectar.php?t=' . $state;
-        $this->channel->sendText($chatId, Messages::askInstagram(), Keyboards::instagramConnect($url));
+        $text = $add ? Messages::askInstagramAdd() : Messages::askInstagram();
+        $this->channel->sendText($chatId, $text, Keyboards::instagramConnect($url));
     }
 
     /**

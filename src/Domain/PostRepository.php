@@ -17,12 +17,17 @@ final class PostRepository
         $this->pdo = $pdo;
     }
 
-    public function create(int $userId, PostStatus $status, ?string $theme, ?string $mediaGroupId = null): int
-    {
+    public function create(
+        int $userId,
+        PostStatus $status,
+        ?string $theme,
+        ?string $mediaGroupId = null,
+        ?int $instagramAccountId = null,
+    ): int {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO posts (user_id, status, theme_text, media_group_id) VALUES (?, ?, ?, ?)'
+            'INSERT INTO posts (user_id, instagram_account_id, status, theme_text, media_group_id) VALUES (?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$userId, $status->value, $theme, $mediaGroupId]);
+        $stmt->execute([$userId, $instagramAccountId, $status->value, $theme, $mediaGroupId]);
 
         return (int) $this->pdo->lastInsertId();
     }

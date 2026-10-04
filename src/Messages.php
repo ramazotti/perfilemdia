@@ -270,6 +270,70 @@ final class Messages
     {
         return 'Conectado como @' . ltrim($username, '@') . '.';
     }
+    public static function instagramAdded(string $username): string
+    {
+        $u = ltrim($username, '@');
+
+        return "Pronto! @{$u} entrou na sua lista. Toque em /contas para escolher em qual @ publicar.";
+    }
+
+    public static function instagramAccountLimit(int $max): string
+    {
+        return "Seu plano permite até {$max} Instagram conectado" . ($max === 1 ? '' : 's') . ".
+Para mais contas, assine o plano Agência (/assinatura). Ou use /contas e desconecte uma @ antes de conectar outra.";
+    }
+
+    public static function instagramAccountsMenu(int $connected, int $max, string $activeUsername): string
+    {
+        $active = $activeUsername !== '' ? '@' . ltrim($activeUsername, '@') : 'nenhuma';
+        $line = "Contas conectadas: {$connected} de {$max}.
+Ativa agora: {$active}.
+
+Toque para usar uma @ nos próximos posts, adicionar outra ou desconectar.";
+        return $line;
+    }
+
+    public static function publishingAs(string $username): string
+    {
+        $u = ltrim($username, '@');
+
+        return "Publicando em @{$u}.";
+    }
+
+    public static function instagramPicked(string $username): string
+    {
+        $u = ltrim($username, '@');
+
+        return "Beleza. Os próximos posts vão para @{$u}.";
+    }
+
+    public static function instagramDisconnected(string $username): string
+    {
+        $u = ltrim($username, '@');
+
+        return "@{$u} foi desconectada deste Telegram.";
+    }
+
+    public static function statusMulti(string $ig, int $used, int $limit, int $connected, int $maxAccounts, string $activeUsername): string
+    {
+        $base = self::status($ig, $used, $limit);
+        if ($maxAccounts <= 1) {
+            return $base;
+        }
+        $active = $activeUsername !== '' ? '@' . ltrim($activeUsername, '@') : 'nenhuma';
+
+        return $base . "
+Instagram: {$connected} de {$maxAccounts} · Ativa: {$active}";
+    }
+
+    public static function askInstagramAdd(): string
+    {
+        return "Vamos conectar mais um Instagram.
+
+Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conectar.";
+    }
+
+
 
     public static function instagramDenied(): string
     {

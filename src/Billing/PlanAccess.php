@@ -26,7 +26,8 @@ final class PlanAccess
     {
         $stmt = $this->pdo->prepare(
             'SELECT s.status, s.period_kind, s.posts_limit, s.period_days, s.period_started_at, s.current_period_end,
-                    s.comp_forever, s.comp_until, s.price_cents, p.name AS plan_name, p.slug AS plan_slug, p.posts_limit AS plan_posts
+                    s.comp_forever, s.comp_until, s.price_cents, p.name AS plan_name, p.slug AS plan_slug, p.posts_limit AS plan_posts,
+                    p.max_instagram_accounts AS plan_max_instagram
              FROM customers c
              INNER JOIN subscriptions s ON s.customer_id = c.id
              INNER JOIN plans p ON p.id = s.plan_id
@@ -93,17 +94,42 @@ final class PlanAccess
 
     public function canEditPhoto(int $userId): bool
     {
-        return $this->planAllows($userId, ['profissional', 'estudio']);
+        return $this->planAllows($userId, ['profissional', 'estudio', 'agencia']);
     }
 
     public function canPublishVideo(int $userId): bool
     {
-        return $this->planAllows($userId, ['profissional', 'estudio']);
+        return $this->planAllows($userId, ['profissional', 'estudio', 'agencia']);
     }
 
     public function canCreateWithAi(int $userId): bool
     {
-        return $this->planAllows($userId, ['estudio']);
+        return $this->planAllows($userId, ['estudio', 'agencia']);
+    }
+
+    public function maxInstagramAccounts(int $userId): int
+    {
+        $window = $this->window($userId);
+        if ($window === null || $window['blocked'] !== '') {
+            return 1;
+        }
+        if ($window['scope'] === 'teste') {
+            return $this->maxInstagramAccountsForSlug((string) $window['slug']);
+        }
+
+        return $this->maxInstagramAccountsForSlug((string) $window['slug']);
+    }
+
+    private function maxInstagramAccountsForSlug(string $slug): int
+    {
+        $stmt = $this->pdo->prepare('SELECT max_instagram_accounts FROM plans WHERE slug = ? LIMIT 1');
+        $stmt->execute([$slug]);
+        $max = $stmt->fetchColumn();
+        if ($max === false) {
+            return 1;
+        }
+
+        return max(1, (int) $max);
     }
 
     /**

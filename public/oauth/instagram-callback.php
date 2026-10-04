@@ -7,7 +7,9 @@ require dirname(__DIR__, 2) . '/vendor/autoload.php';
 use PerfilEmDia\Channel\TelegramChannel;
 use PerfilEmDia\Config;
 use PerfilEmDia\Db;
+use PerfilEmDia\Billing\PlanAccess;
 use PerfilEmDia\Domain\UserRepository;
+use PerfilEmDia\Instagram\InstagramAccountLimitException;
 use PerfilEmDia\Instagram\InstagramApiException;
 use PerfilEmDia\Instagram\InstagramClient;
 use PerfilEmDia\Instagram\InstagramOAuth;
@@ -48,22 +50,40 @@ if ($error !== '' || $code === '') {
 }
 
 try {
-    $oauth = new InstagramOAuth(new InstagramClient(), $users);
+    $pdo = Db::pdo();
+    $oauth = new InstagramOAuth(new InstagramClient(), $users, new PlanAccess($pdo));
     $result = $oauth->handleCallback($code, $state);
     $username = $result['username'];
     $user = $users->find($result['user_id']);
     if ($user !== null && !empty($user['telegram_chat_id'])) {
         try {
             $telegram = new TelegramChannel(new TelegramClient());
+            $text = ($result['connect_mode'] ?? '') === 'add'
+                ? Messages::instagramAdded($username)
+                : Messages::instagramConnected($username);
             $telegram->sendText(
                 (int) $user['telegram_chat_id'],
-                Messages::instagramConnected($username),
+                $text,
             );
         } catch (Throwable) {
         }
     }
 
     header('Location: ' . perfilemdia_public() . '/conectado?conta=' . rawurlencode(ltrim((string) $username, '@')));
+    exit;
+} catch (InstagramAccountLimitException $e) {
+    $user = $users->find($e->userId);
+    if ($user !== null && !empty($user['telegram_chat_id'])) {
+        try {
+            $telegram = new TelegramChannel(new TelegramClient());
+            $telegram->sendText(
+                (int) $user['telegram_chat_id'],
+                Messages::instagramAccountLimit($e->maxAccounts),
+            );
+        } catch (Throwable) {
+        }
+    }
+    header('Location: ' . perfilemdia_public() . '/erro-conexao?motivo=limite');
     exit;
 } catch (Throwable $e) {
     $motivo = $e instanceof InstagramApiException && $e->kind === 'personal' ? 'pessoal' : 'negado';

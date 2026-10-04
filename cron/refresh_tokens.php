@@ -35,13 +35,13 @@ foreach ($users->instagramAccountsExpiringWithinDays(10) as $account) {
         $expiresIn = (int) ($refreshed['expires_in'] ?? 0);
         $expiresAt = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))
             ->modify('+' . max(1, $expiresIn) . ' seconds');
-        $users->updateInstagramToken($userId, (string) $refreshed['access_token'], $expiresAt);
+        $users->updateInstagramToken((int) $account['id'], (string) $refreshed['access_token'], $expiresAt);
     } catch (Throwable $e) {
         Logger::get()->error('Falha ao renovar token Instagram', [
             'user_id' => $userId,
             'error' => SecretRedactor::redact($e->getMessage()),
         ]);
-        $users->markInstagramStatus($userId, 'expired');
+        $users->markInstagramStatusById((int) $account['id'], 'expired');
         $user = $users->find($userId);
         if ($user === null) {
             continue;

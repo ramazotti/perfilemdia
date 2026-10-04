@@ -102,16 +102,34 @@ final class UserRepository
         $values[] = $id;
         $sql = 'UPDATE users SET ' . implode(', ', $set) . ' WHERE id = ?';
         $this->pdo->prepare($sql)->execute($values);
+        $profileFields = ['tone', 'contact_cta', 'fixed_hashtags', 'about', 'profession', 'city'];
+        foreach ($profileFields as $column) {
+            if (!array_key_exists($column, $fields)) {
+                continue;
+            }
+            $user = $this->find($id);
+            if ($user === null) {
+                break;
+            }
+            $accountId = (int) ($user['active_instagram_account_id'] ?? 0);
+            if ($accountId > 0) {
+                $this->syncInstagramProfileFromUser($id, $accountId);
+            }
+            break;
+        }
     }
 
-    public function createOauthState(int $userId): string
+    public function createOauthState(int $userId, string $connectMode = 'connect'): string
     {
+        $mode = $connectMode === 'add' ? 'add' : 'connect';
         $state = bin2hex(random_bytes(32));
         $expires = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))
             ->modify('+24 hours')
             ->format('Y-m-d H:i:s');
-        $stmt = $this->pdo->prepare('INSERT INTO oauth_states (state, user_id, expires_at) VALUES (?, ?, ?)');
-        $stmt->execute([$state, $userId, $expires]);
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO oauth_states (state, user_id, connect_mode, expires_at) VALUES (?, ?, ?, ?)'
+        );
+        $stmt->execute([$state, $userId, $mode, $expires]);
 
         return $state;
     }
@@ -128,14 +146,19 @@ final class UserRepository
         return (int) $row['user_id'];
     }
 
-    public function consumeOauthState(string $state): ?int
+    /**
+     * @return array{user_id:int, connect_mode:string}|null
+     */
+    public function consumeOauthState(string $state): ?array
     {
         $ownsTransaction = !$this->pdo->inTransaction();
         if ($ownsTransaction) {
             $this->pdo->beginTransaction();
         }
         try {
-            $stmt = $this->pdo->prepare('SELECT user_id, expires_at, used_at FROM oauth_states WHERE state = ? FOR UPDATE');
+            $stmt = $this->pdo->prepare(
+                'SELECT user_id, connect_mode, expires_at, used_at FROM oauth_states WHERE state = ? FOR UPDATE'
+            );
             $stmt->execute([$state]);
             $row = $stmt->fetch();
             if ($row === false || $row['used_at'] !== null || strtotime((string) $row['expires_at']) < time()) {
@@ -150,8 +173,15 @@ final class UserRepository
             if ($ownsTransaction) {
                 $this->pdo->commit();
             }
+            if ($mark->rowCount() !== 1) {
+                return null;
+            }
+            $mode = (string) ($row['connect_mode'] ?? 'connect');
 
-            return $mark->rowCount() === 1 ? (int) $row['user_id'] : null;
+            return [
+                'user_id' => (int) $row['user_id'],
+                'connect_mode' => $mode === 'add' ? 'add' : 'connect',
+            ];
         } catch (\Throwable $e) {
             if ($ownsTransaction && $this->pdo->inTransaction()) {
                 $this->pdo->rollBack();
@@ -167,7 +197,16 @@ final class UserRepository
         ?string $accountType,
         string $accessToken,
         DateTimeImmutable $expiresAt,
-    ): void {
+        int $maxAccounts,
+    ): int {
+        $existing = $this->findInstagramAccountRow($userId, $igUserId);
+        if ($existing === null) {
+            $count = $this->countInstagramAccounts($userId);
+            if ($count >= $maxAccounts) {
+                throw new \PerfilEmDia\Instagram\InstagramAccountLimitException($maxAccounts, $userId);
+            }
+        }
+
         $enc = $this->crypto->encrypt($accessToken);
         $expires = $expiresAt->setTimezone(new DateTimeZone('America/Sao_Paulo'))->format('Y-m-d H:i:s');
         $stmt = $this->pdo->prepare(
@@ -175,7 +214,6 @@ final class UserRepository
                 (user_id, ig_user_id, username, account_type, access_token_enc, token_expires_at, status)
              VALUES (?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
-                ig_user_id = VALUES(ig_user_id),
                 username = VALUES(username),
                 account_type = VALUES(account_type),
                 access_token_enc = VALUES(access_token_enc),
@@ -184,38 +222,182 @@ final class UserRepository
                 status = ?'
         );
         $stmt->execute([$userId, $igUserId, $username, $accountType, $enc, $expires, 'active', 'active']);
+
+        $accountId = $existing !== null
+            ? (int) $existing['id']
+            : (int) $this->pdo->lastInsertId();
+        if ($accountId <= 0) {
+            $row = $this->findInstagramAccountRow($userId, $igUserId);
+            $accountId = $row !== null ? (int) $row['id'] : 0;
+        }
+        if ($accountId <= 0) {
+            throw new \RuntimeException('instagram_account_save_failed');
+        }
+
+        $this->ensureInstagramProfile($accountId, $userId);
+        $this->ensureActiveInstagramAccount($userId, $accountId);
+
+        return $accountId;
     }
 
     public function instagramAccount(int $userId): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM instagram_accounts WHERE user_id = ?');
+        $user = $this->find($userId);
+        $activeId = is_array($user) ? (int) ($user['active_instagram_account_id'] ?? 0) : 0;
+        if ($activeId > 0) {
+            $active = $this->instagramAccountById($activeId, $userId);
+            if ($active !== null) {
+                return $active;
+            }
+        }
+
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM instagram_accounts WHERE user_id = ? AND status = 'active' ORDER BY connected_at ASC, id ASC LIMIT 1"
+        );
         $stmt->execute([$userId]);
         $row = $stmt->fetch();
         if ($row === false) {
             return null;
         }
-        $enc = (string) ($row['access_token_enc'] ?? '');
-        if ($enc === '' || (string) ($row['status'] ?? '') !== 'active') {
-            unset($row['access_token_enc']);
-            $row['access_token'] = null;
+        $this->ensureActiveInstagramAccount($userId, (int) $row['id']);
 
-            return $row;
-        }
-        $row['access_token'] = $this->crypto->decrypt($enc);
-        unset($row['access_token_enc']);
-
-        return $row;
+        return $this->hydrateInstagramRow($row);
     }
 
-    public function updateInstagramToken(int $userId, string $accessToken, DateTimeImmutable $expiresAt): void
+    public function instagramAccountById(int $accountId, int $userId): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM instagram_accounts WHERE id = ? AND user_id = ? LIMIT 1');
+        $stmt->execute([$accountId, $userId]);
+        $row = $stmt->fetch();
+
+        return $row === false ? null : $this->hydrateInstagramRow($row);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listInstagramAccounts(int $userId, bool $withTokens = false): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM instagram_accounts WHERE user_id = ? ORDER BY connected_at ASC, id ASC'
+        );
+        $stmt->execute([$userId]);
+        $rows = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $rows[] = $withTokens ? $this->hydrateInstagramRow($row) : $this->stripInstagramToken($row);
+        }
+
+        return $rows;
+    }
+
+    public function countInstagramAccounts(int $userId): int
+    {
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM instagram_accounts WHERE user_id = ?');
+        $stmt->execute([$userId]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    public function setActiveInstagramAccount(int $userId, int $accountId): bool
+    {
+        $row = $this->instagramAccountById($accountId, $userId);
+        if ($row === null || (string) ($row['status'] ?? '') !== 'active') {
+            return false;
+        }
+        $stmt = $this->pdo->prepare('UPDATE users SET active_instagram_account_id = ? WHERE id = ?');
+        $stmt->execute([$accountId, $userId]);
+
+        return true;
+    }
+
+    public function disconnectInstagramAccount(int $userId, int $accountId): bool
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM instagram_accounts WHERE id = ? AND user_id = ?');
+        $stmt->execute([$accountId, $userId]);
+        if ($stmt->rowCount() !== 1) {
+            return false;
+        }
+        $user = $this->find($userId);
+        if ($user !== null && (int) ($user['active_instagram_account_id'] ?? 0) === $accountId) {
+            $next = $this->pdo->prepare(
+                "SELECT id FROM instagram_accounts WHERE user_id = ? AND status = 'active' ORDER BY connected_at ASC, id ASC LIMIT 1"
+            );
+            $next->execute([$userId]);
+            $nextId = $next->fetchColumn();
+            $this->pdo->prepare('UPDATE users SET active_instagram_account_id = ? WHERE id = ?')
+                ->execute([$nextId !== false ? (int) $nextId : null, $userId]);
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function userWithInstagramProfile(array $user, ?int $instagramAccountId = null): array
+    {
+        $accountId = $instagramAccountId ?? (int) ($user['active_instagram_account_id'] ?? 0);
+        if ($accountId <= 0) {
+            $ig = $this->instagramAccount((int) $user['id']);
+            $accountId = $ig !== null ? (int) $ig['id'] : 0;
+        }
+        if ($accountId <= 0) {
+            return $user;
+        }
+        $stmt = $this->pdo->prepare('SELECT * FROM instagram_profiles WHERE instagram_account_id = ? LIMIT 1');
+        $stmt->execute([$accountId]);
+        $profile = $stmt->fetch();
+        if ($profile === false) {
+            return $user;
+        }
+        $merged = $user;
+        foreach (['tone', 'contact_cta', 'fixed_hashtags', 'about', 'profession', 'city'] as $field) {
+            if (array_key_exists($field, $profile) && $profile[$field] !== null && (string) $profile[$field] !== '') {
+                $merged[$field] = $profile[$field];
+            }
+        }
+
+        return $merged;
+    }
+
+    public function syncInstagramProfileFromUser(int $userId, int $accountId): void
+    {
+        $user = $this->find($userId);
+        if ($user === null) {
+            return;
+        }
+        $stmt = $this->pdo->prepare(
+            'INSERT INTO instagram_profiles (instagram_account_id, tone, contact_cta, fixed_hashtags, about, profession, city)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                tone = VALUES(tone),
+                contact_cta = VALUES(contact_cta),
+                fixed_hashtags = VALUES(fixed_hashtags),
+                about = VALUES(about),
+                profession = VALUES(profession),
+                city = VALUES(city)'
+        );
+        $stmt->execute([
+            $accountId,
+            $user['tone'] ?? null,
+            $user['contact_cta'] ?? null,
+            $user['fixed_hashtags'] ?? null,
+            $user['about'] ?? null,
+            $user['profession'] ?? null,
+            $user['city'] ?? null,
+        ]);
+    }
+
+    public function updateInstagramToken(int $accountId, string $accessToken, DateTimeImmutable $expiresAt): void
     {
         $stmt = $this->pdo->prepare(
             'UPDATE instagram_accounts
              SET access_token_enc = ?, token_expires_at = ?, token_refreshed_at = NOW(), status = ?
-             WHERE user_id = ?'
+             WHERE id = ?'
         );
         $expires = $expiresAt->setTimezone(new DateTimeZone('America/Sao_Paulo'))->format('Y-m-d H:i:s');
-        $stmt->execute([$this->crypto->encrypt($accessToken), $expires, 'active', $userId]);
+        $stmt->execute([$this->crypto->encrypt($accessToken), $expires, 'active', $accountId]);
     }
 
     public function markInstagramRevokedByIgUserId(string $igUserId): void
@@ -247,6 +429,82 @@ final class UserRepository
     {
         $stmt = $this->pdo->prepare('UPDATE instagram_accounts SET status = ? WHERE user_id = ?');
         $stmt->execute([$status, $userId]);
+    }
+
+    public function markInstagramStatusById(int $accountId, string $status): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE instagram_accounts SET status = ? WHERE id = ?');
+        $stmt->execute([$status, $accountId]);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function hydrateInstagramRow(array $row): array
+    {
+        $enc = (string) ($row['access_token_enc'] ?? '');
+        if ($enc === '' || (string) ($row['status'] ?? '') !== 'active') {
+            unset($row['access_token_enc']);
+            $row['access_token'] = null;
+
+            return $row;
+        }
+        $row['access_token'] = $this->crypto->decrypt($enc);
+        unset($row['access_token_enc']);
+
+        return $row;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function stripInstagramToken(array $row): array
+    {
+        unset($row['access_token_enc']);
+        $row['access_token'] = null;
+
+        return $row;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function findInstagramAccountRow(int $userId, string $igUserId): ?array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM instagram_accounts WHERE user_id = ? AND ig_user_id = ? LIMIT 1');
+        $stmt->execute([$userId, $igUserId]);
+        $row = $stmt->fetch();
+
+        return $row === false ? null : $row;
+    }
+
+    private function ensureActiveInstagramAccount(int $userId, int $accountId): void
+    {
+        $user = $this->find($userId);
+        if ($user === null) {
+            return;
+        }
+        $active = (int) ($user['active_instagram_account_id'] ?? 0);
+        if ($active > 0) {
+            $current = $this->instagramAccountById($active, $userId);
+            if ($current !== null && (string) ($current['status'] ?? '') === 'active') {
+                return;
+            }
+        }
+        $this->pdo->prepare('UPDATE users SET active_instagram_account_id = ? WHERE id = ?')
+            ->execute([$accountId, $userId]);
+    }
+
+    private function ensureInstagramProfile(int $accountId, int $userId): void
+    {
+        $check = $this->pdo->prepare('SELECT instagram_account_id FROM instagram_profiles WHERE instagram_account_id = ?');
+        $check->execute([$accountId]);
+        if ($check->fetch() !== false) {
+            return;
+        }
+        $this->syncInstagramProfileFromUser($userId, $accountId);
     }
 
     /**

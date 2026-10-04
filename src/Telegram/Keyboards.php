@@ -309,6 +309,32 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
+
+    /**
+     * @param list<array<string, mixed>> $accounts
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
+    public static function instagramAccounts(array $accounts, int $activeId, int $max, string $connectUrl): array
+    {
+        $rows = [];
+        foreach ($accounts as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $name = '@' . ltrim((string) ($row['username'] ?? ''), '@');
+            $mark = $id === $activeId ? ' ✓' : '';
+            $rows[] = [['text' => 'Usar ' . $name . $mark, 'callback_data' => 'ig:pick:' . $id]];
+            if (count($accounts) > 1) {
+                $rows[] = [['text' => 'Desconectar ' . $name, 'callback_data' => 'ig:off:' . $id]];
+            }
+        }
+        if (count($accounts) < $max) {
+            $rows[] = [['text' => 'Adicionar Instagram', 'url' => $connectUrl]];
+        }
+        return $rows;
+    }
+
     public static function instagramConnect(string $url): array
     {
         return [

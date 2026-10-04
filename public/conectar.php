@@ -26,6 +26,6 @@ if ($userId === null) {
     exit;
 }
 
-$oauth = new InstagramOAuth(new InstagramClient(), $users);
+$oauth = new InstagramOAuth(new InstagramClient(), $users, new \PerfilEmDia\Billing\PlanAccess(Db::pdo()));
 header('Location: ' . $oauth->authorizationUrl($state), true, 302);
 exit;

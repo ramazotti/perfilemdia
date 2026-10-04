@@ -46,7 +46,7 @@ final class RepositoryTest extends TestCase
         $id = $users->create(900002, 900002, null);
         $state = $users->createOauthState($id);
 
-        $this->assertSame($id, $users->consumeOauthState($state));
+        $this->assertSame($id, $users->consumeOauthState($state)['user_id'] ?? null);
         $this->assertNull($users->consumeOauthState($state));
     }
 }

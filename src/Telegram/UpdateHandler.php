@@ -193,6 +193,7 @@ final class UpdateHandler
             '/novo' => $this->cmdNovo($user, $chatId),
             '/perfil' => $this->channel->sendText($chatId, Messages::perfil($user), Keyboards::perfilFields()),
             '/conectar' => $this->cmdConectar($user, $chatId),
+            '/contas' => $this->postsService->showInstagramAccounts($user, $chatId),
             '/status' => $this->cmdStatus($user, $chatId),
             '/assinatura' => $this->cmdAssinatura($user, $chatId),
             '/cancelar' => $this->postsService->cancelPending($user, $chatId),
@@ -388,6 +389,12 @@ final class UpdateHandler
 
             return;
         }
+        if (str_starts_with($data, 'ig:')) {
+            $this->channel->answerCallback($callbackId);
+            if ($this->postsService->handleInstagramAccountCallback($user, $chatId, $data)) {
+                return;
+            }
+        }
         if (str_starts_with($data, 'tom:')) {
             $this->channel->answerCallback($callbackId);
             $this->onboarding->handleTone($user, $chatId, substr($data, 4));
@@ -515,9 +522,7 @@ final class UpdateHandler
                     return;
                 }
                 $used = $this->posts->countPublishedInMonth((int) $user['id'], $window['from'], $window['until']);
-                $text = $window['scope'] === 'teste'
-                    ? Messages::trialStatus($username, $used, (int) $window['limit'], (int) $window['days'])
-                    : Messages::status($username, $used, (int) $window['limit']);
+                $text = $this->formatStatusMessage($user, $username, $used, (int) $window['limit'], $window['scope'] === 'teste', (int) $window['days']);
                 $this->channel->sendText($chatId, $text);
 
                 return;
@@ -530,7 +535,35 @@ final class UpdateHandler
         $monthStart = $now->modify('first day of this month')->setTime(0, 0, 0)->format('Y-m-d H:i:s');
         $nextMonth = $now->modify('first day of next month')->setTime(0, 0, 0)->format('Y-m-d H:i:s');
         $used = $this->posts->countPublishedInMonth((int) $user['id'], $monthStart, $nextMonth);
-        $this->channel->sendText($chatId, Messages::status($username, $used, $limit));
+        $this->channel->sendText($chatId, $this->formatStatusMessage($user, $username, $used, $limit, false, 0));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function formatStatusMessage(
+        array $user,
+        string $username,
+        int $used,
+        int $limit,
+        bool $trial,
+        int $trialDays,
+    ): string {
+        $access = new PlanAccess(Db::pdo());
+        $maxIg = $access->maxInstagramAccounts((int) $user['id']);
+        $connected = count($this->users->listInstagramAccounts((int) $user['id']));
+        if ($trial) {
+            $base = Messages::trialStatus($username, $used, $limit, $trialDays);
+        } elseif ($maxIg > 1) {
+            return Messages::statusMulti($username, $used, $limit, $connected, $maxIg, $username);
+        } else {
+            return Messages::status($username, $used, $limit);
+        }
+        if ($maxIg > 1) {
+            return $base . "\nInstagram: {$connected} de {$maxIg} · Ativa: @" . ltrim($username, '@');
+        }
+
+        return $base;
     }
 
     /**

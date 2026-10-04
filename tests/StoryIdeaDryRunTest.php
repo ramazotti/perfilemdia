@@ -61,6 +61,7 @@ final class StoryIdeaDryRunTest extends TestCase
             'BUSINESS',
             'token',
             new DateTimeImmutable('+30 days', new DateTimeZone('America/Sao_Paulo')),
+            5,
         );
         $this->subscribe($userId);
 

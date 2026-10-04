@@ -62,7 +62,7 @@ final class PostServiceTest extends TestCase
             'onboarding_step' => 'done',
         ]);
         $expires = new \DateTimeImmutable('+30 days', new \DateTimeZone('America/Sao_Paulo'));
-        $this->users->saveInstagramAccount($userId, 'ig1', 'ana_ig', 'BUSINESS', 'token', $expires);
+        $this->users->saveInstagramAccount($userId, 'ig1', 'ana_ig', 'BUSINESS', 'token', $expires, 5);
 
         $postId = $this->posts->create($userId, PostStatus::AwaitingApproval, 'tema');
         $this->posts->update($postId, [
@@ -97,7 +97,7 @@ final class PostServiceTest extends TestCase
             'onboarding_step' => 'done',
         ]);
         $expires = new \DateTimeImmutable('+30 days', new \DateTimeZone('America/Sao_Paulo'));
-        $this->users->saveInstagramAccount($userId, 'ig2', 'ana_ig', 'BUSINESS', 'token', $expires);
+        $this->users->saveInstagramAccount($userId, 'ig2', 'ana_ig', 'BUSINESS', 'token', $expires, 5);
         $user = $this->users->find($userId);
         $this->assertNotNull($user);
         $user['pending_action'] = 'kind:video';
@@ -128,7 +128,7 @@ final class PostServiceTest extends TestCase
             'onboarding_step' => 'done',
         ]);
         $expires = new \DateTimeImmutable('+30 days', new \DateTimeZone('America/Sao_Paulo'));
-        $this->users->saveInstagramAccount($userId, 'ig3', 'ana_ig', 'BUSINESS', 'token', $expires);
+        $this->users->saveInstagramAccount($userId, 'ig3', 'ana_ig', 'BUSINESS', 'token', $expires, 5);
         $this->subscribe($userId, 'profissional');
         $user = $this->users->find($userId);
         $this->assertNotNull($user);
@@ -168,7 +168,7 @@ final class PostServiceTest extends TestCase
             'onboarding_step' => 'done',
         ]);
         $expires = new \DateTimeImmutable('+30 days', new \DateTimeZone('America/Sao_Paulo'));
-        $this->users->saveInstagramAccount($userId, 'ig11', 'ana_ig', 'BUSINESS', 'token', $expires);
+        $this->users->saveInstagramAccount($userId, 'ig11', 'ana_ig', 'BUSINESS', 'token', $expires, 5);
         $this->subscribe($userId, 'profissional');
         $postId = $this->posts->create($userId, PostStatus::AwaitingApproval, 'tema');
         $user = $this->users->find($userId);
@@ -210,7 +210,7 @@ final class PostServiceTest extends TestCase
             'onboarding_step' => 'done',
         ]);
         $expires = new \DateTimeImmutable('+30 days', new \DateTimeZone('America/Sao_Paulo'));
-        $this->users->saveInstagramAccount($userId, 'ig4', 'ana_ig', 'BUSINESS', 'token', $expires);
+        $this->users->saveInstagramAccount($userId, 'ig4', 'ana_ig', 'BUSINESS', 'token', $expires, 5);
         $user = $this->users->find($userId);
         $this->assertNotNull($user);
 

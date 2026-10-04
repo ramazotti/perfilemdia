@@ -438,9 +438,68 @@ class PostService
             return false;
         }
         $this->channel->sendText($chatId, Messages::novo());
+        $this->maybeSendPublishingAs($user, $chatId);
         $this->askWhere($chatId, $user);
 
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function showInstagramAccounts(array $user, int $chatId): void
+    {
+        $userId = (int) $user['id'];
+        $max = $this->access !== null ? $this->access->maxInstagramAccounts($userId) : 1;
+        $accounts = $this->users->listInstagramAccounts($userId);
+        if ($accounts === []) {
+            $this->channel->sendText($chatId, Messages::needInstagram());
+
+            return;
+        }
+        $active = $this->users->instagramAccount($userId);
+        $activeId = $active !== null ? (int) $active['id'] : 0;
+        $activeName = $active !== null ? (string) ($active['username'] ?? '') : '';
+        $state = $this->users->createOauthState($userId, 'add');
+        $url = rtrim(Config::get('APP_URL'), '/') . '/conectar.php?t=' . $state;
+        $this->channel->sendText(
+            $chatId,
+            Messages::instagramAccountsMenu(count($accounts), $max, $activeName),
+            Keyboards::instagramAccounts($accounts, $activeId, $max, $url),
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function handleInstagramAccountCallback(array $user, int $chatId, string $data): bool
+    {
+        if (preg_match('/^ig:pick:(\d+)$/', $data, $m) === 1) {
+            $accountId = (int) $m[1];
+            if (!$this->users->setActiveInstagramAccount((int) $user['id'], $accountId)) {
+                $this->channel->sendText($chatId, Messages::needInstagram());
+
+                return true;
+            }
+            $ig = $this->users->instagramAccountById($accountId, (int) $user['id']);
+            $name = is_array($ig) ? (string) ($ig['username'] ?? '') : '';
+            $this->channel->sendText($chatId, Messages::instagramPicked($name));
+
+            return true;
+        }
+        if (preg_match('/^ig:off:(\d+)$/', $data, $m) === 1) {
+            $accountId = (int) $m[1];
+            $ig = $this->users->instagramAccountById($accountId, (int) $user['id']);
+            $name = is_array($ig) ? (string) ($ig['username'] ?? '') : '';
+            if (!$this->users->disconnectInstagramAccount((int) $user['id'], $accountId)) {
+                return true;
+            }
+            $this->channel->sendText($chatId, Messages::instagramDisconnected($name));
+
+            return true;
+        }
+
+        return false;
     }
 
     private function clearPostWizard(int $userId): bool
@@ -597,7 +656,7 @@ class PostService
     {
         $theme = $this->extractTheme($message);
         $mediaGroupId = isset($message['media_group_id']) ? (string) $message['media_group_id'] : null;
-        $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId);
+        $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId, $this->activeInstagramAccountId($user));
         $this->rememberDestination($user, $postId);
         if ($inheritFrom !== null && (string) ($inheritFrom['destination'] ?? '') === 'story') {
             $this->posts->update($postId, ['destination' => 'story']);
@@ -626,7 +685,7 @@ class PostService
 
         $status = ($theme === null || $theme === '') ? PostStatus::AwaitingTheme : PostStatus::Generating;
         $this->users->update((int) $user['id'], ['pending_action' => null]);
-        $postId = $this->posts->create((int) $user['id'], $status, $theme);
+        $postId = $this->posts->create((int) $user['id'], $status, $theme, null, $this->activeInstagramAccountId($user));
         $this->rememberDestination($user, $postId);
         $this->rememberMedia($postId, 0, $file, (int) ($message['message_id'] ?? 0));
 
@@ -654,7 +713,7 @@ class PostService
         $messageId = (int) ($message['message_id'] ?? 0);
 
         if ($existing === null) {
-            $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId);
+            $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId, $this->activeInstagramAccountId($user));
             $this->rememberDestination($user, $postId);
             $this->rememberMedia($postId, 0, $file, $messageId);
             $this->waitForAlbum();
@@ -767,14 +826,15 @@ class PostService
 
                 $jpegPaths = array_map(static fn ($img) => $img->absolutePath, $normalized);
             }
+            $captionUser = $this->captionContext($user, $post);
             $profile = [
-                'display_name' => $user['display_name'] ?? null,
-                'profession' => $user['profession'] ?? null,
-                'city' => $user['city'] ?? null,
-                'tone' => $user['tone'] ?? null,
-                'contact_cta' => $user['contact_cta'] ?? null,
-                'about' => $user['about'] ?? null,
-                'fixed_hashtags' => $user['fixed_hashtags'] ?? null,
+                'display_name' => $captionUser['display_name'] ?? null,
+                'profession' => $captionUser['profession'] ?? null,
+                'city' => $captionUser['city'] ?? null,
+                'tone' => $captionUser['tone'] ?? null,
+                'contact_cta' => $captionUser['contact_cta'] ?? null,
+                'about' => $captionUser['about'] ?? null,
+                'fixed_hashtags' => $captionUser['fixed_hashtags'] ?? null,
             ];
             $previous = $post['caption'] !== null ? (string) $post['caption'] : null;
             $feedback = $post['last_feedback'] !== null ? (string) $post['last_feedback'] : null;
@@ -2584,7 +2644,7 @@ class PostService
             return;
         }
 
-        $ig = $this->users->instagramAccount((int) $user['id']);
+        $ig = $this->resolveInstagram($user, $post);
         if ($ig === null) {
             $this->posts->transition($postId, PostStatus::Publishing, PostStatus::AwaitingApproval);
             $this->channel->sendText($chatId, Messages::needInstagram());
@@ -2722,7 +2782,13 @@ class PostService
         ]);
 
         if ($e->kind === 'token') {
-            $this->users->markInstagramStatus((int) $user['id'], 'expired');
+            $post = $this->posts->find($postId);
+            $accountId = is_array($post) ? (int) ($post['instagram_account_id'] ?? 0) : 0;
+            if ($accountId > 0) {
+                $this->users->markInstagramStatusById($accountId, 'expired');
+            } else {
+                $this->users->markInstagramStatus((int) $user['id'], 'expired');
+            }
             $this->posts->transition($postId, PostStatus::Publishing, PostStatus::AwaitingApproval);
             $state = $this->users->createOauthState((int) $user['id']);
             $url = rtrim(Config::get('APP_URL'), '/') . '/conectar.php?t=' . $state;
@@ -3237,7 +3303,7 @@ class PostService
         }
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $this->channel->sendText($chatId, Messages::aiVideoStarted($seconds));
-        $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea);
+        $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
         SlowNotice::arm($postId, $chatId);
         $this->rememberDestination($user, $postId);
         $this->posts->update($postId, ['creative' => 1, 'video_seconds' => $seconds]);
@@ -3432,7 +3498,7 @@ class PostService
         if ($rolled !== '') {
             $this->channel->sendText($chatId, Messages::ideaFormatPicked($rolled));
         }
-        $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea);
+        $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
         $this->rememberDestination($user, $postId);
         $this->posts->update($postId, ['creative' => 1]);
 
@@ -3756,6 +3822,67 @@ class PostService
             return;
         }
         $this->posts->update($postId, ['destination' => 'story']);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function maybeSendPublishingAs(array $user, int $chatId): void
+    {
+        $accounts = $this->users->listInstagramAccounts((int) $user['id']);
+        if (count($accounts) <= 1) {
+            return;
+        }
+        $ig = $this->users->instagramAccount((int) $user['id']);
+        if ($ig === null) {
+            return;
+        }
+        $this->channel->sendText($chatId, Messages::publishingAs((string) ($ig['username'] ?? '')));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function activeInstagramAccountId(array $user): ?int
+    {
+        $ig = $this->users->instagramAccount((int) $user['id']);
+
+        return $ig !== null ? (int) $ig['id'] : null;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $post
+     * @return array<string, mixed>|null
+     */
+    private function resolveInstagram(array $user, ?array $post = null): ?array
+    {
+        if ($post !== null) {
+            $accountId = (int) ($post['instagram_account_id'] ?? 0);
+            if ($accountId > 0) {
+                $ig = $this->users->instagramAccountById($accountId, (int) $user['id']);
+                if ($ig !== null) {
+                    return $ig;
+                }
+            }
+        }
+
+        return $this->users->instagramAccount((int) $user['id']);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $post
+     * @return array<string, mixed>
+     */
+    private function captionContext(array $user, ?array $post = null): array
+    {
+        $accountId = $post !== null ? (int) ($post['instagram_account_id'] ?? 0) : 0;
+
+        return $this->users->userWithInstagramProfile(
+            $user,
+            $accountId > 0 ? $accountId : null,
+        );
     }
 
     private function aiAllowed(int $userId): bool
