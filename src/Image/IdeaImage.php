@@ -93,10 +93,9 @@ final class IdeaImage implements IdeaImageGenerator
         $hasReference = false;
         $referenceUrl = null;
         if ($referenceJpeg !== null && is_file($referenceJpeg)) {
-            $bytes = file_get_contents($referenceJpeg);
-            if ($bytes !== false && $bytes !== '') {
+            $referenceUrl = $this->referenceDataUrl($referenceJpeg);
+            if ($referenceUrl !== null) {
                 $hasReference = true;
-                $referenceUrl = 'data:image/jpeg;base64,' . base64_encode($bytes);
             }
         }
 
@@ -148,6 +147,25 @@ final class IdeaImage implements IdeaImageGenerator
         }
 
         return $this->toJpeg($binary);
+    }
+
+    private function referenceDataUrl(string $path): ?string
+    {
+        $bytes = file_get_contents($path);
+        if ($bytes === false || $bytes === '') {
+            return null;
+        }
+        $mime = 'image/jpeg';
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if (is_resource($finfo)) {
+            $detected = finfo_buffer($finfo, $bytes);
+            if (is_string($detected) && str_starts_with($detected, 'image/')) {
+                $mime = $detected;
+            }
+            finfo_close($finfo);
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 
     private function toJpeg(string $binary): string

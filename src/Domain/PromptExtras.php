@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PerfilEmDia\Domain;
 
 use PerfilEmDia\Config;
+use PerfilEmDia\Image\PhotoMark;
 
 /**
  * Palavra-gatilho no tema ou ideia liga texto e imagem extra ao prompt da IA.
@@ -119,6 +120,81 @@ final class PromptExtras
         }
 
         return null;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $matched
+     * @return list<string>
+     */
+    public static function allImageAbsolutes(array $matched): array
+    {
+        $paths = [];
+        foreach ($matched as $row) {
+            $path = self::absoluteImagePath((string) ($row['image_path'] ?? ''));
+            if ($path !== null) {
+                $paths[] = $path;
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $matched
+     */
+    public static function applyLogosToJpegBinary(string $jpeg, array $matched): string
+    {
+        $paths = self::allImageAbsolutes($matched);
+        if ($paths === [] || $jpeg === '') {
+            return $jpeg;
+        }
+        $file = tempnam(sys_get_temp_dir(), 'pe-brand-');
+        if ($file === false) {
+            return $jpeg;
+        }
+        $jpg = $file . '.jpg';
+        if (!@rename($file, $jpg)) {
+            $jpg = $file;
+        }
+        if (file_put_contents($jpg, $jpeg) === false) {
+            @unlink($jpg);
+
+            return $jpeg;
+        }
+        self::stampLogosOnFile($jpg, $paths);
+        $out = file_get_contents($jpg);
+        @unlink($jpg);
+
+        return is_string($out) && $out !== '' ? $out : $jpeg;
+    }
+
+    /**
+     * @param list<string> $absolutePaths
+     */
+    public static function stampLogosOnFile(string $jpegPath, array $absolutePaths): void
+    {
+        $places = ['tl', 'tr', 'bl', 'br'];
+        foreach ($absolutePaths as $index => $path) {
+            PhotoMark::stampPlate($jpegPath, $path, $places[$index] ?? 'br');
+        }
+    }
+
+    public static function isPromptExtraImagePath(?string $path): bool
+    {
+        if ($path === null || $path === '') {
+            return false;
+        }
+
+        return str_contains($path, '/storage/prompt_extras/');
+    }
+
+    public static function designedLogoBriefSuffix(array $matched): string
+    {
+        if (self::allImageAbsolutes($matched) === []) {
+            return '';
+        }
+
+        return ' Do not draw any company logo, wordmark, or brand symbol. Leave generous empty space at the top for real logos that are added after generation.';
     }
 
     public static function absoluteImagePath(string $relative): ?string

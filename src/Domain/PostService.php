@@ -2185,16 +2185,14 @@ class PostService
         $series = count(IdeaImage::pieces($idea, $aspect)) > 1;
         $reference = is_file($savedRef) ? $savedRef : (!$series && is_file($path) ? $path : null);
         $matchedExtras = $this->matchedPromptExtras($user, $post, $idea);
-        $reference ??= PromptExtras::firstImageAbsolute($matchedExtras);
+        $reference = $this->ideaApiReference($reference, $idea, $matchedExtras);
         try {
             $generator = $this->ideas ?? new IdeaImage();
-            $look = IdeaLook::brief(
-                $this->captionContext($user, $post),
-                PromptExtras::formatForImageBrief($matchedExtras),
-            );
+            $look = $this->ideaLookBrief($this->captionContext($user, $post), $idea, $matchedExtras);
             $frames = $generator instanceof IdeaImage
                 ? $generator->createSet($idea, $reference, $look, $aspect)
                 : [$generator->create($idea, $reference, $look, $aspect)];
+            $frames = $this->applyBrandLogoOverlays($frames, $idea, $matchedExtras);
             $this->storeIdeaFrames($postId, $frames, 0);
 
             return true;
@@ -3562,8 +3560,8 @@ class PostService
 
         $reference = $this->resolveIdeaReference($user, $postId, $message);
         $matchedExtras = $this->matchedPromptExtras($user, ['instagram_account_id' => $this->activeInstagramAccountId($user)], $idea);
-        $reference ??= PromptExtras::firstImageAbsolute($matchedExtras);
-        $look = IdeaLook::brief($profile, PromptExtras::formatForImageBrief($matchedExtras));
+        $reference = $this->ideaApiReference($reference, $idea, $matchedExtras);
+        $look = $this->ideaLookBrief($profile, $idea, $matchedExtras);
 
         try {
             $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '4:5';
@@ -3575,6 +3573,7 @@ class PostService
             $frames = $generator instanceof IdeaImage
                 ? $generator->createSet($idea, $reference, $look, $aspect)
                 : [$generator->create($idea, $reference, $look, $aspect)];
+            $frames = $this->applyBrandLogoOverlays($frames, $idea, $matchedExtras);
             $this->wakeDatabase();
             $this->storeIdeaFrames($postId, $frames, (int) ($message['message_id'] ?? 0));
             $this->generateAndPreview($userId, $chatId, $postId, $surprisePhrase === null);
@@ -3985,6 +3984,52 @@ class PostService
         }
 
         return PromptExtras::matched($this->promptExtraRepo()->listForAccount($accountId), $haystack);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $matchedExtras
+     */
+    private function ideaApiReference(?string $reference, string $idea, array $matchedExtras): ?string
+    {
+        if (PromptExtras::isPromptExtraImagePath($reference)) {
+            $reference = null;
+        }
+        if (IdeaImage::isDesigned($idea)) {
+            return $reference;
+        }
+
+        return $reference ?? PromptExtras::firstImageAbsolute($matchedExtras);
+    }
+
+    /**
+     * @param array<string, mixed> $profile
+     * @param list<array<string, mixed>> $matchedExtras
+     */
+    private function ideaLookBrief(array $profile, string $idea, array $matchedExtras): string
+    {
+        $look = IdeaLook::brief($profile, PromptExtras::formatForImageBrief($matchedExtras));
+        if (IdeaImage::isDesigned($idea)) {
+            $look .= PromptExtras::designedLogoBriefSuffix($matchedExtras);
+        }
+
+        return $look;
+    }
+
+    /**
+     * @param list<string> $frames
+     * @param list<array<string, mixed>> $matchedExtras
+     * @return list<string>
+     */
+    private function applyBrandLogoOverlays(array $frames, string $idea, array $matchedExtras): array
+    {
+        if (!IdeaImage::isDesigned($idea) || PromptExtras::allImageAbsolutes($matchedExtras) === []) {
+            return $frames;
+        }
+
+        return array_map(
+            static fn (string $jpeg): string => PromptExtras::applyLogosToJpegBinary($jpeg, $matchedExtras),
+            $frames,
+        );
     }
 
     private function aiAllowed(int $userId): bool
