@@ -2878,7 +2878,9 @@ class PostService
     private function offerPublishRetry(int $chatId, int $postId, InstagramApiException $e): void
     {
         $this->posts->update($postId, ['ig_container_id' => null, 'ig_media_id' => null]);
-        $this->posts->transition($postId, PostStatus::Publishing, PostStatus::AwaitingApproval);
+        if (!$this->posts->transition($postId, PostStatus::Publishing, PostStatus::AwaitingApproval)) {
+            $this->posts->update($postId, ['status' => PostStatus::AwaitingApproval->value]);
+        }
         $this->channel->sendText($chatId, Messages::publishFailed($this->publishReason($e)), Keyboards::publishRetry($postId));
     }
 
