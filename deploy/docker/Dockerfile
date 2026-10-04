@@ -46,7 +46,7 @@ COPY migrations migrations
 COPY public public
 COPY resources resources
 COPY src src
-RUN mkdir -p storage/logs storage/media storage/logos public/m \
+RUN mkdir -p storage/logs storage/media storage/logos storage/prompt_extras public/m \
     && chmod -R a+rX /var/www/html \
     && chown -R www-data:www-data storage public/m
 

@@ -195,7 +195,7 @@ final class AudioAcceptTest extends TestCase
             $channel,
             new EmptyNormalizer(),
             new class implements CaptionGeneratorInterface {
-                public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null): CaptionResult
+                public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null, ?string $promptExtras = null): CaptionResult
                 {
                     return new CaptionResult('legenda', [], 'alt', 'm', 'm', 1, 1);
                 }

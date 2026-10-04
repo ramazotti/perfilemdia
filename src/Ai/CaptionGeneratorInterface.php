@@ -16,5 +16,6 @@ interface CaptionGeneratorInterface
         array $jpegPaths,
         ?string $previousCaption = null,
         ?string $feedback = null,
+        ?string $promptExtras = null,
     ): CaptionResult;
 }

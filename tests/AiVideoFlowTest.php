@@ -159,7 +159,7 @@ final class AiVideoFlowTest extends TestCase
                 }
             },
             new class implements CaptionGeneratorInterface {
-                public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null): CaptionResult
+                public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null, ?string $promptExtras = null): CaptionResult
                 {
                     return new CaptionResult('Legenda do video', [], 'alt', 'l', 'm', 1, 1);
                 }

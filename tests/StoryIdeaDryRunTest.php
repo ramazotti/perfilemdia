@@ -219,7 +219,7 @@ final class DryRunIdea implements IdeaImageGenerator
 
 final class DryRunCaptions implements CaptionGeneratorInterface
 {
-    public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null): CaptionResult
+    public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null, ?string $promptExtras = null): CaptionResult
     {
         $text = 'Quero outra história, com outra reflexão sobre o dia da eleição. Seria algo assim, o que Jesus faria hoje? Que número ele escolheria?';
 

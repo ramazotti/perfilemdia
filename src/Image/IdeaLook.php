@@ -12,7 +12,7 @@ final class IdeaLook
     /**
      * @param array<string, mixed> $user
      */
-    public static function brief(array $user): string
+    public static function brief(array $user, string $promptExtras = ''): string
     {
         $tone = (string) ($user['tone'] ?? '');
         $bits = [self::tone($tone), self::composition($tone)];
@@ -35,6 +35,10 @@ final class IdeaLook
         $about = self::plain((string) ($user['about'] ?? ''));
         if ($about !== '') {
             $bits[] = 'Context from the profile: ' . $about . '.';
+        }
+        $extra = trim($promptExtras);
+        if ($extra !== '') {
+            $bits[] = $extra;
         }
 
         return implode(' ', $bits);

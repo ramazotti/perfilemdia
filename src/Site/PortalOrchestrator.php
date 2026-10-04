@@ -12,6 +12,8 @@ use PerfilEmDia\Config;
 use PerfilEmDia\Domain\IncomingMediaStash;
 use PerfilEmDia\Domain\PostRepository;
 use PerfilEmDia\Domain\PostService;
+use PerfilEmDia\Domain\PromptExtraRepository;
+use PerfilEmDia\Domain\PromptExtras;
 use PerfilEmDia\Domain\PostStatus;
 use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Image\PhraseColor;
@@ -82,6 +84,7 @@ final class PortalOrchestrator
                 'instagram_accounts' => [],
                 'max_instagram' => 1,
                 'active_account_id' => 0,
+                'prompt_extras' => [],
             ];
         }
         $user = $this->users->find($userId);
@@ -91,6 +94,7 @@ final class PortalOrchestrator
         $profile = $this->users->userForPerfil($user);
         $accounts = $this->users->listInstagramAccounts($userId);
         $activeId = (int) ($user['active_instagram_account_id'] ?? 0);
+        $profileAccountId = $this->users->resolveProfileAccountId($userId) ?? 0;
 
         return $view + [
             'profile' => $profile,
@@ -99,7 +103,107 @@ final class PortalOrchestrator
             'active_account_id' => $activeId,
             'idea_daily' => (int) ($user['idea_daily'] ?? 0) === 1,
             'logo_url' => $this->logoUrl($profile),
+            'prompt_extras' => $profileAccountId > 0 ? $this->promptExtraRepo()->listForAccount($profileAccountId) : [],
         ];
+    }
+
+    /**
+     * @param array<string, string> $fields
+     */
+    public function savePromptExtra(int $customerId, array $fields): int
+    {
+        $accountId = $this->requireProfileAccountId($customerId);
+        $id = isset($fields['extra_id']) && (int) $fields['extra_id'] > 0 ? (int) $fields['extra_id'] : null;
+
+        return $this->promptExtraRepo()->save(
+            $accountId,
+            $id,
+            (string) ($fields['trigger_word'] ?? ''),
+            (string) ($fields['prompt_text'] ?? ''),
+        );
+    }
+
+    public function deletePromptExtra(int $customerId, int $extraId): void
+    {
+        $accountId = $this->requireProfileAccountId($customerId);
+        $this->promptExtraRepo()->delete($accountId, $extraId);
+    }
+
+    public function savePromptExtraImage(int $customerId, int $extraId, string $sourcePath): void
+    {
+        $accountId = $this->requireProfileAccountId($customerId);
+        if ($this->promptExtraRepo()->findForAccount($extraId, $accountId) === null) {
+            throw new RuntimeException('Extra não encontrado.');
+        }
+        $saved = $this->storeExtraImage($accountId, $extraId, $sourcePath);
+        if ($saved === null) {
+            throw new RuntimeException('Use uma imagem PNG ou JPEG.');
+        }
+        $this->promptExtraRepo()->setImagePath($accountId, $extraId, $saved);
+    }
+
+    public function promptExtraImagePath(int $customerId, int $extraId): ?string
+    {
+        $userId = $this->userIdForCustomer($customerId);
+        if ($userId < 1) {
+            return null;
+        }
+        $accountId = $this->users->resolveProfileAccountId($userId);
+        if ($accountId === null) {
+            return null;
+        }
+        $row = $this->promptExtraRepo()->findForAccount($extraId, $accountId);
+        if ($row === null) {
+            return null;
+        }
+
+        return PromptExtras::absoluteImagePath((string) ($row['image_path'] ?? ''));
+    }
+
+    private function requireProfileAccountId(int $customerId): int
+    {
+        $userId = $this->requireUser($customerId);
+        $accountId = $this->users->resolveProfileAccountId($userId);
+        if ($accountId === null) {
+            throw new RuntimeException('Conecte uma conta Instagram antes de configurar extras.');
+        }
+
+        return $accountId;
+    }
+
+    private function promptExtraRepo(): PromptExtraRepository
+    {
+        return new PromptExtraRepository($this->pdo);
+    }
+
+    private function storeExtraImage(int $accountId, int $extraId, string $source): ?string
+    {
+        $dir = Config::root() . '/storage/prompt_extras';
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+            return null;
+        }
+        $dest = $dir . '/a' . $accountId . '_e' . $extraId . '.png';
+        if (extension_loaded('imagick') && class_exists(\Imagick::class)) {
+            try {
+                $image = new \Imagick($source);
+                $image->setImageFormat('png');
+                $image->writeImage($dest);
+                $image->clear();
+
+                return 'storage/prompt_extras/a' . $accountId . '_e' . $extraId . '.png';
+            } catch (\Throwable) {
+            }
+        }
+        $raw = file_get_contents($source);
+        $gd = is_string($raw) ? @imagecreatefromstring($raw) : false;
+        if ($gd === false) {
+            return null;
+        }
+        imagesavealpha($gd, true);
+        $ok = imagepng($gd, $dest);
+        imagedestroy($gd);
+
+        return $ok ? 'storage/prompt_extras/a' . $accountId . '_e' . $extraId . '.png' : null;
     }
 
     public function setActiveAccount(int $customerId, int $accountId): void

@@ -848,12 +848,19 @@ class PostService
             if ($isVideo && $jpegPaths === []) {
                 $theme .= "\nIsto é um vídeo curto. Escreva a legenda só com o que a pessoa contou, sem inventar o que aparece.";
             }
+            $matchedExtras = $this->matchedPromptExtras(
+                $user,
+                $post,
+                (string) ($post['theme_text'] ?? ''),
+                $feedback ?? '',
+            );
             $result = $this->captions->generate(
                 $profile,
                 $theme,
                 $jpegPaths,
                 $previous,
                 $feedback,
+                PromptExtras::formatForCaption($matchedExtras),
             );
 
             $this->posts->update($postId, [
@@ -2177,9 +2184,14 @@ class PostService
         $idea = (string) ($post['theme_text'] ?? '');
         $series = count(IdeaImage::pieces($idea, $aspect)) > 1;
         $reference = is_file($savedRef) ? $savedRef : (!$series && is_file($path) ? $path : null);
+        $matchedExtras = $this->matchedPromptExtras($user, $post, $idea);
+        $reference ??= PromptExtras::firstImageAbsolute($matchedExtras);
         try {
             $generator = $this->ideas ?? new IdeaImage();
-            $look = IdeaLook::brief($this->captionContext($user, $post));
+            $look = IdeaLook::brief(
+                $this->captionContext($user, $post),
+                PromptExtras::formatForImageBrief($matchedExtras),
+            );
             $frames = $generator instanceof IdeaImage
                 ? $generator->createSet($idea, $reference, $look, $aspect)
                 : [$generator->create($idea, $reference, $look, $aspect)];
@@ -3549,6 +3561,9 @@ class PostService
         $this->posts->update($postId, ['creative' => 1]);
 
         $reference = $this->resolveIdeaReference($user, $postId, $message);
+        $matchedExtras = $this->matchedPromptExtras($user, ['instagram_account_id' => $this->activeInstagramAccountId($user)], $idea);
+        $reference ??= PromptExtras::firstImageAbsolute($matchedExtras);
+        $look = IdeaLook::brief($profile, PromptExtras::formatForImageBrief($matchedExtras));
 
         try {
             $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '4:5';
@@ -3558,8 +3573,8 @@ class PostService
             }
             $generator = $this->ideas ?? new IdeaImage();
             $frames = $generator instanceof IdeaImage
-                ? $generator->createSet($idea, $reference, IdeaLook::brief($profile), $aspect)
-                : [$generator->create($idea, $reference, IdeaLook::brief($profile), $aspect)];
+                ? $generator->createSet($idea, $reference, $look, $aspect)
+                : [$generator->create($idea, $reference, $look, $aspect)];
             $this->wakeDatabase();
             $this->storeIdeaFrames($postId, $frames, (int) ($message['message_id'] ?? 0));
             $this->generateAndPreview($userId, $chatId, $postId, $surprisePhrase === null);
@@ -3943,6 +3958,33 @@ class PostService
         $needle = mb_substr($who, 0, min(48, mb_strlen($who)));
 
         return $needle !== '' && mb_stripos($stored, $needle) !== false;
+    }
+
+    private function promptExtraRepo(): PromptExtraRepository
+    {
+        return new PromptExtraRepository(Db::pdo());
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $post
+     * @return list<array<string, mixed>>
+     */
+    private function matchedPromptExtras(array $user, ?array $post, string ...$textParts): array
+    {
+        $accountId = $post !== null ? (int) ($post['instagram_account_id'] ?? 0) : 0;
+        if ($accountId <= 0) {
+            $accountId = $this->users->resolveProfileAccountId((int) $user['id']) ?? 0;
+        }
+        if ($accountId <= 0) {
+            return [];
+        }
+        $haystack = trim(implode("\n", array_filter($textParts, static fn (string $p): bool => trim($p) !== '')));
+        if ($haystack === '') {
+            return [];
+        }
+
+        return PromptExtras::matched($this->promptExtraRepo()->listForAccount($accountId), $haystack);
     }
 
     private function aiAllowed(int $userId): bool

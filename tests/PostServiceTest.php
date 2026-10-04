@@ -432,6 +432,7 @@ final class FakeCaptions implements CaptionGeneratorInterface
         array $jpegPaths,
         ?string $previousCaption = null,
         ?string $feedback = null,
+        ?string $promptExtras = null,
     ): CaptionResult {
         return new CaptionResult(
             'legenda',

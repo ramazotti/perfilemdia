@@ -52,6 +52,7 @@ PROMPT;
         ?string $previousCaption,
         ?string $feedback,
         int $photoCount,
+        ?string $promptExtras = null,
     ): string {
         $name = self::field($profile['display_name'] ?? null);
         $profession = self::field($profile['profession'] ?? null);
@@ -74,6 +75,13 @@ PROMPT;
             'Tema do post: ' . $theme,
             'Quantidade de fotos: ' . $photoCount,
         ];
+
+        $extras = trim((string) ($promptExtras ?? ''));
+        if ($extras !== '') {
+            $parts[] = '';
+            $parts[] = 'Contexto extra (marca ou palavra-chave citada no tema). Use só o que couber; não invente fatos além disso:';
+            $parts[] = $extras;
+        }
 
         if ($contactRaw === '') {
             $parts[] = 'Na chamada para aÃ§Ã£o, convide de forma natural ao tema do post ou ao serviÃ§o. Sem direct, DM, inbox ou mensagem privada.';

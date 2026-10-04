@@ -36,6 +36,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
         array $jpegPaths,
         ?string $previousCaption = null,
         ?string $feedback = null,
+        ?string $promptExtras = null,
     ): CaptionResult {
         Config::load();
         $this->story = str_starts_with($theme, "[[story]]\n");
@@ -57,7 +58,7 @@ final class CaptionGenerator implements CaptionGeneratorInterface
         if ($previousCaption !== null && $contact !== '') {
             $previousCaption = self::withoutRepeatedContact($previousCaption, $contact);
         }
-        $userText = Prompts::user($profile, $theme, $previousCaption, $feedback, count($jpegPaths));
+        $userText = Prompts::user($profile, $theme, $previousCaption, $feedback, count($jpegPaths), $promptExtras);
 
         $response = $this->requestWithFailover($primaryModel, $fallbackModel, $imageBlocks, $userText, $maxTokens);
         $this->rejectProviderError($response['body']);

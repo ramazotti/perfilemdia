@@ -454,7 +454,7 @@ final class ImageEditTest extends TestCase
             $channel,
             new CopyJpegNormalizer(),
             new class implements CaptionGeneratorInterface {
-                public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null): CaptionResult
+                public function generate(array $profile, string $theme, array $jpegPaths, ?string $previousCaption = null, ?string $feedback = null, ?string $promptExtras = null): CaptionResult
                 {
                     return new CaptionResult('l', [], 'a', 'l', 'm', 1, 1);
                 }

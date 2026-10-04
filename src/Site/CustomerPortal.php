@@ -81,6 +81,9 @@ final class CustomerPortal
         if ($path === '/minha-conta/logo') {
             return $this->serveLogo($customerId);
         }
+        if (preg_match('#^/minha-conta/extra/(\d+)$#', $path, $extraMatch) === 1) {
+            return $this->servePromptExtraImage($customerId, (int) $extraMatch[1]);
+        }
         if ($path === '/minha-conta/publicar/estado') {
             return $this->studioJson($customerId);
         }
@@ -147,6 +150,58 @@ final class CustomerPortal
     {
         header('Location: ' . Layout::url(ltrim($path, '/')));
         exit;
+    }
+
+    private function savePromptExtra(int $customerId): void
+    {
+        $extraId = $this->portal()->savePromptExtra($customerId, [
+            'extra_id' => (string) ($_POST['extra_id'] ?? ''),
+            'trigger_word' => (string) ($_POST['trigger_word'] ?? ''),
+            'prompt_text' => (string) ($_POST['prompt_text'] ?? ''),
+        ]);
+        if (isset($_FILES['extra_image']) && is_array($_FILES['extra_image'])
+            && ($_FILES['extra_image']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $tmp = (string) ($_FILES['extra_image']['tmp_name'] ?? '');
+            if ($tmp !== '' && is_uploaded_file($tmp)) {
+                $this->portal()->savePromptExtraImage($customerId, $extraId, $tmp);
+            }
+        }
+    }
+
+    private function uploadPromptExtraImage(int $customerId): void
+    {
+        if (!isset($_FILES['extra_image']) || !is_array($_FILES['extra_image'])) {
+            throw new RuntimeException('Escolha uma imagem.');
+        }
+        $file = $_FILES['extra_image'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            throw new RuntimeException('Não foi possível receber a imagem.');
+        }
+        $tmp = (string) ($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            throw new RuntimeException('Upload inválido.');
+        }
+        $this->portal()->savePromptExtraImage($customerId, (int) ($_POST['extra_id'] ?? 0), $tmp);
+    }
+
+    private function servePromptExtraImage(int $customerId, int $extraId): bool
+    {
+        if ($customerId < 1) {
+            http_response_code(401);
+
+            return true;
+        }
+        $path = $this->portal()->promptExtraImagePath($customerId, $extraId);
+        if ($path === null) {
+            http_response_code(404);
+
+            return true;
+        }
+        header('Content-Type: image/png');
+        header('Cache-Control: private, max-age=3600');
+        readfile($path);
+
+        return true;
     }
 
     private function serveLogo(int $customerId): bool
@@ -237,6 +292,9 @@ final class CustomerPortal
                 'studio_cb' => $this->portal()->studioCallback($customerId, (string) ($_POST['callback'] ?? '')),
                 'studio_upload' => $this->studioUpload($customerId),
                 'studio_reset' => $this->portal()->studioReset($customerId),
+                'extra_save' => $this->savePromptExtra($customerId),
+                'extra_delete' => $this->portal()->deletePromptExtra($customerId, (int) ($_POST['extra_id'] ?? 0)),
+                'extra_image' => $this->uploadPromptExtraImage($customerId),
                 default => throw new RuntimeException('AÃ§Ã£o desconhecida.'),
             };
             if (!isset($_SESSION['account_error'])) {
@@ -258,7 +316,7 @@ final class CustomerPortal
         if (str_starts_with($action, 'studio_')) {
             return '/minha-conta/publicar';
         }
-        if (in_array($action, ['perfil', 'prefs', 'logo', 'conta_ig'], true)) {
+        if (in_array($action, ['perfil', 'prefs', 'logo', 'conta_ig', 'extra_save', 'extra_delete', 'extra_image'], true)) {
             return '/minha-conta/perfil';
         }
 
@@ -349,6 +407,9 @@ final class CustomerPortal
             'logo' => 'Logo atualizada.',
             'studio_msg', 'studio_cb', 'studio_upload' => '',
             'studio_reset' => 'Conversa reiniciada.',
+            'extra_save' => 'Extra salvo.',
+            'extra_delete' => 'Extra removido.',
+            'extra_image' => 'Imagem do extra atualizada.',
             default => 'Pronto.',
         };
     }
@@ -797,6 +858,7 @@ final class CustomerPortal
             . '<button class="btn btn-primary" type="submit">Salvar perfil</button>',
         );
         $html .= '</div>';
+        $html .= $this->htmlPromptExtras($bundle);
         $logoUrl = (string) ($bundle['logo_url'] ?? '');
         $html .= '<div class="box" style="margin-top:20px"><h2>Logo</h2>';
         $html .= '<div class="portal-logo-row">';
@@ -844,6 +906,65 @@ final class CustomerPortal
         );
         $html .= '</div></div></section>';
         $html .= $this->portalFileScript();
+
+        return $html;
+    }
+
+    /**
+     * @param array<string, mixed> $bundle
+     */
+    private function htmlPromptExtras(array $bundle): string
+    {
+        $extras = is_array($bundle['prompt_extras'] ?? null) ? $bundle['prompt_extras'] : [];
+        $html = '<div class="box" style="margin-top:20px"><h2>Extras para a IA</h2>';
+        $html .= '<p class="meta">Quando o tema ou a ideia citar a palavra-gatilho, o texto (e a imagem, se houver) entram no prompt da legenda e da foto por IA. Ex.: adesig, sigsistem.</p>';
+        foreach ($extras as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            $trigger = (string) ($row['trigger_word'] ?? '');
+            $text = (string) ($row['prompt_text'] ?? '');
+            $hasImage = trim((string) ($row['image_path'] ?? '')) !== '';
+            $html .= '<div class="portal-extra-card">';
+            $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload-form">';
+            $html .= '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">';
+            $html .= '<input type="hidden" name="action" value="extra_save">';
+            $html .= '<input type="hidden" name="extra_id" value="' . $id . '">';
+            $html .= '<div class="portal-extra-head">';
+            if ($hasImage) {
+                $html .= '<img class="portal-extra-thumb" src="' . Layout::e(Layout::url('minha-conta/extra/' . $id)) . '" alt="">';
+            }
+            $html .= '<div class="field"><label for="trigger-' . $id . '">Gatilho</label>';
+            $html .= '<input class="in" id="trigger-' . $id . '" name="trigger_word" value="' . Layout::e($trigger) . '" required></div>';
+            $html .= '</div>';
+            $html .= '<div class="field"><label for="prompt-' . $id . '">Texto para a IA</label>';
+            $html .= '<textarea class="in" id="prompt-' . $id . '" name="prompt_text" rows="4" required>' . Layout::e($text) . '</textarea></div>';
+            $html .= $this->fileUploadField('extra-file-' . $id, 'extra_image', 'image/*');
+            $html .= '<p class="hint">Deixe o arquivo vazio para manter a imagem atual.</p>';
+            $html .= '<div class="portal-form-actions portal-form-actions--split">';
+            $html .= '<button class="btn btn-primary" type="submit">Salvar extra</button>';
+            $html .= '</div></form>';
+            $html .= $this->form(
+                'extra_delete',
+                '<input type="hidden" name="extra_id" value="' . $id . '"><button class="btn btn-ghost" type="submit">Remover</button>',
+                'Remover este extra?',
+                'portal-inline-form',
+            );
+            $html .= '</div>';
+        }
+        if (count($extras) < \PerfilEmDia\Domain\PromptExtras::MAX_PER_ACCOUNT) {
+            $html .= '<div class="portal-extra-card portal-extra-card--new">';
+            $html .= '<h3 class="portal-panel-title">Novo extra</h3>';
+            $html .= '<form method="post" enctype="multipart/form-data" class="portal-upload-form">';
+            $html .= '<input type="hidden" name="csrf" value="' . Layout::e(Layout::csrf()) . '">';
+            $html .= '<input type="hidden" name="action" value="extra_save">';
+            $html .= '<div class="field"><label for="trigger-new">Gatilho</label>';
+            $html .= '<input class="in" id="trigger-new" name="trigger_word" placeholder="adesig" required></div>';
+            $html .= '<div class="field"><label for="prompt-new">Texto para a IA</label>';
+            $html .= '<textarea class="in" id="prompt-new" name="prompt_text" rows="4" placeholder="Marca, tom, o que mostrar na arte..." required></textarea></div>';
+            $html .= $this->fileUploadField('extra-file-new', 'extra_image', 'image/*');
+            $html .= '<div class="portal-form-actions"><button class="btn btn-primary" type="submit">Adicionar extra</button></div>';
+            $html .= '</form></div>';
+        }
+        $html .= '</div>';
 
         return $html;
     }
