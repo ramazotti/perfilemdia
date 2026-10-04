@@ -34,6 +34,15 @@ final class AccountPortalTest extends TestCase
         }
     }
 
+    public function testAccessTokenCanBeOpenedMoreThanOnceBeforeExpiry(): void
+    {
+        $customerId = $this->customerId();
+        $access = new CustomerAccess($this->pdo);
+        $token = $this->token($access->urlForCustomer($customerId));
+        $this->assertSame($customerId, $access->consume($token));
+        $this->assertSame($customerId, $access->consume($token));
+    }
+
     public function testLinkExpiresAndANewerLinkReplacesIt(): void
     {
         $customerId = $this->customerId();

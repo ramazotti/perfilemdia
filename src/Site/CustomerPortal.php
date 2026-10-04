@@ -59,7 +59,7 @@ final class CustomerPortal
             if ($customerId === null) {
                 Layout::page(
                     'Link vencido',
-                    '<section class="center-page"><div><h1>Esse link venceu</h1><p>No Telegram, envie /assinatura para receber um link novo. Ele vale 12 horas.</p></div></section>',
+                    '<section class="center-page"><div><h1>Esse link venceu</h1><p>No Telegram, envie /assinatura de novo e abra o link da mensagem mais recente. Cada link vale 12 horas.</p></div></section>',
                     '',
                     410,
                 );

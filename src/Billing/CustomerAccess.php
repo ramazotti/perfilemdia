@@ -76,15 +76,6 @@ final class CustomerAccess
                 return null;
             }
             $customerId = (int) $row['customer_id'];
-            $del = $this->pdo->prepare('DELETE FROM customer_access_tokens WHERE token_hash = ?');
-            $del->execute([$hash]);
-            if ($del->rowCount() !== 1) {
-                if ($own) {
-                    $this->pdo->rollBack();
-                }
-
-                return null;
-            }
             if ($own) {
                 $this->pdo->commit();
             }
