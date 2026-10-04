@@ -365,6 +365,12 @@ final class UpdateHandler
 
             return;
         }
+        if ($data === 'pk:formatos') {
+            $this->channel->answerCallback($callbackId);
+            $this->channel->sendText($chatId, Messages::ideaFormats());
+
+            return;
+        }
         if (str_starts_with($data, 'pk:')) {
             $this->channel->answerCallback($callbackId);
             $this->postsService->choosePostKind($user, $chatId, substr($data, 3));

@@ -6,6 +6,9 @@ namespace PerfilEmDia\Tests;
 
 use PerfilEmDia\Image\IdeaImage;
 use PerfilEmDia\Image\IdeaPieces;
+use PerfilEmDia\Messages;
+use PerfilEmDia\Telegram\Keyboards;
+use PerfilEmDia\Telegram\SlowNotice;
 use PHPUnit\Framework\TestCase;
 
 final class IdeaImagePromptTest extends TestCase
@@ -116,6 +119,22 @@ final class IdeaImagePromptTest extends TestCase
 
         $this->assertStringContainsString('No text, letters, numbers, logos, or watermarks.', $prompt);
         $this->assertStringContainsString('4:5', $prompt);
+    }
+
+    public function testFormatListStaysBehindTheButton(): void
+    {
+        $this->assertStringNotContainsString('infográfico', Messages::kindIa());
+        $this->assertStringNotContainsString('infográfico', Messages::kindStoryIa());
+        $this->assertStringContainsString('infográfico', Messages::ideaFormats());
+        $flat = [];
+        foreach (Keyboards::surpriseMe() as $row) {
+            foreach ($row as $button) {
+                $flat[] = $button['callback_data'] ?? '';
+            }
+        }
+        $this->assertContains('pk:formatos', $flat);
+        $this->assertTrue(SlowNotice::shouldPing('GENERATING'));
+        $this->assertFalse(SlowNotice::shouldPing('AWAITING_APPROVAL'));
     }
 
     public function testFormatLotteryStaysOnSurprise(): void

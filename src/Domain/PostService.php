@@ -14,6 +14,7 @@ use PerfilEmDia\Channel\ChannelInterface;
 use PerfilEmDia\Config;
 use PerfilEmDia\Db;
 use PerfilEmDia\Growth\BenefitOrchestrator;
+use PerfilEmDia\Telegram\SlowNotice;
 use PerfilEmDia\Image\IdeaImage;
 use PerfilEmDia\Image\IdeaPieces;
 use PerfilEmDia\Image\IdeaLook;
@@ -3237,6 +3238,7 @@ class PostService
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $this->channel->sendText($chatId, Messages::aiVideoStarted($seconds));
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea);
+        SlowNotice::arm($postId, $chatId);
         $this->rememberDestination($user, $postId);
         $this->posts->update($postId, ['creative' => 1, 'video_seconds' => $seconds]);
         $reference = null;
@@ -3425,7 +3427,7 @@ class PostService
         if ($surprisePhrase !== null) {
             $this->channel->sendText($chatId, $designed ? Messages::surpriseStartedDesign() : Messages::surpriseStarted());
         } else {
-            $this->channel->sendText($chatId, Messages::received());
+            $this->channel->sendText($chatId, Messages::ideaWorking());
         }
         if ($rolled !== '') {
             $this->channel->sendText($chatId, Messages::ideaFormatPicked($rolled));

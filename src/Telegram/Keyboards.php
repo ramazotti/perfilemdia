@@ -469,7 +469,10 @@ final class Keyboards
      */
     public static function surpriseMe(): array
     {
-        return [[['text' => 'Surpreenda-me (IA decide)', 'callback_data' => 'pk:surpresa']]];
+        return [
+            [['text' => 'Surpreenda-me (IA decide)', 'callback_data' => 'pk:surpresa']],
+            [['text' => 'Ver formatos', 'callback_data' => 'pk:formatos']],
+        ];
     }
 
     /**

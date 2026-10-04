@@ -87,7 +87,7 @@ final class Messages
             . "/excluirconta apagar seus dados e começar do zero\n"
             . "/chamado abrir ou ver um chamado\n/ideia ideia para o post de hoje\n/resultado alcance dos últimos dias\n/marca cor e estilo da marca\n"
             . "/ajuda esta lista\n\n"
-            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. /novo pergunta o tipo: foto única, carrossel, vídeo curto ou criado pela IA. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio. Na ideia, estas palavras mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. 3 slides no feed, até 10, ou 3 telas no story, até 3. O sorteio do desenho fica só no Surpreenda-me.";
+            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio. Nesse post, toque em Ver formatos para infográfico, citação e os outros desenhos.";
     }
 
     public static function status(string $ig, int $used, int $limit): string
@@ -643,7 +643,7 @@ final class Messages
 
     public static function kindStoryIa(): string
     {
-        return 'Manda a ideia em uma mensagem. A imagem sai em tela cheia. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me.' . self::ideaFormats();
+        return 'Manda a ideia em uma mensagem. A imagem sai em tela cheia. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me.';
     }
 
     public static function kindAlbum(): string
@@ -658,14 +658,25 @@ final class Messages
 
     public static function kindIa(): string
     {
-        return 'Manda a ideia em uma mensagem. Esse texto é o pedido: a imagem e a legenda saem a partir dele. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me, que eu monto a foto, o texto e a marca.' . self::ideaFormats();
+        return 'Manda a ideia em uma mensagem. Esse texto é o pedido: a imagem e a legenda saem a partir dele. Se quiser, manda uma foto junto, só como referência. Ou toque em Surpreenda-me, que eu monto a foto, o texto e a marca.';
     }
 
 
     public static function ideaFormats(): string
     {
-        return "\n\nPalavras que mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. "
-            . "3 slides no feed fazem uma sequência, até 10. No story, 3 telas, até 3, e a frase não entra por cima. O sorteio do desenho fica só no Surpreenda-me.";
+        return "Palavras que mudam o desenho: infográfico, citação, checklist, comparativo, antes e depois, passo a passo. "
+            . "3 slides no feed fazem uma sequência, até 10. No story, 3 telas, até 3, e a frase não entra por cima. "
+            . "No Surpreenda-me, se você não disser o formato, eu sorteio.";
+    }
+
+    public static function ideaWorking(): string
+    {
+        return 'Estou montando a imagem. Aviso quando a prévia ficar pronta.';
+    }
+
+    public static function ideaStillWorking(): string
+    {
+        return 'Ainda estou montando a imagem. Pode levar mais um pouco.';
     }
 
     public static function kindIaNeedText(): string

@@ -4,6 +4,9 @@
          bootstrap="vendor/autoload.php"
          colors="true"
          cacheDirectory=".phpunit.cache">
+    <php>
+        <env name="PERFILEMDIA_DISABLE_SLOW_NOTICE" value="1" force="true"/>
+    </php>
     <testsuites>
         <testsuite name="default">
             <directory>tests</directory>
