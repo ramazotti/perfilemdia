@@ -346,7 +346,7 @@ final class BenefitOrchestrator
     {
         return self::profileSignalMatches(
             self::profileSignalText($user),
-            '/confiss|consci[eê]ncia|cat[oó]lic|espiritual|or[aã]|igreja|ter[cç]o|b[ií]bl|evangel|sacramento|penit[eê]ncia/u',
+            '/confiss|consci[eê]ncia|cat[oó]lic|espiritual|\bora[cç][aã]o|\bigreja|ter[cç]o|b[ií]bl|evangel|sacramento|penit[eê]ncia|exame de consci/u',
         );
     }
 
