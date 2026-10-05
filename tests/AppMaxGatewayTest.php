@@ -98,6 +98,20 @@ final class AppMaxGatewayTest extends TestCase
         $this->assertStringEndsWith('/order/127513372', $http->calls[0][1]);
     }
 
+    public function testSettlementIgnoresNegativePartnerTotal(): void
+    {
+        $http = new ScriptedPoster([
+            ['status' => 200, 'body' => ['success' => true, 'data' => [
+                'total' => 0.99,
+                'partner_total' => -0.01,
+                'status' => 'aprovado',
+            ]]],
+        ]);
+        $gateway = new AppMaxGateway($this->pdo, $http, 'v3-token');
+
+        $this->assertNull($gateway->settlement('127858630'));
+    }
+
     public function testCardChargeSendsTokenNotPan(): void
     {
         $http = new ScriptedPoster([

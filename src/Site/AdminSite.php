@@ -449,10 +449,14 @@ final class AdminSite
             } catch (\Throwable) {
                 continue;
             }
-            if ($settlement === null) {
+            if ($settlement === null || $settlement['net_cents'] < 0) {
                 continue;
             }
-            $update->execute([$settlement['net_cents'], (int) $row['id']]);
+            try {
+                $update->execute([$settlement['net_cents'], (int) $row['id']]);
+            } catch (\Throwable) {
+                continue;
+            }
         }
     }
 

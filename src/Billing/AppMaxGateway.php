@@ -281,9 +281,15 @@ final class AppMaxGateway implements PaymentGateway
             return null;
         }
 
+        $grossCents = (int) round((float) $gross * 100);
+        $netCents = (int) round((float) $net * 100);
+        if ($grossCents < 0 || $netCents < 0) {
+            return null;
+        }
+
         return [
-            'gross_cents' => (int) round((float) $gross * 100),
-            'net_cents' => (int) round((float) $net * 100),
+            'gross_cents' => $grossCents,
+            'net_cents' => $netCents,
         ];
     }
 
