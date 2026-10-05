@@ -190,8 +190,7 @@ final class AdminSite
         $q = trim((string) ($_GET['q'] ?? ''));
         $status = (string) ($_GET['status'] ?? '');
         $sql = 'SELECT c.*, p.name AS plan_name, s.cycle AS plan_cycle, s.price_cents AS plan_price,
-                s.posts_limit AS plan_posts, s.current_period_end, s.comp_forever, s.comp_until, s.period_kind,
-                ig.username AS ig_username, ig.status AS ig_status
+                s.posts_limit AS plan_posts, s.current_period_end, s.comp_forever, s.comp_until, s.period_kind
             FROM customers c
             LEFT JOIN subscriptions s ON s.id = (
                 SELECT s2.id FROM subscriptions s2
@@ -205,7 +204,6 @@ final class AdminSite
                 LIMIT 1
             )
             LEFT JOIN plans p ON p.id = s.plan_id
-            LEFT JOIN instagram_accounts ig ON ig.user_id = c.user_id
             WHERE 1=1';
         $args = [];
         if ($q !== '') {
@@ -220,16 +218,22 @@ final class AdminSite
         $sql .= ' ORDER BY c.id DESC LIMIT 100';
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($args);
+        $customerRows = $stmt->fetchAll();
+        $igByUser = $this->instagramAccountsByUserIds(array_map(
+            static fn (array $row): int => (int) ($row['user_id'] ?? 0),
+            $customerRows,
+        ));
         $rows = '';
-        foreach ($stmt->fetchAll() as $row) {
+        foreach ($customerRows as $row) {
             $phone = \PerfilEmDia\Billing\Phone::format((string) $row['phone']);
+            $userId = (int) ($row['user_id'] ?? 0);
             $rows .= '<tr data-href="' . Layout::e(Layout::url('admin/clientes/' . $row['id'])) . '">'
                 . '<td>' . Layout::e((string) $row['name'])
                 . '<span class="sub">' . Layout::e((string) $row['email']) . '</span>'
                 . ($phone !== '' ? '<span class="sub">' . Layout::e($phone) . '</span>' : '')
                 . '</td>'
                 . '<td class="keep">' . $this->customerPlanCell($row) . '</td>'
-                . '<td class="keep">' . $this->customerIgCell($row) . '</td>'
+                . '<td class="keep">' . $this->customerIgsCell($igByUser[$userId] ?? []) . '</td>'
                 . '<td class="keep">' . $this->customerWhenCell($row) . '</td>'
                 . '<td class="keep">' . Layout::e((string) $row['document']) . '</td>'
                 . '<td class="keep">' . $this->pill((string) $row['status']) . '</td></tr>';
@@ -352,7 +356,7 @@ final class AdminSite
                 ORDER BY c2.id DESC
                 LIMIT 1
             )
-            LEFT JOIN instagram_accounts ig ON ig.user_id = p.user_id';
+            LEFT JOIN instagram_accounts ig ON ig.id = COALESCE(p.instagram_account_id, u.active_instagram_account_id)';
         $args = [];
         if ($status !== '') {
             $sql .= ' WHERE p.status = ?';
@@ -573,13 +577,14 @@ final class AdminSite
                 c.id AS customer_id, c.name AS customer_name, u.display_name, ig.username AS ig_username
             FROM events e
             LEFT JOIN users u ON u.id = e.user_id
+            LEFT JOIN posts post ON post.id = e.post_id
             LEFT JOIN customers c ON c.id = (
                 SELECT c2.id FROM customers c2
                 WHERE c2.user_id = e.user_id AND c2.status <> \'excluido\'
                 ORDER BY c2.id DESC
                 LIMIT 1
             )
-            LEFT JOIN instagram_accounts ig ON ig.user_id = e.user_id';
+            LEFT JOIN instagram_accounts ig ON ig.id = COALESCE(post.instagram_account_id, u.active_instagram_account_id)';
         $args = [];
         if ($type !== '') {
             $sql .= ' WHERE e.type LIKE ?';
@@ -1031,14 +1036,14 @@ final class AdminSite
     {
         $hints = [
             'painel' => 'Os números do dia: quem pagou e ainda não abriu o bot, o líquido que a AppMax repassa, conexão perto de vencer e post que falhou.',
-            'clientes' => 'Aguardando ativação significa que o pagamento existe e o código ainda não foi enviado no Telegram. No detalhe do cliente, Isenção libera o plano para sempre ou até uma data, sem cobrança. A lista mostra o plano, a vigência, o Instagram e o celular.',
+            'clientes' => 'Aguardando ativação significa que o pagamento existe e o código ainda não foi enviado no Telegram. No detalhe do cliente, Isenção libera o plano para sempre ou até uma data, sem cobrança. Um cliente Agência com vários perfis aparece uma vez; os @ ficam na mesma linha.',
             'chamados' => 'A pessoa abre com /chamado no Telegram. Responder avisa na conversa. Encerrado fecha o chamado.',
-            'posts' => 'Aqui está o que o bot tentou publicar. Uma falha não publica sozinha: o cliente tenta de novo no Telegram. A lista mostra o cliente e o @ do Instagram.',
+            'posts' => 'Aqui está o que o bot tentou publicar. Uma falha não publica sozinha: o cliente tenta de novo no Telegram. Cada linha é um post; o @ é o perfil usado na publicação.',
             'pagamentos' => 'Valor, status, bandeira e os 4 últimos dígitos. O número do cartão não fica nesta lista. A lista mostra de quem é o pagamento.',
             'planos' => 'O preço do teste vale na primeira mensalidade. Depois cobra o preço mensal. O anual continua em 10 vezes o mensal, sem teste.',
             'cupons' => 'Cada cupom tem desconto, quantidade de usos e data de validade. Vazio na quantidade ou na data significa sem limite.',
             'ia' => 'O custo do mês, do dia e o total vêm da chave no OpenRouter. A chave não aparece.',
-            'eventos' => 'O que o sistema registrou. Filtre pelo tipo quando alguém disser que um dado sumiu. A lista mostra o cliente e o @ do Instagram.',
+            'eventos' => 'O que o sistema registrou. Filtre pelo tipo quando alguém disser que um dado sumiu. Cada linha é um evento; o @ é o perfil do post, quando houver.',
             'config' => 'Limites, modelo e prompt. Os cupons ficam na tela Cupons. Segredos ficam só no servidor.',
             'manual' => 'Roteiro completo. As outras telas repetem um resumo e apontam para a seção daqui.',
         ];
@@ -1095,27 +1100,64 @@ final class AdminSite
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param list<int> $userIds
+     *
+     * @return array<int, list<array{username:string, status:string}>>
      */
-    private function customerIgCell(array $row): string
+    private function instagramAccountsByUserIds(array $userIds): array
     {
-        $user = trim((string) ($row['ig_username'] ?? ''));
-        if ($user === '') {
-            return '<span class="sub">Não conectou</span>';
+        $userIds = array_values(array_unique(array_filter(array_map(intval(...), $userIds))));
+        if ($userIds === []) {
+            return [];
         }
-        $html = Layout::e('@' . ltrim($user, '@'));
-        $status = (string) ($row['ig_status'] ?? '');
-        $note = match ($status) {
-            'expired' => 'expirou',
-            'revoked' => 'revogado',
-            'error' => 'erro',
-            default => '',
-        };
-        if ($note !== '') {
-            $html .= '<span class="sub">' . Layout::e($note) . '</span>';
+        $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT user_id, username, status FROM instagram_accounts WHERE user_id IN ($placeholders) ORDER BY id ASC"
+        );
+        $stmt->execute($userIds);
+        $map = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $uid = (int) $row['user_id'];
+            $map[$uid][] = [
+                'username' => (string) ($row['username'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+            ];
         }
 
-        return $html;
+        return $map;
+    }
+
+    /**
+     * @param list<array{username:string, status:string}> $accounts
+     */
+    private function customerIgsCell(array $accounts): string
+    {
+        if ($accounts === []) {
+            return '<span class="sub">Não conectou</span>';
+        }
+        $lines = [];
+        foreach ($accounts as $account) {
+            $user = trim($account['username']);
+            if ($user === '') {
+                continue;
+            }
+            $line = $this->instagramLink($user);
+            $note = match ($account['status']) {
+                'expired' => 'expirou',
+                'revoked' => 'revogado',
+                'error' => 'erro',
+                default => '',
+            };
+            if ($note !== '') {
+                $line .= '<span class="sub">' . Layout::e($note) . '</span>';
+            }
+            $lines[] = $line;
+        }
+        if ($lines === []) {
+            return '<span class="sub">Não conectou</span>';
+        }
+
+        return implode('<br>', $lines);
     }
 
     /**
