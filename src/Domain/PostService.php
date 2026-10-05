@@ -481,6 +481,7 @@ class PostService
 
                 return true;
             }
+            SurpriseDraft::clear((int) $user['id']);
             $ig = $this->users->instagramAccountById($accountId, (int) $user['id']);
             $name = is_array($ig) ? (string) ($ig['username'] ?? '') : '';
             $this->channel->sendText($chatId, Messages::instagramPicked($name));
@@ -4111,13 +4112,7 @@ class PostService
      */
     private function storedIdeaMatchesProfile(string $stored, array $view): bool
     {
-        $who = trim((string) ($view['profession'] ?? ''));
-        if ($who === '') {
-            return true;
-        }
-        $needle = mb_substr($who, 0, min(48, mb_strlen($who)));
-
-        return $needle !== '' && mb_stripos($stored, $needle) !== false;
+        return BenefitOrchestrator::storedIdeaFitsProfile($stored, $view);
     }
 
     private function promptExtraRepo(): PromptExtraRepository

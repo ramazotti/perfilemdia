@@ -46,7 +46,10 @@ final class BenefitOrchestrator
     public static function surpriseBrief(array $user, DateTimeImmutable $now, ?int $roll = null): array
     {
         $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
-        $scenes = self::surpriseScenes($now, (string) ($user['tone'] ?? ''), (string) ($user['profession'] ?? ''));
+        $profileScenes = self::surpriseScenesForProfile($user);
+        $scenes = $profileScenes !== []
+            ? $profileScenes
+            : self::surpriseScenes($now, (string) ($user['tone'] ?? ''), (string) ($user['profession'] ?? ''));
         $index = ($roll ?? random_int(0, PHP_INT_MAX)) % count($scenes);
         $scene = $scenes[$index];
 
@@ -54,6 +57,41 @@ final class BenefitOrchestrator
             'idea' => self::withPlace($user, $scene[0]),
             'phrase' => $scene[1],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public static function storedIdeaFitsProfile(string $stored, array $user): bool
+    {
+        $stored = trim($stored);
+        if ($stored === '') {
+            return false;
+        }
+        $signal = self::profileSignalText($user);
+        if ($signal === '') {
+            return true;
+        }
+        if (self::profileLooksSpiritual($user)) {
+            if (preg_match('/expediente|espa[cç]o de trabalho|bancada|escrit[oó]rio|sala pronta para o pr[oó]ximo hor[aá]rio/ui', $stored) === 1) {
+                return false;
+            }
+
+            return self::profileSignalMatches(mb_strtolower($stored), '/confiss|consci|or[aã]|espiritual|f[eé]|ter[cç]o|b[ií]bl/u');
+        }
+        $about = trim((string) ($user['about'] ?? ''));
+        if ($about !== '' && mb_strlen($about) >= 24) {
+            $snippet = mb_substr($about, 0, 32);
+
+            return mb_stripos($stored, $snippet) !== false;
+        }
+        $who = trim((string) ($user['profession'] ?? ''));
+        if ($who === '') {
+            return true;
+        }
+        $needle = mb_substr($who, 0, min(48, mb_strlen($who)));
+
+        return $needle !== '' && mb_stripos($stored, $needle) !== false;
     }
 
     /**
@@ -91,6 +129,9 @@ final class BenefitOrchestrator
      */
     public static function photoPhrase(array $user): string
     {
+        if (self::profileLooksSpiritual($user)) {
+            return 'Um minuto de silêncio.';
+        }
         $who = mb_strtolower(trim((string) ($user['profession'] ?? '')));
         if ($who !== '') {
             foreach (self::professions() as $job) {
@@ -248,9 +289,18 @@ final class BenefitOrchestrator
         $who = trim((string) ($user['profession'] ?? ''));
         $where = trim((string) ($user['city'] ?? ''));
         $brand = trim((string) ($user['brand_style'] ?? ''));
+        $about = trim((string) ($user['about'] ?? ''));
+        $display = trim((string) ($user['display_name'] ?? ''));
         $line = $base;
-        if ($who !== '') {
-            $line .= ' Para ' . $who . '.';
+        if ($about !== '') {
+            $line .= ' Contexto do perfil: ' . mb_substr($about, 0, 140) . '.';
+        } elseif ($who !== '') {
+            if (mb_strlen($who) > 55 || preg_match('/\b(site|\.com|http|auxilia)\b/ui', $who) === 1) {
+                $label = $display !== '' ? $display : mb_substr($who, 0, 60);
+                $line .= ' Para quem acompanha ' . $label . '.';
+            } else {
+                $line .= ' Para ' . $who . '.';
+            }
         }
         if ($where !== '' && mb_strtolower($where) !== 'online') {
             $line .= ' Em ' . $where . '.';
@@ -259,7 +309,70 @@ final class BenefitOrchestrator
             $line .= ' Visual: ' . $brand . '.';
         }
 
-        return mb_substr($line, 0, 240);
+        return mb_substr($line, 0, 480);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return list<array{0:string,1:string}>
+     */
+    private static function surpriseScenesForProfile(array $user): array
+    {
+        if (self::profileLooksSpiritual($user)) {
+            return [
+                ['Mostre um ambiente calmo de oração, luz suave, poucos objetos (Bíblia, terço ou vela), sem rostos identificáveis.', 'Silêncio que prepara.'],
+                ['Mostre um detalhe contemplativo: mãos em repouso, página aberta ou luz entrando em um canto simples.', 'Antes da oração.'],
+                ['Mostre uma composição serena que remeta à examinação de consciência, sem texto longo na imagem.', 'Examinar o coração.'],
+                ['Mostre um espaço acolhedor para reflexão interior, cores suaves, nada de escritório ou expediente.', 'Momento de reflexão.'],
+                ['Mostre um símbolo discreto de fé e preparação espiritual, fundo limpo e desfocado.', 'Fé no dia a dia.'],
+            ];
+        }
+        $about = trim((string) ($user['about'] ?? ''));
+        if (mb_strlen($about) >= 28) {
+            return [
+                ['Mostre uma cena visual calma que represente o propósito deste perfil, sem copiar parágrafos na imagem.', 'No clima do perfil.'],
+                ['Mostre um detalhe simbólico ligado ao que este perfil comunica, composição simples.', 'Um detalhe.'],
+                ['Mostre um ambiente coerente com o público deste perfil, luz natural, sem poluição visual.', 'Para quem nos acompanha.'],
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private static function profileLooksSpiritual(array $user): bool
+    {
+        return self::profileSignalMatches(
+            self::profileSignalText($user),
+            '/confiss|consci[eê]ncia|cat[oó]lic|espiritual|or[aã]|igreja|ter[cç]o|b[ií]bl|evangel|sacramento|penit[eê]ncia/u',
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private static function profileSignalText(array $user): string
+    {
+        $chunks = [
+            (string) ($user['profession'] ?? ''),
+            (string) ($user['about'] ?? ''),
+            (string) ($user['display_name'] ?? ''),
+            (string) ($user['brand_style'] ?? ''),
+            (string) ($user['contact_cta'] ?? ''),
+        ];
+
+        return mb_strtolower(trim(implode(' ', array_filter($chunks, static fn (string $p): bool => trim($p) !== ''))));
+    }
+
+    private static function profileSignalMatches(string $haystack, string $pattern): bool
+    {
+        if ($haystack === '') {
+            return false;
+        }
+
+        return preg_match($pattern, $haystack) === 1;
     }
 
     /**

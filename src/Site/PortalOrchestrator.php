@@ -14,6 +14,7 @@ use PerfilEmDia\Domain\PostRepository;
 use PerfilEmDia\Domain\PostService;
 use PerfilEmDia\Domain\PromptExtraRepository;
 use PerfilEmDia\Domain\PromptExtras;
+use PerfilEmDia\Domain\SurpriseDraft;
 use PerfilEmDia\Domain\PostStatus;
 use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Image\PhraseColor;
@@ -212,6 +213,7 @@ final class PortalOrchestrator
         if (!$this->users->setActiveInstagramAccount($userId, $accountId)) {
             throw new RuntimeException('Conta Instagram inválida.');
         }
+        SurpriseDraft::clear($userId);
     }
 
     /**
