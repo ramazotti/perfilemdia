@@ -20,6 +20,9 @@ final class GuzzleHttpPoster implements HttpPoster
 
     public function request(string $method, string $url, array $options = []): array
     {
+        if (isset($options['json'])) {
+            $options['json'] = Utf8::cleanDeep($options['json']);
+        }
         $response = $this->client->request($method, $url, $options);
         $raw = (string) $response->getBody();
         $decoded = json_decode($raw, true);

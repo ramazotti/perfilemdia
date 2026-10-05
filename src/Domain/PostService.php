@@ -900,7 +900,7 @@ class PostService
             }
             $this->failPost($postId, PostStatus::Generating, $e->kind, $e->getMessage());
             Logger::get()->error('Caption falhou', ['post_id' => $postId, 'error' => $e->getMessage()]);
-            $this->channel->sendText($chatId, Messages::captionFailed());
+            $this->channel->sendText($chatId, Messages::captionFailed((int) ($post['creative'] ?? 0) === 1));
         } catch (\Throwable $e) {
             if ($e::class === 'PerfilEmDia\\Image\\ImageUnsupportedException') {
                 $this->failPost($postId, PostStatus::Generating, 'image_unsupported', $e->getMessage());
@@ -910,7 +910,7 @@ class PostService
             }
             Logger::get()->error('Geracao falhou', ['post_id' => $postId, 'error' => $e->getMessage()]);
             $this->failPost($postId, PostStatus::Generating, 'generate_error', $e->getMessage());
-            $this->channel->sendText($chatId, Messages::captionFailed());
+            $this->channel->sendText($chatId, Messages::captionFailed((int) ($post['creative'] ?? 0) === 1));
         }
     }
 

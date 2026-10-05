@@ -124,9 +124,13 @@ final class Messages
         return 'Legal! Me conta em uma frase o que essa foto mostra. Pode escrever ou mandar um Ã¡udio.';
     }
 
-    public static function captionFailed(): string
+    public static function captionFailed(bool $fromIdea = false): string
     {
-        return "NÃ£o consegui escrever a legenda agora. Manda a foto de novo, com a frase na mesma mensagem.";
+        if ($fromIdea) {
+            return 'Não consegui escrever a legenda agora. Toque em Surpreenda-me de novo ou mande a ideia em texto.';
+        }
+
+        return 'Não consegui escrever a legenda agora. Manda a foto de novo, com a frase na mesma mensagem.';
     }
 
     public static function askFeedback(): string
