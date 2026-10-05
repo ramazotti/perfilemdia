@@ -31,6 +31,37 @@ final class PromptExtrasTest extends TestCase
         ]));
     }
 
+    public function testResolveUsesProfileWithoutThemeTrigger(): void
+    {
+        $defs = [
+            ['id' => 1, 'trigger_word' => 'adesig', 'prompt_text' => 'Consultoria ADESIG.'],
+        ];
+        $resolved = PromptExtras::resolve($defs, 'Infográfico sobre Maringá', "Consultoria em gestão ADESIG\n@adesig_oficial");
+        $this->assertCount(1, $resolved);
+        $this->assertSame('adesig', $resolved[0]['trigger_word']);
+    }
+
+    public function testResolveSingleExtraWithoutAnyMatch(): void
+    {
+        $defs = [
+            ['id' => 1, 'trigger_word' => 'marca', 'prompt_text' => 'Tom da marca.'],
+        ];
+        $resolved = PromptExtras::resolve($defs, 'Post do dia', '');
+        $this->assertCount(1, $resolved);
+    }
+
+    public function testExpandLinkedExtrasIncludesCompanionTrigger(): void
+    {
+        $defs = [
+            ['id' => 1, 'trigger_word' => 'adesig', 'prompt_text' => 'Parceiro sigsistem no mesmo grupo.'],
+            ['id' => 2, 'trigger_word' => 'sigsistem', 'prompt_text' => 'Software SIG.'],
+        ];
+        $resolved = PromptExtras::resolve($defs, 'Infográfico em Maringá', 'Trabalho da ADESIG');
+        $triggers = array_column($resolved, 'trigger_word');
+        $this->assertContains('adesig', $triggers);
+        $this->assertContains('sigsistem', $triggers);
+    }
+
     public function testCollectsAllMatchedImages(): void
     {
         $root = dirname(__DIR__);

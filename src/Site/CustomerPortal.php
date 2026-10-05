@@ -1027,7 +1027,7 @@ final class CustomerPortal
     {
         $extras = is_array($bundle['prompt_extras'] ?? null) ? $bundle['prompt_extras'] : [];
         $html = '<div class="box" style="margin-top:20px"><h2>Extras para a IA</h2>';
-        $html .= '<p class="meta">Quando o tema ou a ideia citar a palavra-gatilho, o texto (e a imagem, se houver) entram no prompt da legenda e da foto por IA. Ex.: adesig, sigsistem.</p>';
+        $html .= '<p class="meta">O sistema usa estes extras quando o tema, o perfil ou a @ ativa combina com o gatilho (ex.: adesig). Se houver só um extra na conta, ele entra sempre. Extras ligados no texto (ex.: ADESIG citando SIG SISTEM) podem entrar juntos. Não é preciso repetir o gatilho em todo post.</p>';
         foreach ($extras as $row) {
             $id = (int) ($row['id'] ?? 0);
             $trigger = (string) ($row['trigger_word'] ?? '');

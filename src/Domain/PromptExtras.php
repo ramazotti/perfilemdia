@@ -65,6 +65,92 @@ final class PromptExtras
     }
 
     /**
+     * @param array<string, mixed> $profile
+     */
+    public static function profileHaystack(array $profile, string $igUsername = ''): string
+    {
+        $parts = [
+            ltrim(trim($igUsername), '@'),
+            (string) ($profile['display_name'] ?? ''),
+            (string) ($profile['profession'] ?? ''),
+            (string) ($profile['about'] ?? ''),
+            (string) ($profile['brand_style'] ?? ''),
+            (string) ($profile['fixed_hashtags'] ?? ''),
+            (string) ($profile['contact_cta'] ?? ''),
+        ];
+
+        return trim(implode("\n", array_filter($parts, static fn (string $p): bool => trim($p) !== '')));
+    }
+
+    /**
+     * Escolhe extras sem exigir gatilho no tema: perfil, @, vínculo entre extras ou único extra da conta.
+     *
+     * @param list<array<string, mixed>> $definitions
+     * @return list<array<string, mixed>>
+     */
+    public static function resolve(array $definitions, string $themeText, string $profileText): array
+    {
+        if ($definitions === []) {
+            return [];
+        }
+        $theme = trim($themeText);
+        $profile = trim($profileText);
+        $combined = trim($theme . "\n" . $profile);
+        $matched = $combined !== '' ? self::matched($definitions, $combined) : [];
+        if ($matched === [] && $profile !== '') {
+            $matched = self::matched($definitions, $profile);
+        }
+        if ($matched === [] && count($definitions) === 1) {
+            $matched = $definitions;
+        }
+        if ($matched === []) {
+            return [];
+        }
+
+        return self::expandLinkedExtras($definitions, $matched);
+    }
+
+    /**
+     * Se um extra citar o gatilho de outro no texto, inclui os dois (ex.: ADESIG + SIG SISTEM).
+     *
+     * @param list<array<string, mixed>> $definitions
+     * @param list<array<string, mixed>> $matched
+     * @return list<array<string, mixed>>
+     */
+    public static function expandLinkedExtras(array $definitions, array $matched): array
+    {
+        $out = $matched;
+        $seen = [];
+        foreach ($matched as $row) {
+            $seen[(int) ($row['id'] ?? 0)] = true;
+        }
+        $changed = true;
+        while ($changed) {
+            $changed = false;
+            foreach ($out as $row) {
+                $text = (string) ($row['prompt_text'] ?? '');
+                if ($text === '') {
+                    continue;
+                }
+                foreach ($definitions as $other) {
+                    $id = (int) ($other['id'] ?? 0);
+                    if ($id < 1 || isset($seen[$id])) {
+                        continue;
+                    }
+                    $trigger = (string) ($other['trigger_word'] ?? '');
+                    if ($trigger !== '' && self::matches($text, $trigger)) {
+                        $out[] = $other;
+                        $seen[$id] = true;
+                        $changed = true;
+                    }
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * @param list<array<string, mixed>> $matched
      */
     public static function formatForCaption(array $matched): string
@@ -101,7 +187,7 @@ final class PromptExtras
             if ($text === '') {
                 continue;
             }
-            $bits[] = 'When the idea mentions "' . $trigger . '", follow this brand direction: ' . $text;
+            $bits[] = 'Brand direction [' . $trigger . ']: ' . $text;
         }
 
         return implode(' ', $bits);

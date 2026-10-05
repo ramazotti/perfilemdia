@@ -2672,10 +2672,7 @@ class PostService
      */
     private function surprisePreviewText(array $user, string $idea, string $phrase): string
     {
-        $accountId = $this->users->resolveProfileAccountId((int) $user['id']) ?? 0;
-        $matched = $accountId > 0
-            ? PromptExtras::matched($this->promptExtraRepo()->listForAccount($accountId), $idea)
-            : [];
+        $matched = $this->matchedPromptExtras($user, ['instagram_account_id' => $this->activeInstagramAccountId($user)], $idea);
         $captionExtra = PromptExtras::formatForCaption($matched);
         $parts = [
             Messages::surprisePreviewHeader(),
@@ -4135,11 +4132,12 @@ class PostService
             return [];
         }
         $haystack = trim(implode("\n", array_filter($textParts, static fn (string $p): bool => trim($p) !== '')));
-        if ($haystack === '') {
-            return [];
-        }
+        $profile = $this->profileView($user);
+        $igUser = $this->users->activeInstagramUsername((int) $user['id']);
+        $profileHaystack = PromptExtras::profileHaystack($profile, $igUser);
+        $definitions = $this->promptExtraRepo()->listForAccount($accountId);
 
-        return PromptExtras::matched($this->promptExtraRepo()->listForAccount($accountId), $haystack);
+        return PromptExtras::resolve($definitions, $haystack, $profileHaystack);
     }
 
     /**
