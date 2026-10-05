@@ -971,7 +971,12 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
     {
         $unit = $story ? ($count === 1 ? 'tela' : 'telas') : ($count === 1 ? 'slide' : 'slides');
 
-        return 'Vou desenhar ' . $count . ' ' . $unit . ', um depois do outro. Pode levar um pouco mais.';
+        return 'Vou desenhar ' . $count . ' ' . $unit . ', um depois do outro. Cada um pode levar 1 a 3 minutos. Não feche o Telegram; aviso a cada slide e se passar de 1 minuto no total.';
+    }
+
+    public static function ideaSlideProgress(int $index, int $count): string
+    {
+        return 'Desenhando slide ' . $index . ' de ' . $count . '.';
     }
 
     public static function ideaSlides(int $count, bool $story): string

@@ -77,9 +77,9 @@ final class IdeaImage implements IdeaImageGenerator
         return $frames;
     }
 
-    public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): string
+    public function create(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = '', int $index = 1): string
     {
-        return $this->render($idea, $referenceJpeg, $brand, $aspect, 1);
+        return $this->render($idea, $referenceJpeg, $brand, $aspect, $index);
     }
 
     private function render(string $idea, ?string $referenceJpeg, string $brand, string $aspect, int $index): string

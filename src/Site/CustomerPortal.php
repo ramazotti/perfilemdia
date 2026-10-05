@@ -14,6 +14,7 @@ use PerfilEmDia\Billing\PaymentRefused;
 use PerfilEmDia\Billing\Phone;
 use PerfilEmDia\Domain\TicketService;
 use PerfilEmDia\Domain\UserRepository;
+use PerfilEmDia\Image\IdeaImage;
 use PerfilEmDia\Security\Crypto;
 use PDO;
 use RuntimeException;
@@ -308,9 +309,10 @@ final class CustomerPortal
     {
         $state = $this->portal()->studioState($customerId);
         $expect = (string) ($state['expecting'] ?? 'text');
-        $state['expecting_label'] = $this->studioExpectingLabel($expect);
         $post = $state['post'] ?? null;
         $state['busy'] = $this->studioIsBusy(is_array($post) ? $post : null);
+        $generatingLabel = $this->studioGeneratingLabel(is_array($post) ? $post : null);
+        $state['expecting_label'] = $generatingLabel ?? $this->studioExpectingLabel($expect);
         if (is_array($post)) {
             $state['post'] = [
                 'id' => (int) ($post['id'] ?? 0),
@@ -319,6 +321,24 @@ final class CustomerPortal
         }
 
         return $state;
+    }
+
+    /**
+     * @param array<string, mixed>|null $post
+     */
+    private function studioGeneratingLabel(?array $post): ?string
+    {
+        if ($post === null || (string) ($post['status'] ?? '') !== 'GENERATING') {
+            return null;
+        }
+        $theme = (string) ($post['theme_text'] ?? '');
+        $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '4:5';
+        $count = $theme !== '' ? count(IdeaImage::pieces($theme, $aspect)) : 1;
+        if ($count > 1) {
+            return 'Gerando ' . $count . ' slides na IA (cada um pode levar 1 a 3 min). Não saia da conversa; o Telegram avisa a cada slide.';
+        }
+
+        return 'Gerando imagem e legenda na IA (1 a 3 min). Se passar de 1 min, chega um lembrete no Telegram.';
     }
 
     private function studioExpectingLabel(string $expect): string

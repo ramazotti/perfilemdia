@@ -3714,6 +3714,7 @@ class PostService
             $this->channel->sendText($chatId, Messages::ideaFormatPicked($rolled));
         }
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
+        SlowNotice::arm($postId, $chatId);
         $this->rememberDestination($user, $postId);
         $this->posts->update($postId, ['creative' => 1]);
 
@@ -3729,9 +3730,16 @@ class PostService
                 $this->channel->sendText($chatId, Messages::ideaSlidesStarted($count, $aspect === '9:16'));
             }
             $generator = $this->ideas ?? new IdeaImage();
-            $frames = $generator instanceof IdeaImage
-                ? $generator->createSet($idea, $reference, $look, $aspect)
-                : [$generator->create($idea, $reference, $look, $aspect)];
+            $pieces = IdeaImage::pieces($idea, $aspect);
+            $frames = [];
+            foreach ($pieces as $piece) {
+                if (count($pieces) > 1) {
+                    $this->channel->sendText($chatId, Messages::ideaSlideProgress($piece['index'], count($pieces)));
+                }
+                $frames[] = $generator instanceof IdeaImage
+                    ? $generator->create($idea, $reference, $look, $aspect, $piece['index'])
+                    : $generator->create($idea, $reference, $look, $aspect);
+            }
             $frames = $this->applyBrandLogoOverlays($frames, $idea, $matchedExtras);
             $this->wakeDatabase();
             $this->storeIdeaFrames($postId, $frames, (int) ($message['message_id'] ?? 0));
