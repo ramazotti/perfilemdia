@@ -412,6 +412,9 @@ final class InstagramClient
         if ($code === 9007 || $code === 2207027 || $subcode === 2207027) {
             return ['not_ready', true];
         }
+        if ($code === 24) {
+            return ['transient', true];
+        }
 
         return ['other', false];
     }

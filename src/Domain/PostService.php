@@ -2925,10 +2925,13 @@ class PostService
                 return;
             } catch (InstagramApiException $e) {
                 $this->handlePublishError($user, $chatId, $postId, $previewId, $e, $attempt);
-                $retry = $e->kind === 'network' || ($e->kind === 'not_ready' && !$this->postIsVideo($postId));
+                $retry = $e->kind === 'network'
+                    || $e->kind === 'transient'
+                    || ($e->kind === 'not_ready' && !$this->postIsVideo($postId));
                 if (!$retry || $attempt >= 3) {
                     return;
                 }
+                $this->posts->update($postId, ['ig_container_id' => null, 'ig_media_id' => null]);
                 $this->backoff($attempt);
             }
         }
@@ -2993,6 +2996,18 @@ class PostService
                 return;
             }
             $this->offerPublishRetry($chatId, $postId, $e);
+
+            return;
+        }
+
+        if ($e->kind === 'transient' && $attempt < 3) {
+            $this->posts->update($postId, [
+                'error_code' => $e->errorCode !== null ? (string) $e->errorCode : 'transient',
+                'error_message' => $e->getMessage(),
+                'attempts' => $attempt,
+                'ig_container_id' => null,
+                'ig_media_id' => null,
+            ]);
 
             return;
         }
