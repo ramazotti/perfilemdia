@@ -37,4 +37,12 @@ final class SurpriseDraftTest extends TestCase
         $draft = SurpriseDraft::load($this->userId);
         $this->assertStringContainsString('Complemento: ' . $city, (string) ($draft['idea'] ?? ''));
     }
+
+    public function testSaveDestinationForStory(): void
+    {
+        $this->assertTrue(SurpriseDraft::save($this->userId, 'Ideia story', 'Frase', 'story'));
+        $draft = SurpriseDraft::load($this->userId);
+        $this->assertNotNull($draft);
+        $this->assertSame('story', $draft['destination']);
+    }
 }

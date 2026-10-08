@@ -2248,7 +2248,7 @@ class PostService
         $previewCaption = $isStory && !$isVideo
             ? \PerfilEmDia\Ai\CaptionGenerator::storyTextForReview($caption, (string) ($user['contact_cta'] ?? ''))
             : $caption;
-        $buttons ??= Keyboards::approval($postId, false);
+        $buttons ??= Keyboards::approval($postId, false, $isStory);
         if ((string) $post['status'] === PostStatus::Scheduled->value && !empty($post['scheduled_at'])) {
             $at = DateTimeImmutable::createFromFormat(
                 'Y-m-d H:i:s',
@@ -2358,6 +2358,7 @@ class PostService
         if ($post === null) {
             return Keyboards::approval($postId);
         }
+        $isStory = (string) ($post['destination'] ?? 'feed') === 'story';
         $flags = $this->previewAdjustFlags($user, $post);
 
         return Keyboards::adjustMenu(
@@ -2380,7 +2381,8 @@ class PostService
         if ($previewId === null) {
             return;
         }
-        $this->channel->editButtons($chatId, $previewId, Keyboards::approval((int) $post['id']));
+        $isStory = (string) ($post['destination'] ?? 'feed') === 'story';
+        $this->channel->editButtons($chatId, $previewId, Keyboards::approval((int) $post['id'], false, $isStory));
     }
 
     /**
@@ -2604,12 +2606,14 @@ class PostService
         $view = $this->profileView($user);
         $phrase = (string) ($draft['phrase'] ?? '');
         $idea = (string) ($draft['idea'] ?? '');
+        $destination = (string) ($draft['destination'] ?? 'feed');
         $this->startIdea(
             $view,
             $chatId,
             mb_substr($idea, 0, 1000),
             null,
             $phrase !== '' ? $phrase : null,
+            $destination === 'story' ? 'story' : 'feed',
         );
     }
 
@@ -2657,8 +2661,9 @@ class PostService
     private function offerSurprisePreview(array $user, int $chatId, string $idea, string $phrase): void
     {
         $userId = (int) $user['id'];
+        $destination = $this->chosenDestination($user);
         SurpriseDraft::clear($userId);
-        if (!SurpriseDraft::save($userId, $idea, $phrase)) {
+        if (!SurpriseDraft::save($userId, $idea, $phrase, $destination)) {
             $this->channel->sendText($chatId, Messages::ideaFailed());
 
             return;
@@ -3692,17 +3697,25 @@ class PostService
      * @param array<string, mixed> $user
      * @param array<string, mixed>|null $message
      */
-    private function startIdea(array $user, int $chatId, string $idea, ?array $message, ?string $surprisePhrase = null): void
-    {
+    private function startIdea(
+        array $user,
+        int $chatId,
+        string $idea,
+        ?array $message,
+        ?string $surprisePhrase = null,
+        ?string $destination = null,
+    ): void {
         $userId = (int) $user['id'];
         if (!$this->aiAllowed($userId)) {
             $this->channel->sendText($chatId, Messages::aiPlan());
 
             return;
         }
+        $destination = ($destination ?? $this->chosenDestination($user)) === 'story' ? 'story' : 'feed';
         $profile = $this->profileView($user);
         $this->users->update($userId, ['pending_action' => null]);
-        $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '4:5';
+        $isStory = $destination === 'story';
+        $aspect = $isStory ? '9:16' : '4:5';
         [$idea, $rolled] = IdeaPieces::dress($idea, $aspect, $surprisePhrase !== null);
         $designed = IdeaImage::isDesigned($idea);
         if ($surprisePhrase !== null) {
@@ -3715,7 +3728,7 @@ class PostService
         }
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
         SlowNotice::arm($postId, $chatId);
-        $this->rememberDestination($user, $postId);
+        $this->applyDestination($postId, $destination);
         $this->posts->update($postId, ['creative' => 1]);
 
         $reference = $this->resolveIdeaReference($user, $postId, $message);
@@ -3724,10 +3737,9 @@ class PostService
         $look = $this->ideaLookBrief($profile, $idea, $matchedExtras);
 
         try {
-            $aspect = $this->chosenDestination($user) === 'story' ? '9:16' : '4:5';
             $count = count(IdeaImage::pieces($idea, $aspect));
             if ($count > 1) {
-                $this->channel->sendText($chatId, Messages::ideaSlidesStarted($count, $aspect === '9:16'));
+                $this->channel->sendText($chatId, Messages::ideaSlidesStarted($count, $isStory));
             }
             $generator = $this->ideas ?? new IdeaImage();
             $pieces = IdeaImage::pieces($idea, $aspect);
@@ -4045,7 +4057,12 @@ class PostService
      */
     private function rememberDestination(array $user, int $postId): void
     {
-        if ($this->chosenDestination($user) !== 'story') {
+        $this->applyDestination($postId, $this->chosenDestination($user));
+    }
+
+    private function applyDestination(int $postId, string $destination): void
+    {
+        if ($destination !== 'story') {
             return;
         }
         $this->posts->update($postId, ['destination' => 'story']);

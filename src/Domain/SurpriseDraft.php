@@ -25,7 +25,7 @@ final class SurpriseDraft
     }
 
     /**
-     * @return array{idea:string, phrase:string}|null
+     * @return array{idea:string, phrase:string, destination:string}|null
      */
     public static function load(int $userId): ?array
     {
@@ -46,13 +46,16 @@ final class SurpriseDraft
             return null;
         }
 
+        $destination = (string) ($data['destination'] ?? 'feed');
+
         return [
             'idea' => $idea,
             'phrase' => trim((string) ($data['phrase'] ?? '')),
+            'destination' => $destination === 'story' ? 'story' : 'feed',
         ];
     }
 
-    public static function save(int $userId, string $idea, string $phrase): bool
+    public static function save(int $userId, string $idea, string $phrase, string $destination = 'feed'): bool
     {
         $idea = trim($idea);
         if ($idea === '') {
@@ -61,6 +64,7 @@ final class SurpriseDraft
         $payload = json_encode([
             'idea' => $idea,
             'phrase' => trim($phrase),
+            'destination' => $destination === 'story' ? 'story' : 'feed',
         ], JSON_UNESCAPED_UNICODE);
         if ($payload === false) {
             return false;

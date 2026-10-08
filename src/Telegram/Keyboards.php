@@ -9,11 +9,12 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
-    public static function approval(int $postId, bool $allowStory = false): array
+    public static function approval(int $postId, bool $allowStory = false, bool $isStory = false): array
     {
+        $publishLabel = $isStory ? 'Publicar no story' : 'Publicar no Instagram';
         $rows = [
             [
-                ['text' => 'Publicar no Instagram', 'callback_data' => 'a:pub:' . $postId],
+                ['text' => $publishLabel, 'callback_data' => 'a:pub:' . $postId],
                 ['text' => 'Agendar horário', 'callback_data' => 'a:sch:' . $postId],
             ],
             [['text' => 'Revisar texto e foto', 'callback_data' => 'a:mor:' . $postId]],
