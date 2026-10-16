@@ -773,7 +773,14 @@ class PostService
         $this->generateAndPreview((int) $user['id'], $chatId, $postId);
     }
 
-    private function generateAndPreview(int $userId, int $chatId, int $postId, bool $sendPreview = true, bool $keepAdjust = false): void
+    private function generateAndPreview(
+        int $userId,
+        int $chatId,
+        int $postId,
+        bool $sendPreview = true,
+        bool $keepAdjust = false,
+        ?string $deferStoryPhrase = null,
+    ): void
     {
         $post = $this->posts->find($postId);
         $user = $this->users->find($userId);
@@ -876,7 +883,11 @@ class PostService
             if (!$isVideo && (string) ($post['destination'] ?? 'feed') === 'story' && isset($jpegPaths[0])) {
                 $cleanId = (int) ($mediaRows[0]['id'] ?? 0);
                 $this->replaceStoryClean($cleanId, (string) $jpegPaths[0]);
-                $this->paintStoryCaption($user, $postId, (string) $jpegPaths[0], $result->caption);
+                if ($deferStoryPhrase !== null && trim($deferStoryPhrase) !== '') {
+                    // Surpreenda-me story: texto na foto em dressSurprise().
+                } elseif (!((int) ($post['creative'] ?? 0) === 1 && IdeaImage::isDesigned((string) ($post['theme_text'] ?? '')))) {
+                    $this->paintStoryCaption($user, $postId, (string) $jpegPaths[0], $result->caption);
+                }
             }
 
             if (!$this->returnToMenu($postId, PostStatus::Generating)) {
@@ -3790,7 +3801,8 @@ class PostService
             $frames = $this->applyBrandLogoOverlays($frames, $idea, $matchedExtras);
             $this->wakeDatabase();
             $this->storeIdeaFrames($postId, $frames, (int) ($message['message_id'] ?? 0));
-            $this->generateAndPreview($userId, $chatId, $postId, $surprisePhrase === null);
+            $deferPhrase = $isStory && $surprisePhrase !== null ? $surprisePhrase : null;
+            $this->generateAndPreview($userId, $chatId, $postId, $surprisePhrase === null, false, $deferPhrase);
             if ($surprisePhrase !== null) {
                 $this->dressSurprise($user, $chatId, $postId, $surprisePhrase);
             }
@@ -3927,6 +3939,20 @@ class PostService
         $marked = false;
         $designed = IdeaImage::isDesigned((string) ($post['theme_text'] ?? ''));
         if ((string) ($post['destination'] ?? 'feed') === 'story') {
+            if (!$designed) {
+                if (trim($phrase) !== '') {
+                    $this->applySurpriseDress($user, $postId, $phrase);
+                } else {
+                    $media = $this->posts->media($postId);
+                    $first = $media[0] ?? null;
+                    $path = is_array($first) && !empty($first['public_name'])
+                        ? Config::root() . '/public/m/' . $first['public_name'] . '.jpg'
+                        : '';
+                    if ($path !== '' && is_file($path)) {
+                        $this->paintStoryCaption($user, $postId, $path, (string) ($post['caption'] ?? ''));
+                    }
+                }
+            }
             $this->sendPreview($user, $chatId, $postId);
             $this->channel->sendText($chatId, $designed ? Messages::surpriseReadyDesign() : Messages::surpriseReadyStory());
 

@@ -36,6 +36,10 @@ final class IdeaLook
         if ($about !== '') {
             $bits[] = 'Context from the profile: ' . $about . '.';
         }
+        if (self::looksSpiritual($user)) {
+            $bits[] = 'Vary the scene: do not default to the same bible-candle-desk setup every time. '
+                . 'Use different metaphors, outdoor light, hands in action, paper, paths, windows, or a single symbolic object.';
+        }
         $extra = trim($promptExtras);
         if ($extra !== '') {
             $bits[] = $extra;
@@ -106,5 +110,20 @@ final class IdeaLook
         $value = trim((string) preg_replace('/\s+/u', ' ', trim($value)));
 
         return mb_substr($value, 0, 160);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private static function looksSpiritual(array $user): bool
+    {
+        $haystack = mb_strtolower(trim(implode(' ', array_filter([
+            (string) ($user['profession'] ?? ''),
+            (string) ($user['about'] ?? ''),
+            (string) ($user['display_name'] ?? ''),
+        ], static fn (string $p): bool => trim($p) !== ''))));
+
+        return $haystack !== ''
+            && preg_match('/confiss|consci[eê]ncia|cat[oó]lic|espiritual|\bora[cç][aã]o|\bigreja|ter[cç]o|b[ií]bl|exame de consci/u', $haystack) === 1;
     }
 }

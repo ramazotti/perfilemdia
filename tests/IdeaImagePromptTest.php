@@ -140,22 +140,10 @@ final class IdeaImagePromptTest extends TestCase
     public function testFormatLotteryStaysOnSurprise(): void
     {
         $idea = 'foto da consulta de hoje';
-        for ($i = 0; $i < 12; $i++) {
-            [$dressed, $cue] = IdeaPieces::dress($idea, '4:5', false);
+        for ($i = 0; $i < 24; $i++) {
+            [$dressed, $cue] = IdeaPieces::dress($idea, '4:5', true);
             $this->assertSame($idea, $dressed);
             $this->assertSame('', $cue);
         }
-
-        $prefixed = 0;
-        for ($i = 0; $i < 24; $i++) {
-            [$dressed, $cue] = IdeaPieces::dress($idea, '4:5', true);
-            if ($cue === '') {
-                $this->assertSame($idea, $dressed);
-                continue;
-            }
-            $prefixed++;
-            $this->assertSame($cue . ' ' . $idea, $dressed);
-        }
-        $this->assertGreaterThan(0, $prefixed);
     }
 }

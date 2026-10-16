@@ -355,11 +355,16 @@ final class BenefitOrchestrator
     {
         if (self::profileLooksSpiritual($user)) {
             return [
-                ['Mostre um ambiente calmo de oração, luz suave, poucos objetos (Bíblia, terço ou vela), sem rostos identificáveis.', 'Silêncio que prepara.'],
-                ['Mostre um detalhe contemplativo: mãos em repouso, página aberta ou luz entrando em um canto simples.', 'Antes da oração.'],
-                ['Mostre uma composição serena que remeta à examinação de consciência, sem texto longo na imagem.', 'Examinar o coração.'],
-                ['Mostre um espaço acolhedor para reflexão interior, cores suaves, nada de escritório ou expediente.', 'Momento de reflexão.'],
-                ['Mostre um símbolo discreto de fé e preparação espiritual, fundo limpo e desfocado.', 'Fé no dia a dia.'],
+                ['Mostre mãos escrevendo em um caderno simples, luz de tarde, sem rostos.', 'Anote o que pesa.'],
+                ['Mostre uma trilha ou escada em perspectiva, céu limpo, metáfora de caminho interior.', 'Um passo de cada vez.'],
+                ['Mostre gotas de chuva na janela e cidade desfocada, clima de pausa honesta.', 'Antes de decidir.'],
+                ['Mostre um banco vazio em parque ou praça, manhã quieta, nada de altar ou vela.', 'Silêncio útil.'],
+                ['Mostre papel e caneta sobre mesa de madeira, só esses objetos, luz lateral.', 'Coloque em palavras.'],
+                ['Mostre porta entreaberta com luz vinda de fora, corredor simples.', 'O que você evita?'],
+                ['Mostre as mãos segurando um terço ou crucifixo pequeno em close, fundo neutro.', 'Volte ao essencial.'],
+                ['Mostre página de livro religioso em close, dedo marcando um trecho, sem texto legível.', 'Leia devagar.'],
+                ['Mostre vela acesa em canto escuro, apenas uma, sem montagem de mesa completa.', 'Um minuto agora.'],
+                ['Mostre céu em gradiente de fim de tarde visto de baixo, sem pessoa.', 'Respire fundo.'],
             ];
         }
         $about = trim((string) ($user['about'] ?? ''));

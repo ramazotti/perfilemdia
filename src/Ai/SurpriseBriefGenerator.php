@@ -93,9 +93,10 @@ final class SurpriseBriefGenerator
             'Responda SOMENTE com JSON válido, sem markdown, no formato:',
             '{"idea":"...","phrase":"..."}',
             'idea: briefing visual em português (2 a 4 frases) para gerar a imagem depois. Descreva cena, luz, objetos, clima. Sem rostos identificáveis, sem marcas de terceiros, sem texto longo dentro da imagem.',
-            'phrase: frase curta opcional sobreposta na foto (4 a 55 caracteres), impacto emocional ou curiosidade.',
-            'Varie temas: bastidor, detalhe, ritual do dia, educação leve, prova social visual, data comemorativa quando fizer sentido.',
-            'Não repita fórmulas genéricas de escritório se o perfil não for corporativo.',
+            'phrase: frase curta para sobrepor na foto (4 a 55 caracteres), impacto emocional ou curiosidade.',
+            'Diversifique sempre: mude cenário, época do dia, tipo de objeto e ângulo. Não repita o mesmo molde entre sugestões.',
+            'Evite clichês visuais batidos: mesa genérica com Bíblia aberta, vela, terço, xícara e “luz acolhedora”, salvo se o perfil pedir isso explicitamente.',
+            'Prefira metáforas concretas, cenas do cotidiano, detalhes inesperados, perguntas visuais, antes/depois simbólico, natureza urbana, mãos em ação (sem rosto), papel e caneta, trilha, porta, janela, etc.',
         ]);
     }
 
@@ -127,8 +128,28 @@ final class SurpriseBriefGenerator
             }
         }
         $lines[] = 'Invente um tema novo e específico para ESTE perfil, não um post genérico.';
+        $lines[] = 'Enfoque desta sugestão (obrigatório): ' . $this->pickAngle($now);
 
         return implode("\n", $lines);
+    }
+
+    private function pickAngle(DateTimeImmutable $now): string
+    {
+        $angles = [
+            'Pergunta provocativa ilustrada por uma cena simples, sem objetos religiosos genéricos.',
+            'Detalhe do cotidiano que remete ao tema do perfil, fora de mesa com vela ou Bíblia.',
+            'Metáfora visual (caminho, ponte, porta, janela, passo) ligada ao propósito do perfil.',
+            'Mãos fazendo uma ação concreta relacionada ao conteúdo, rosto fora de quadro.',
+            'Contraste antes/depois simbólico, sem prometer milagre.',
+            'Objeto único em close com fundo limpo, cor e luz diferentes do “estúdio espiritual”.',
+            'Cena ao ar livre ou na rua, clima real, pessoas apenas como silhueta distante.',
+            'Mini dica prática mostrada por objetos do dia a dia, não por pôster motivacional.',
+            'Momento de pausa (banco, parapeito, escada) sem kit “oração de stock”.',
+            'Textura, material ou ferramenta ligada ao ofício ou missão do perfil.',
+        ];
+        $seed = (int) $now->format('z') + (int) $now->format('G') + random_int(0, 1000);
+
+        return $angles[$seed % count($angles)];
     }
 
     private function weekdayLabel(DateTimeImmutable $now): string

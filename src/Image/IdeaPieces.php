@@ -42,7 +42,7 @@ final class IdeaPieces
      */
     public static function dress(string $idea, string $aspect, bool $surprise): array
     {
-        if (!$surprise || self::isDesigned($idea)) {
+        if ($surprise || self::isDesigned($idea) || $aspect === '9:16') {
             return [$idea, ''];
         }
         $cue = self::randomCue($aspect);
