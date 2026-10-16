@@ -445,7 +445,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function audioNeedsPlan(string $plansUrl): string
     {
-        return 'Áudio na legenda e nos ajustes entra com assinatura ativa. Planos: ' . $plansUrl;
+        return 'Ýudio na legenda e nos ajustes entra com assinatura ativa. Planos: ' . $plansUrl;
     }
 
     public static function noSubscription(string $plansUrl): string
@@ -853,6 +853,11 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
         $name = rtrim(trim($cue), ':');
 
         return 'Sorteio do desenho: ' . $name . '.';
+    }
+
+    public static function surpriseThinking(): string
+    {
+        return 'Estou pensando em um tema novo para o seu perfil�';
     }
 
     public static function surprisePreviewHeader(): string

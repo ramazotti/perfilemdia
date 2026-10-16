@@ -19,7 +19,7 @@ final class BenefitSurpriseProfileTest extends TestCase
             'brand_style' => 'Visual limpo e contemplativo, tons claros.',
             'tone' => 'acolhedor',
         ];
-        $brief = BenefitOrchestrator::surpriseBrief($user, new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')), 0);
+        $brief = BenefitOrchestrator::surpriseBriefFromTemplates($user, new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')), 0);
         $idea = $brief['idea'];
         $this->assertStringNotContainsString('expediente', mb_strtolower($idea));
         $this->assertTrue(

@@ -202,6 +202,37 @@ final class PostServiceTest extends TestCase
         $this->assertSame(1, (int) $count->fetchColumn());
     }
 
+    public function testFeedWizardMediaWhileStoryPendingOffersReplace(): void
+    {
+        $userId = $this->users->create(920012, 920012, 'feedwiz');
+        $this->users->update($userId, [
+            'display_name' => 'Ana',
+            'onboarding_step' => 'done',
+        ]);
+        $expires = new \DateTimeImmutable('+30 days', new \DateTimeZone('America/Sao_Paulo'));
+        $this->users->saveInstagramAccount($userId, 'ig12', 'ana_ig', 'BUSINESS', 'token', $expires, 5);
+        $storyId = $this->posts->create($userId, PostStatus::AwaitingApproval, 'story antigo');
+        $this->posts->update($storyId, ['destination' => 'story', 'caption' => 'c']);
+        $this->posts->addMedia($storyId, 0, 'file-story', 1);
+        $media = $this->posts->media($storyId);
+        $this->posts->updateMedia((int) $media[0]['id'], ['public_name' => str_repeat('s', 40)]);
+
+        $user = $this->users->find($userId);
+        $this->assertNotNull($user);
+        $user['pending_action'] = 'kind:foto';
+
+        $this->service->handleIncomingMedia($user, 920012, [
+            'message_id' => 19,
+            'caption' => 'Nova foto feed',
+            'photo' => [['file_id' => 'ph-feed', 'width' => 1080, 'height' => 1350]],
+        ]);
+
+        $texts = array_map(static fn (array $row): string => (string) ($row['text'] ?? ''), $this->channel->sent);
+        $this->assertContains(Messages::replacePending(), $texts);
+        $this->assertNotContains(Messages::storyKeepPreview(), $texts);
+        $this->assertSame(PostStatus::AwaitingApproval->value, $this->posts->find($storyId)['status']);
+    }
+
     public function testMediaWithoutKindAsksTheType(): void
     {
         $userId = $this->users->create(920004, 920004, 'semtipo');

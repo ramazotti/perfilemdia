@@ -508,7 +508,10 @@ final class Keyboards
     public static function surprisePreview(): array
     {
         return [
-            [['text' => 'Gerar agora', 'callback_data' => 'sur:go']],
+            [
+                ['text' => 'Gerar agora', 'callback_data' => 'sur:go'],
+                ['text' => 'Outra sugestão', 'callback_data' => 'sur:again'],
+            ],
             [['text' => 'Complementar pedido', 'callback_data' => 'sur:add']],
             [['text' => 'Cancelar', 'callback_data' => 'sur:cancel']],
         ];

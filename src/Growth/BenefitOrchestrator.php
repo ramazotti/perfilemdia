@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PerfilEmDia\Growth;
 
+use PerfilEmDia\Ai\SurpriseBriefGenerator;
 use DateTimeImmutable;
 use DateTimeZone;
 
@@ -38,12 +39,46 @@ final class BenefitOrchestrator
     }
 
     /**
-     * Uma cena nova a cada pedido. A ideia do dia continua fixa.
+     * Tema para Surpreenda-me: IA primeiro, listas fixas se a API falhar.
      *
      * @param array<string, mixed> $user
      * @return array{idea:string, phrase:string}
      */
-    public static function surpriseBrief(array $user, DateTimeImmutable $now, ?int $roll = null): array
+    public static function surpriseBrief(
+        array $user,
+        DateTimeImmutable $now,
+        ?int $roll = null,
+        string $destination = 'feed',
+        ?SurpriseBriefGenerator $generator = null,
+    ): array {
+        $destination = $destination === 'story' ? 'story' : 'feed';
+        $ai = ($generator ?? new SurpriseBriefGenerator())->generate($user, $now, $destination);
+        if ($ai !== null) {
+            $idea = trim($ai['idea']);
+            if ($destination === 'story') {
+                $idea .= ' Enquadramento vertical 9:16, sem texto longo na imagem.';
+            } else {
+                $idea .= ' Enquadramento vertical 4:5, sem texto longo na imagem.';
+            }
+            $brand = trim((string) ($user['brand_style'] ?? ''));
+            if ($brand !== '') {
+                $idea .= ' Visual da marca: ' . mb_substr($brand, 0, 120) . '.';
+            }
+
+            return [
+                'idea' => mb_substr($idea, 0, 1000),
+                'phrase' => $ai['phrase'],
+            ];
+        }
+
+        return self::surpriseBriefFromTemplates($user, $now, $roll);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array{idea:string, phrase:string}
+     */
+    public static function surpriseBriefFromTemplates(array $user, DateTimeImmutable $now, ?int $roll = null): array
     {
         $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
         $profileScenes = self::surpriseScenesForProfile($user);

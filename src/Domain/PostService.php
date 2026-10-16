@@ -215,10 +215,6 @@ class PostService
         if ($draft === null) {
             return;
         }
-        if ($old !== null && (string) ($old['destination'] ?? '') === 'story') {
-            $this->posts->update($draftId, ['destination' => 'story']);
-        }
-
         $theme = $draft['theme_text'] !== null ? (string) $draft['theme_text'] : null;
         $this->channel->sendText($chatId, Messages::received());
         if ($theme === null || trim($theme) === '') {
@@ -661,9 +657,6 @@ class PostService
         $mediaGroupId = isset($message['media_group_id']) ? (string) $message['media_group_id'] : null;
         $postId = $this->posts->create((int) $user['id'], PostStatus::Collecting, $theme, $mediaGroupId, $this->activeInstagramAccountId($user));
         $this->rememberDestination($user, $postId);
-        if ($inheritFrom !== null && (string) ($inheritFrom['destination'] ?? '') === 'story') {
-            $this->posts->update($postId, ['destination' => 'story']);
-        }
         $file = $this->extractFile($message);
         if ($file !== null) {
             $this->rememberMedia($postId, 0, $file, (int) ($message['message_id'] ?? 0));
@@ -687,9 +680,10 @@ class PostService
         $this->channel->sendText($chatId, Messages::received());
 
         $status = ($theme === null || $theme === '') ? PostStatus::AwaitingTheme : PostStatus::Generating;
+        $destination = $this->chosenDestination($user);
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $postId = $this->posts->create((int) $user['id'], $status, $theme, null, $this->activeInstagramAccountId($user));
-        $this->rememberDestination($user, $postId);
+        $this->applyDestination($postId, $destination);
         $this->rememberMedia($postId, 0, $file, (int) ($message['message_id'] ?? 0));
 
         if ($status === PostStatus::AwaitingTheme) {
@@ -2551,21 +2545,19 @@ class PostService
 
             return;
         }
+        $this->offerFreshSurpriseBrief($user, $chatId);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function offerFreshSurpriseBrief(array $user, int $chatId): void
+    {
         $view = $this->profileView($user);
         $now = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
-        $row = $this->users->find((int) $user['id']);
-        $stored = trim((string) (is_array($row) ? ($row['idea_text'] ?? '') : ''));
-        if ($stored !== '' && $this->storedIdeaMatchesProfile($stored, $view)) {
-            $this->offerSurprisePreview(
-                $view,
-                $chatId,
-                mb_substr($stored, 0, 1000),
-                BenefitOrchestrator::photoPhrase($view),
-            );
-
-            return;
-        }
-        $brief = BenefitOrchestrator::surpriseBrief($view, $now);
+        $destination = $this->chosenDestination($user) === 'story' ? 'story' : 'feed';
+        $this->channel->sendText($chatId, Messages::surpriseThinking());
+        $brief = BenefitOrchestrator::surpriseBrief($view, $now, null, $destination);
         $this->offerSurprisePreview($view, $chatId, mb_substr($brief['idea'], 0, 1000), $brief['phrase']);
     }
 
@@ -2588,6 +2580,13 @@ class PostService
         if ($data === 'sur:add') {
             $this->users->update($userId, ['pending_action' => 'surprise:add']);
             $this->channel->sendText($chatId, Messages::surpriseAskComplement());
+
+            return;
+        }
+        if ($data === 'sur:again') {
+            SurpriseDraft::clear($userId);
+            $this->users->update($userId, ['pending_action' => null]);
+            $this->offerFreshSurpriseBrief($user, $chatId);
 
             return;
         }
@@ -3530,11 +3529,12 @@ class PostService
 
             return;
         }
+        $destination = $this->chosenDestination($user);
         $this->users->update((int) $user['id'], ['pending_action' => null]);
         $this->channel->sendText($chatId, Messages::aiVideoStarted($seconds));
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
         SlowNotice::arm($postId, $chatId);
-        $this->rememberDestination($user, $postId);
+        $this->applyDestination($postId, $destination);
         $this->posts->update($postId, ['creative' => 1, 'video_seconds' => $seconds]);
         $reference = null;
         if ($message !== null) {
@@ -3636,12 +3636,32 @@ class PostService
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
             throw new RuntimeException('Nao foi possivel criar storage/media');
         }
+        $post = $this->posts->find($postId);
+        $canvas = is_array($post) && (string) ($post['destination'] ?? 'feed') === 'story' ? 'story' : 'feed';
         $existing = $this->posts->media($postId);
         $publicDir = Config::root() . '/public/m';
+        if (!is_dir($publicDir) && !mkdir($publicDir, 0775, true) && !is_dir($publicDir)) {
+            throw new RuntimeException('Nao foi possivel criar public/m');
+        }
+        $normalizeScratch = $dir . '/norm_' . $postId;
+        if (!is_dir($normalizeScratch) && !mkdir($normalizeScratch, 0775, true) && !is_dir($normalizeScratch)) {
+            throw new RuntimeException('Nao foi possivel criar pasta temporaria de imagem');
+        }
         foreach ($frames as $index => $jpeg) {
-            $dest = $dir . '/' . $postId . '_' . $index . '.jpg';
-            if (file_put_contents($dest, $jpeg) === false) {
+            $raw = $normalizeScratch . '/raw_' . $index . '.jpg';
+            if (file_put_contents($raw, $jpeg) === false) {
                 throw new RuntimeException('Nao foi possivel gravar a imagem');
+            }
+            $normalized = $this->normalizer->normalize([$raw], $normalizeScratch, $canvas);
+            $dest = $dir . '/' . $postId . '_' . $index . '.jpg';
+            if (!copy($normalized[0]->absolutePath, $dest)) {
+                throw new RuntimeException('Nao foi possivel gravar a imagem');
+            }
+            if (is_file($raw)) {
+                unlink($raw);
+            }
+            if (is_file($normalized[0]->absolutePath)) {
+                unlink($normalized[0]->absolutePath);
             }
             $row = $existing[$index] ?? null;
             if (is_array($row)) {
@@ -4057,6 +4077,9 @@ class PostService
      */
     private function shouldBlockMediaWhilePending(string $userPending, array $pendingPost): bool
     {
+        if ($this->userInActivePostWizard($userPending)) {
+            return false;
+        }
         if (preg_match('/^(phrase|logo|sched):(\d+)$/', $userPending) === 1) {
             return true;
         }
@@ -4065,6 +4088,13 @@ class PostService
         }
 
         return false;
+    }
+
+    private function userInActivePostWizard(string $userPending): bool
+    {
+        return str_starts_with($userPending, 'where:')
+            || str_starts_with($userPending, 'kind:')
+            || str_starts_with($userPending, 'aiv:');
     }
 
     /**
@@ -4077,10 +4107,8 @@ class PostService
 
     private function applyDestination(int $postId, string $destination): void
     {
-        if ($destination !== 'story') {
-            return;
-        }
-        $this->posts->update($postId, ['destination' => 'story']);
+        $destination = $destination === 'story' ? 'story' : 'feed';
+        $this->posts->update($postId, ['destination' => $destination]);
     }
 
     /**
