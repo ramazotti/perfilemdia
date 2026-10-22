@@ -3886,12 +3886,8 @@ class PostService
         } else {
             $this->channel->sendText($chatId, Messages::ideaWorking());
         }
-        if ($rolled !== '') {
-            $label = IdeaPieces::formatLabel((string) ($formatKey ?? ''));
-            $this->channel->sendText(
-                $chatId,
-                $label !== '' ? Messages::ideaFormatPicked($label) : Messages::ideaFormatRolled($rolled),
-            );
+        if ($rolled !== '' && $formatKey === null) {
+            $this->channel->sendText($chatId, Messages::ideaFormatRolled($rolled));
         }
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
         SlowNotice::arm($postId, $chatId);
@@ -4310,6 +4306,9 @@ class PostService
         ?string $formatKey,
         bool $surprise,
     ): array {
+        if ($formatKey === 'photo') {
+            return [$idea, ''];
+        }
         if ($formatKey !== null && $formatKey !== 'photo') {
             $cue = IdeaPieces::cueFromKey($formatKey, $aspect);
             if ($cue !== '') {
