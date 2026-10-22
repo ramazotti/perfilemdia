@@ -172,6 +172,10 @@ class PostService
             return;
         }
 
+        if ($kind === 'foto' && $this->startIdeaFromPhotoReference($user, $chatId, $message)) {
+            return;
+        }
+
         $this->startSinglePost($user, $chatId, $message);
     }
 
@@ -3992,9 +3996,42 @@ class PostService
             return;
         }
 
-        if ($kind === 'foto' || $kind === 'video') {
+        if ($kind === 'foto') {
+            if ($this->startIdeaFromPhotoReference($user, $chatId, $message)) {
+                return;
+            }
+            $this->startSinglePost($user, $chatId, $message);
+
+            return;
+        }
+
+        if ($kind === 'video') {
             $this->startSinglePost($user, $chatId, $message);
         }
+    }
+
+    /**
+     * Texto longo com foto costuma ser pedido de IA, não publicação da foto original.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $message
+     */
+    private function startIdeaFromPhotoReference(array $user, int $chatId, array $message): bool
+    {
+        $file = $this->extractFile($message);
+        if ($file === null || $file['kind'] !== 'image') {
+            return false;
+        }
+        $idea = $this->extractTheme($message);
+        if ($idea === null || mb_strlen($idea) < 150) {
+            return false;
+        }
+        if (!$this->aiAllowed((int) $user['id'])) {
+            return false;
+        }
+        $this->startIdea($user, $chatId, $idea, $message);
+
+        return true;
     }
 
     private function stashIdeaReference(array $user, array $message): bool

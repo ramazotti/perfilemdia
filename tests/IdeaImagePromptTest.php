@@ -119,6 +119,19 @@ final class IdeaImagePromptTest extends TestCase
         $this->assertStringContainsString('"Hoje, de perto."', $prompt);
     }
 
+    public function testPhotoWithReferenceAsksForNewImageNotDuplicate(): void
+    {
+        $prompt = IdeaImage::promptFor(
+            'Homenagem a São João Paulo II, luz suave, sem rostos de fiéis.',
+            true,
+            '',
+            '4:5',
+        );
+        $this->assertStringContainsString('NEW photograph', $prompt);
+        $this->assertStringContainsString('reference only', $prompt);
+        $this->assertStringNotContainsString('Keep the same people', $prompt);
+    }
+
     public function testPhotoPromptStillForbidsText(): void
     {
         $prompt = IdeaImage::promptFor("Manh\u{00e3} calma na recep\u{00e7}\u{00e3}o", false, '', '4:5');

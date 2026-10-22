@@ -699,7 +699,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function kindFoto(): string
     {
-        return 'Manda a foto (como arquivo, se puder). Se quiser, escreva na mesma mensagem sobre o que Ã©.';
+        return 'Manda a foto (como arquivo, se puder). Ela vai publicada como você enviou. Para a IA criar outra imagem a partir de uma referência, escolha IA cria imagem e legenda.';
     }
 
     public static function kindStoryFoto(): string
@@ -729,7 +729,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function kindIa(): string
     {
-        return 'Manda a ideia em uma mensagem. Esse texto Ã© o pedido: a imagem e a legenda saem a partir dele. Se quiser, manda uma foto junto, sÃ³ como referÃªncia. Ou toque em Surpreenda-me, que eu monto a foto, o texto e a marca.';
+        return 'Manda a ideia em uma mensagem. A IA gera uma imagem nova a partir do texto (não republica a foto igual). Se quiser, manda uma foto junto só como referência visual. Ou toque em Surpreenda-me.';
     }
 
 

@@ -320,9 +320,10 @@ final class IdeaPieces
                     ? ' Photorealistic, natural color, shot on a camera, vertical 4:5.'
                     : ' Photorealistic, natural color, shot on a camera.');
 
-            return 'The attached photo is the real scene. Keep the same people, their ages, faces, clothing, uniforms, objects, and the same place. Keep the same level of care: do not replace the scene with a different school, courtyard, building, poorer, generic, or neglected location. If the idea mentions sky or looking up, show that mood with these same people in this same place, not a new wide shot of another school. You may adjust framing, light, and sky so the feeling matches the idea. Do not add clutter, props, or busy backgrounds that were not there.'
+            return 'The attached image is reference only, not the final post. Create a NEW photograph that fulfills the written idea below.'
+                . ' Do not return the same picture, a crop, or a near-duplicate. You may echo the subject, symbols, era, or mood suggested by the reference, but compose a fresh scene that matches the idea text.'
                 . $frame . $clean . $look
-                . ' The idea describes the feeling, not a new place. ' . self::imageBrief($idea);
+                . ' ' . self::imageBrief($idea);
         }
 
         $open = $story
