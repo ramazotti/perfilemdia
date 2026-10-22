@@ -91,7 +91,7 @@ final class AgencyMultiAccountTest extends TestCase
         $users->update($userId, [
             'onboarding_step' => 'done',
             'display_name' => 'Marca A',
-            'profession' => 'Profissão A',
+            'profession' => 'ProfissÃ£o A',
             'about' => 'Texto sobre A',
         ]);
         $this->subscribeAgencia($userId);
@@ -101,7 +101,7 @@ final class AgencyMultiAccountTest extends TestCase
 
         $users->updateInstagramProfile($idB, [
             'display_name' => 'Marca A',
-            'profession' => 'Profissão A',
+            'profession' => 'ProfissÃ£o A',
             'about' => 'Texto sobre A',
         ]);
 

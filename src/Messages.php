@@ -71,7 +71,7 @@ final class Messages
 
     public static function novo(): string
     {
-        return 'Vamos montar um post. Escolha se vai para o feed ou para o story. Depois você manda a mídia (ou usa a que já enviou).';
+        return 'Vamos montar um post. Primeiro: vai para o feed ou para o story? Depois você escolhe se manda sua foto ou vídeo, ou se a IA cria a imagem.';
     }
 
     public static function ajuda(): string
@@ -87,7 +87,7 @@ final class Messages
             . "/excluirconta apagar seus dados e começar do zero\n"
             . "/chamado abrir ou ver um chamado\n/ideia ideia para o post de hoje\n/resultado alcance dos últimos dias\n/marca cor e estilo da marca\n"
             . "/ajuda esta lista\n\n"
-            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio. Nesse post, toque em Ver formatos para infográfico, citação e os outros desenhos.";
+            . "Dica: pode mandar um áudio no lugar de escrever. Mande a foto como arquivo para mais qualidade. Vídeo curto fica nos planos Profissional e Estúdio. O post criado pela IA é só do Estúdio. Nele você escolhe o formato: foto, infográfico, citação, checklist e outros.";
     }
 
     public static function status(string $ig, int $used, int $limit): string
@@ -127,10 +127,10 @@ final class Messages
     public static function captionFailed(bool $fromIdea = false): string
     {
         if ($fromIdea) {
-            return 'N�o consegui escrever a legenda agora. Toque em Surpreenda-me de novo ou mande a ideia em texto.';
+            return 'Não consegui escrever a legenda agora. Toque em Surpreenda-me de novo ou mande a ideia em texto.';
         }
 
-        return 'N�o consegui escrever a legenda agora. Manda a foto de novo, com a frase na mesma mensagem.';
+        return 'Não consegui escrever a legenda agora. Manda a foto de novo, com a frase na mesma mensagem.';
     }
 
     public static function askFeedback(): string
@@ -210,12 +210,12 @@ final class Messages
 
     public static function replacePending(): string
     {
-        return 'Ainda existe um post aguardando aprova��o (pode estar mais acima no chat). Quer descart�-lo e usar esta m�dia como envio simples de foto?';
+        return 'Ainda existe um post aguardando aprovação (pode estar mais acima no chat). Quer descartá-lo e seguir com esta mídia?';
     }
 
     public static function pendingPostAutoDiscarded(): string
     {
-        return 'Havia um post anterior aguardando aprova��o; descartei para seguir com a cria��o pela IA.';
+        return 'Havia um post anterior aguardando aprovação; descartei para seguir com a criação pela IA.';
     }
 
     public static function alreadyProcessed(): string
@@ -704,7 +704,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function kindFoto(): string
     {
-        return 'Manda a foto (como arquivo, se puder). Ela vai publicada como voc� enviou. Para a IA criar outra imagem a partir de uma refer�ncia, escolha IA cria imagem e legenda.';
+        return 'Manda a foto (como arquivo, se puder) e, na mesma mensagem, uma frase sobre ela. A foto vai publicada como você enviou; eu escrevo a legenda.';
     }
 
     public static function kindStoryFoto(): string
@@ -734,35 +734,43 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function kindIa(): string
     {
-        return 'Manda a ideia em uma mensagem. A IA gera uma imagem nova a partir do texto (n�o republica a foto igual). Se quiser, manda uma foto junto s� como refer�ncia visual. Ou toque em Surpreenda-me.';
+        return 'Manda a ideia em uma mensagem. A IA gera uma imagem nova a partir do texto (não republica a foto igual). Se quiser, manda uma foto junto só como referência visual. Ou toque em Surpreenda-me.';
     }
 
 
     public static function ideaFormats(): string
     {
-        return 'Depois de Feed ou Story, escolha o formato visual (infogr'
-            . "\u{00e1}fico, cita\u{00e7}\u{00e3}o, checklist e outros). "
-            . '3 slides no feed formam sequ'
-            . "\u{00ea}ncia (at\u{00e9} 10). No story, 3 telas (at\u{00e9} 3). "
-            . 'S'
-            . "\u{00f3} depois disso voc\u{00ea} escolhe foto, v\u{00ed}deo ou IA.";
+        return "Formatos da IA:\n"
+            . "Foto simples: cena fotográfica, sem texto na imagem.\n"
+            . "Infográfico: 3 slides no feed (carrossel) ou 3 telas no story.\n"
+            . "Citação: frase em destaque, com autor ou referência.\n"
+            . "Checklist, Comparativo, Antes e depois e Passo a passo: arte com texto curto.\n\n"
+            . 'Se o seu texto é longo ou é uma homenagem, citação ou infográfico mostram melhor a mensagem.';
     }
 
     public static function askIdeaFormat(): string
     {
-        return 'Qual formato visual voc� quer nesta publica��o? Toque em uma op��o abaixo. Depois disso voc� escolhe foto, v�deo ou IA.';
+        return 'Como a IA deve montar a imagem? Escolha o formato abaixo.';
     }
 
     public static function ideaFormatPicked(string $label): string
     {
-        return 'Formato: ' . $label . '. Agora escolha como montar o post.';
+        return 'Formato: ' . $label . '.';
     }
 
-    public static function ideaFormatRolled(string $cue): string
+    public static function ideaNeedFormat(): string
     {
-        $name = rtrim(trim($cue), ':');
+        return 'Guardei o que você mandou. Agora escolha o formato e eu já começo.';
+    }
 
-        return 'Sorteio do desenho: ' . $name . '.';
+    public static function photoAsk(): string
+    {
+        return 'Recebi a foto com um texto longo. Como você prefere seguir?';
+    }
+
+    public static function photoAskReminder(): string
+    {
+        return 'Toque em uma das opções: publicar a sua foto como está ou deixar a IA criar uma imagem nova a partir dela.';
     }
 
     public static function ideaWorking(): string
@@ -873,7 +881,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function surpriseThinking(): string
     {
-        return 'Estou pensando em um tema novo para o seu perfil�';
+        return 'Estou pensando em um tema novo para o seu perfil…';
     }
 
     public static function surprisePreviewHeader(): string
@@ -888,12 +896,12 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function surpriseAskComplement(): string
     {
-        return 'Mande em uma mensagem o que quer acrescentar ao pedido (tema, marca, formato, detalhe). Depois eu mostro de novo e voc� confirma.';
+        return 'Mande em uma mensagem o que quer acrescentar ao pedido (tema, marca, formato, detalhe). Depois eu mostro de novo e você confirma.';
     }
 
     public static function surpriseComplementSaved(): string
     {
-        return 'Complemento inclu�do. Confira o pedido atualizado:';
+        return 'Complemento incluído. Confira o pedido atualizado:';
     }
 
     public static function surprisePreviewCancelled(): string
@@ -908,7 +916,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function surprisePreviewReminder(): string
     {
-        return 'Use os bot�es abaixo: Gerar agora, Complementar pedido ou Cancelar.';
+        return 'Use os botões abaixo: Gerar agora, Complementar pedido ou Cancelar.';
     }
 
     public static function surpriseStartedDesign(): string
@@ -938,7 +946,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function ideaFailed(): string
     {
-        return 'Não consegui criar essa imagem agora. Manda a ideia de novo.';
+        return 'Não consegui criar essa imagem agora. Manda a ideia de novo que eu tento outra vez.';
     }
 
     public static function videoPlan(): string
@@ -996,7 +1004,7 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
     {
         $unit = $story ? ($count === 1 ? 'tela' : 'telas') : ($count === 1 ? 'slide' : 'slides');
 
-        return 'Vou desenhar ' . $count . ' ' . $unit . ', um depois do outro. Cada um pode levar 1 a 3 minutos. N�o feche o Telegram; aviso a cada slide e se passar de 1 minuto no total.';
+        return 'Vou desenhar ' . $count . ' ' . $unit . ', um depois do outro. Cada um pode levar 1 a 3 minutos. Não feche o Telegram; aviso a cada slide e se passar de 1 minuto no total.';
     }
 
     public static function ideaSlideProgress(int $index, int $count): string

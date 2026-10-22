@@ -109,8 +109,9 @@ final class IdeaFormatBrief
     private static function surpriseIdeaSchema(string $formatKey): string
     {
         return match ($formatKey) {
-            'quote' => 'Na idea inclua: Texto na imagem: «citação em português» e Crédito: (autor ou referência bíblica). '
-                . 'Descreva também fundo/cores tipográficas, sem pedir só uma porta ou paisagem sem texto.',
+            'quote' => 'Comece a idea com: Texto na imagem: «citação em português, até 180 caracteres» Crédito: (autor real ou referência bíblica exata). '
+                . 'Use só citações reais e conhecidas; nunca invente autor nem versículo. '
+                . 'Depois descreva em uma frase o fundo e as cores, sem pedir só uma porta ou paisagem sem texto.',
             'checklist' => 'Na idea liste Item 1: … até Item 6: … (títulos curtos que entram na arte).',
             'compare' => 'Na idea defina Coluna esquerda: … Coluna direita: … com 2 a 4 linhas cada.',
             'before_after' => 'Na idea descreva estado ANTES e estado DEPOIS (rótulos ANTES/DEPOIS na arte).',

@@ -7,7 +7,7 @@ namespace PerfilEmDia\Image;
 final class PhraseGlow
 {
     /**
-     * Halo esfumaÁado atr·s da letra. Texto claro leva halo preto. Texto escuro leva halo branco.
+     * Halo esfuma√ßado atr√°s da letra. Texto claro leva halo preto. Texto escuro leva halo branco.
      *
      * @param \GdImage $image
      * @param list<array{0:int,1:int,2:int,3:string,4:string}> $glyphs

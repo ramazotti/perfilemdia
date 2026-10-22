@@ -79,7 +79,7 @@ PROMPT;
         $extras = trim((string) ($promptExtras ?? ''));
         if ($extras !== '') {
             $parts[] = '';
-            $parts[] = 'Contexto extra (marca ou palavra-chave citada no tema). Use sÛ o que couber; n„o invente fatos alÈm disso:';
+            $parts[] = 'Contexto extra (marca ou palavra-chave citada no tema). Use s√≥ o que couber; n√£o invente fatos al√©m disso:';
             $parts[] = $extras;
         }
 

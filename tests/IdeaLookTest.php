@@ -24,7 +24,8 @@ final class IdeaLookTest extends TestCase
 
     public function testSurpriseBriefForCalmTeacherUsesSimpleScene(): void
     {
-        $brief = BenefitOrchestrator::surpriseBrief([
+        // Sem chave: usa os modelos locais, sem chamar o OpenRouter no teste.
+        $brief = BenefitOrchestrator::surpriseBriefFromTemplates([
             'tone' => 'acolhedor',
             'profession' => 'Professora de ensino fundamental',
             'city' => 'Curitiba',

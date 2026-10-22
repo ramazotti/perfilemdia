@@ -10,6 +10,10 @@ final class IdeaPieces
 
     public const STORY_CAP = 3;
 
+    public const PHOTO_CUE = 'Foto simples:';
+
+    private const NUMBER = '(?:[0-9]{1,2}|um|uma|dois|duas|tr[e\x{00ea}]s|quatro|cinco|seis|sete|oito|nove|dez)';
+
     /**
      * @return list<string>
      */
@@ -43,7 +47,7 @@ final class IdeaPieces
     public static function formatChoices(): array
     {
         return [
-            ['key' => 'photo', 'label' => 'Foto simples (sem layout)'],
+            ['key' => 'photo', 'label' => 'Foto simples (sem texto)'],
             ['key' => 'infographic', 'label' => 'Infográfico (sequência)'],
             ['key' => 'quote', 'label' => 'Citação'],
             ['key' => 'checklist', 'label' => 'Checklist'],
@@ -78,8 +82,11 @@ final class IdeaPieces
 
     public static function cueFromKey(string $key, string $aspect): string
     {
-        if (!self::isFormatKey($key) || $key === 'photo') {
+        if (!self::isFormatKey($key)) {
             return '';
+        }
+        if ($key === 'photo') {
+            return self::PHOTO_CUE;
         }
 
         return match ($key) {
@@ -96,14 +103,21 @@ final class IdeaPieces
         };
     }
 
+    /**
+     * O formato escolhido pela pessoa vale mais que as palavras do pedido:
+     * troca o rótulo que já estiver no começo e põe o do formato.
+     */
     public static function applyCue(string $idea, string $cue): string
     {
         $idea = trim($idea);
-        if ($cue === '' || self::isDesigned($idea)) {
+        if ($cue === '') {
+            return $idea;
+        }
+        if (self::leadingKind($idea) === self::leadingKind($cue)) {
             return $idea;
         }
 
-        return rtrim($cue) . ' ' . $idea;
+        return rtrim($cue) . ' ' . self::stripFormatCue($idea);
     }
 
     /**
@@ -129,6 +143,10 @@ final class IdeaPieces
 
     public static function kind(string $text): string
     {
+        $lead = self::leadingKind($text);
+        if ($lead !== null) {
+            return $lead;
+        }
         if (preg_match('/antes\s+e\s+depois/iu', $text) === 1) {
             return 'before_after';
         }
@@ -156,14 +174,15 @@ final class IdeaPieces
      */
     public static function pieces(string $idea, string $aspect): array
     {
-        $kind = self::kind($idea);
+        $lead = self::leadingKind($idea);
+        $kind = $lead ?? self::kind($idea);
         $cap = $aspect === '9:16' ? self::STORY_CAP : self::FEED_CAP;
         if ($kind === 'photo') {
             return [['kind' => 'photo', 'index' => 1, 'count' => 1]];
         }
 
-        $count = self::explicitCount($idea);
-        if ($count === 0 && self::asksSequence($idea)) {
+        $count = in_array($lead, ['quote', 'checklist', 'compare'], true) ? 1 : self::explicitCount($idea);
+        if ($count === 0 && $lead === null && self::asksSequence($idea)) {
             $count = 3;
         }
         if ($kind === 'before_after') {
@@ -208,6 +227,30 @@ final class IdeaPieces
             $piece['index'],
             $piece['count'],
         );
+    }
+
+    /**
+     * Rótulo de formato no começo do texto (posto pelo botão de formato).
+     */
+    private static function leadingKind(string $text): ?string
+    {
+        $text = ltrim($text);
+        $patterns = [
+            'photo' => '/^foto\s+simples\s*:/iu',
+            'quote' => '/^cita[c\x{00e7}][a\x{00e3}]o\s*:/iu',
+            'checklist' => '/^check\s*list\s*:/iu',
+            'compare' => '/^comparativo\s*:/iu',
+            'before_after' => '/^antes\s+e\s+depois\s*:/iu',
+            'steps' => '/^passo\s+a\s+passo(?:\s+(?:com|de)\s+' . self::NUMBER . ')?\s*:/iu',
+            'infographic' => '/^(?:infogr[a\x{00e1}]fico(?:\s+com\s+\d+\s+slides?)?|story\s+com\s+\d+\s+telas?)\s*:/iu',
+        ];
+        foreach ($patterns as $kind => $pattern) {
+            if (preg_match($pattern, $text) === 1) {
+                return $kind;
+            }
+        }
+
+        return null;
     }
 
     private static function explicitCount(string $text): int
@@ -267,13 +310,15 @@ final class IdeaPieces
         return $value > 0 ? $value : 0;
     }
 
-    private static function imageBrief(string $idea): string
+    private static function imageBrief(string $idea, string $kind = 'photo'): string
     {
         $body = self::stripFormatCue($idea);
         $exact = self::exactWords($idea);
         $parts = ['Before drawing, decide what the picture shows.'];
         if ($exact !== '') {
             $parts[] = 'Exact text on the image, spelled as written. Do not add any other sentence from the assignment: "' . $exact . '".';
+        } elseif ($kind === 'quote') {
+            $parts[] = 'The assignment gives no exact quote. Pick one short, real, well-known quote in Brazilian Portuguese that fits the idea. If it is from the Bible, use the exact wording and put the correct book chapter:verse in a small credit line. Never invent an author or a reference. Do not print the assignment itself.';
         } else {
             $parts[] = 'No sentence from the assignment may appear on the image. If the layout needs words, write new short ones in Brazilian Portuguese about the idea.';
         }
@@ -286,7 +331,7 @@ final class IdeaPieces
     private static function stripFormatCue(string $idea): string
     {
         $text = trim($idea);
-        $pattern = '/^(?:infogr[a\x{00e1}]fico(?:\s+com\s+\d+\s+slides?)?|story\s+com\s+\d+\s+telas?|cita[c\x{00e7}][a\x{00e3}]o|check\s*list|comparativo|antes\s+e\s+depois|passo\s+a\s+passo(?:\s+(?:com|de)\s+(?:[0-9]{1,2}|um|uma|dois|duas|tr[e\x{00ea}]s|quatro|cinco|seis|sete|oito|nove|dez))?)\s*:\s*/iu';
+        $pattern = '/^(?:foto\s+simples|infogr[a\x{00e1}]fico(?:\s+com\s+\d+\s+slides?)?|story\s+com\s+\d+\s+telas?|cita[c\x{00e7}][a\x{00e3}]o|check\s*list|comparativo|antes\s+e\s+depois|passo\s+a\s+passo(?:\s+(?:com|de)\s+(?:[0-9]{1,2}|um|uma|dois|duas|tr[e\x{00ea}]s|quatro|cinco|seis|sete|oito|nove|dez))?)\s*:\s*/iu';
         $stripped = preg_replace($pattern, '', $text, 1);
 
         return trim(is_string($stripped) ? $stripped : $text);
@@ -348,7 +393,7 @@ final class IdeaPieces
     ): string {
         $frame = $aspect === '9:16'
             ? 'Full-screen vertical design, 9:16.'
-            : 'Vertical design, 3:4. Leave a clear empty band at the top and at the bottom.';
+            : 'Vertical design, 3:4. The picture will be trimmed to 4:5, so keep every word, number and credit line at least 8% away from the top and bottom edges.';
         $source = $hasReference
             ? 'The attached photo is only a reference for subject or color. Do not return that photo with a caption bar.'
             : 'Do not make a photograph.';
@@ -382,6 +427,6 @@ final class IdeaPieces
             . ' Large type, high contrast, generous margins, and every word fully inside the frame.'
             . ' Flat or editorial layout, few colors, no watermark, no tiny footnotes, no English labels.'
             . $look
-            . ' ' . self::imageBrief($idea);
+            . ' ' . self::imageBrief($idea, $kind);
     }
 }

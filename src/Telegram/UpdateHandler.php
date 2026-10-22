@@ -369,9 +369,9 @@ final class UpdateHandler
 
             return;
         }
-        if ($data === 'pk:formatos') {
+        if (preg_match('/^pa:(own|ia):(\d+)$/', $data, $m) === 1) {
             $this->channel->answerCallback($callbackId);
-            $this->channel->sendText($chatId, Messages::ideaFormats());
+            $this->postsService->handlePhotoChoice($user, $chatId, $m[1] === 'own', (int) $m[2]);
 
             return;
         }
@@ -574,7 +574,7 @@ final class UpdateHandler
             return Messages::status($username, $used, $limit);
         }
         if ($maxIg > 1) {
-            return $base . "\nInstagram: {$connected} de {$maxIg} · Ativa: @" . ltrim($username, '@');
+            return $base . "\nInstagram: {$connected} de {$maxIg} Â· Ativa: @" . ltrim($username, '@');
         }
 
         return $base;

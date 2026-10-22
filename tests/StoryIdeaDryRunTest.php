@@ -108,6 +108,15 @@ final class StoryIdeaDryRunTest extends TestCase
                 'message' => ['message_id' => 3, 'chat' => $chat],
             ],
         ]);
+        $handler->handle([
+            'update_id' => 31,
+            'callback_query' => [
+                'id' => 'cb-fmt',
+                'data' => 'fm:photo',
+                'from' => $from,
+                'message' => ['message_id' => 31, 'chat' => $chat],
+            ],
+        ]);
         $idea = 'Quero outra história, com outra reflexão sobre o dia da eleição. Seria algo assim, o que Jesus faria hoje? Que número ele escolheria? E a imagem dele... Talvez... Ele escrevendo algo no papel';
         $handler->handle([
             'update_id' => 4,

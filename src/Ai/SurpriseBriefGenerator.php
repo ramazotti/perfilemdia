@@ -236,7 +236,7 @@ final class SurpriseBriefGenerator
         if ($phrase === '') {
             $phrase = 'Hoje, de perto.';
         }
-        $idea = mb_substr($idea, 0, 480);
+        $idea = mb_substr($idea, 0, 800);
         $phrase = mb_substr($phrase, 0, 55);
 
         return ['idea' => $idea, 'phrase' => $phrase];

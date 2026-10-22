@@ -95,12 +95,27 @@ class PostService
             $user['pending_action'] = null;
             $userPending = '';
         }
+        if ($this->remindOpenQuestion($user, $chatId)) {
+            return;
+        }
+        $userPending = (string) ($user['pending_action'] ?? '');
 
         $kind = $this->selectedKind($user);
 
         if ($kind === 'ia') {
             if ($this->posts->findOpenWorkflowForUser((int) $user['id']) !== null) {
                 $this->channel->sendText($chatId, Messages::postInProgress());
+
+                return;
+            }
+            if ($this->chosenFormatKey($user) === null) {
+                $saved = IncomingMediaStash::load((int) $user['id']);
+                if ($this->extractTheme($message) === null && is_string($saved['caption'] ?? null)) {
+                    $message['caption'] = $saved['caption'];
+                }
+                IncomingMediaStash::save((int) $user['id'], $message);
+                $this->channel->sendText($chatId, Messages::ideaNeedFormat());
+                $this->sendFormatMenu($user, $chatId, $this->chosenDestination($user));
 
                 return;
             }
@@ -120,19 +135,12 @@ class PostService
             return;
         }
 
-        if ($kind === 'foto' && $this->posts->findOpenWorkflowForUser((int) $user['id']) === null) {
-            $idea = $this->extractTheme($message);
-            if (
-                $idea !== null
-                && mb_strlen($idea) >= 150
-                && $this->aiAllowed((int) $user['id'])
-                && $this->extractFile($message) !== null
-            ) {
-                $this->cancelPendingPostsForUser($user, $chatId, true);
-                $this->startIdea($user, $chatId, $idea, $message);
-
-                return;
-            }
+        if (
+            $kind === 'foto'
+            && $this->posts->findOpenWorkflowForUser((int) $user['id']) === null
+            && $this->askPhotoChoice($user, $chatId, $message)
+        ) {
+            return;
         }
 
         $pending = $this->posts->findPendingForUser((int) $user['id']);
@@ -171,8 +179,7 @@ class PostService
             }
             $pending = (string) ($user['pending_action'] ?? '');
             if (str_starts_with($pending, 'where:')) {
-                $where = substr($pending, 6) === 'story' ? 'story' : 'feed';
-                $this->sendKindMenu($user, $chatId, $where);
+                $this->sendKindMenu($user, $chatId, $this->chosenDestination($user));
 
                 return;
             }
@@ -192,10 +199,6 @@ class PostService
         if ($mediaGroupId !== null) {
             $this->handleAlbumItem($user, $chatId, $message, $mediaGroupId);
 
-            return;
-        }
-
-        if ($kind === 'foto' && $this->startIdeaFromPhotoReference($user, $chatId, $message)) {
             return;
         }
 
@@ -244,24 +247,82 @@ class PostService
             return;
         }
         $theme = $draft['theme_text'] !== null ? (string) $draft['theme_text'] : null;
-        $this->channel->sendText($chatId, Messages::received());
         if ($theme === null || trim($theme) === '') {
             if (!$this->posts->transition($draftId, PostStatus::Collecting, PostStatus::AwaitingTheme)) {
                 return;
             }
+            $this->channel->sendText($chatId, Messages::received());
             $this->channel->sendText($chatId, Messages::askTheme());
 
             return;
         }
 
-        if ($this->finalizeCollectingDraftAsIdea($user, $chatId, $draftId)) {
+        if ($this->draftWantsPhotoChoice($user, $draft)) {
+            $this->users->update((int) $user['id'], ['pending_action' => 'photoask:' . $draftId]);
+            $this->channel->sendText($chatId, Messages::photoAsk(), Keyboards::photoAsk($draftId));
+
             return;
         }
 
         if (!$this->posts->transition($draftId, PostStatus::Collecting, PostStatus::Generating)) {
             return;
         }
+        $this->channel->sendText($chatId, Messages::received());
         $this->generateAndPreview((int) $user['id'], $chatId, $draftId);
+    }
+
+    /**
+     * Resposta a "Publicar minha foto" ou "IA cria uma imagem nova" (foto com texto longo).
+     *
+     * @param array<string, mixed> $user
+     */
+    public function handlePhotoChoice(array $user, int $chatId, bool $own, int $draftId): void
+    {
+        $userId = (int) $user['id'];
+        $draft = $this->posts->find($draftId);
+        if (
+            (string) ($user['pending_action'] ?? '') !== 'photoask:' . $draftId
+            || $draft === null
+            || (int) $draft['user_id'] !== $userId
+            || (string) $draft['status'] !== PostStatus::Collecting->value
+        ) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        $this->users->update($userId, ['pending_action' => null]);
+        $this->cancelPendingPostsForUser($user, $chatId, true);
+
+        if ($own) {
+            if (!$this->posts->transition($draftId, PostStatus::Collecting, PostStatus::Generating)) {
+                return;
+            }
+            $this->channel->sendText($chatId, Messages::received());
+            $this->generateAndPreview($userId, $chatId, $draftId);
+
+            return;
+        }
+
+        $media = $this->posts->media($draftId);
+        $fileId = (string) ($media[0]['telegram_file_id'] ?? '');
+        if (!$this->posts->transition($draftId, PostStatus::Collecting, PostStatus::Cancelled)) {
+            return;
+        }
+        $this->discardPublicMedia($draftId);
+        IncomingMediaStash::save($userId, [
+            'caption' => (string) ($draft['theme_text'] ?? ''),
+            'photo' => [['file_id' => $fileId]],
+        ]);
+        $story = (string) ($draft['destination'] ?? 'feed') === 'story';
+        $this->users->update($userId, ['pending_action' => 'kind:ia' . ($story ? '@story' : '')]);
+        $user['pending_action'] = 'kind:ia' . ($story ? '@story' : '');
+        if (!$this->aiAllowed($userId)) {
+            $this->channel->sendText($chatId, Messages::aiPlan());
+
+            return;
+        }
+        $this->channel->sendText($chatId, Messages::ideaNeedFormat());
+        $this->sendFormatMenu($user, $chatId, $story ? 'story' : 'feed');
     }
 
     /**
@@ -545,10 +606,12 @@ class PostService
             || str_starts_with($pendingAction, 'kind:')
             || str_starts_with($pendingAction, 'aiv:')
             || str_starts_with($pendingAction, 'newpost:')
+            || str_starts_with($pendingAction, 'photoask:')
             || str_starts_with($pendingAction, 'surprise:');
         if (!$wizard) {
             return false;
         }
+        $this->abandonQuestionDraft($userId, $pendingAction);
         $this->users->update($userId, ['pending_action' => null]);
         IncomingMediaStash::clear($userId);
         IdeaReference::clearStash($userId);
@@ -876,7 +939,7 @@ class PostService
             $feedback = $post['last_feedback'] !== null ? (string) $post['last_feedback'] : null;
             $theme = (string) ($post['theme_text'] ?? '');
             if ((int) ($post['creative'] ?? 0) === 1) {
-                $theme = "[[criacao]]\n" . $theme;
+                $theme = "[[criacao]]\n" . self::captionTheme($theme);
             }
             if ((string) ($post['destination'] ?? 'feed') === 'story') {
                 $theme = "[[story]]\n" . $theme;
@@ -952,9 +1015,24 @@ class PostService
     }
 
     /**
-     * @param array<string, mixed> $user
-     * @param array<string, mixed> $post
+     * Tira do pedido da IA as instruções que só servem para a imagem.
      */
+    private static function captionTheme(string $theme): string
+    {
+        $clean = preg_replace(
+            [
+                '/^\s*foto\s+simples\s*:\s*/iu',
+                '/\s*Sem texto longo na imagem\.?/u',
+                '/\s*Enquadramento vertical [0-9:]+[^.]*\.?/u',
+                '/\s*Visual da marca:[^.\n]*\.?/u',
+            ],
+            ['', '', '', ''],
+            $theme,
+        );
+
+        return trim(is_string($clean) && trim($clean) !== '' ? $clean : $theme);
+    }
+
     /**
      * @param array<string, mixed> $user
      * @param array<string, mixed> $post
@@ -2603,12 +2681,7 @@ class PostService
         $formatKey = IdeaFormatBrief::normalizeKey($this->chosenFormatKey($user));
         $brief = BenefitOrchestrator::surpriseBrief($view, $now, null, $destination, null, $formatKey);
         $aspect = $destination === 'story' ? '9:16' : '4:5';
-        if ($formatKey !== 'photo') {
-            $brief['idea'] = IdeaPieces::applyCue(
-                $brief['idea'],
-                IdeaPieces::cueFromKey($formatKey, $aspect),
-            );
-        }
+        $brief['idea'] = IdeaPieces::applyCue($brief['idea'], IdeaPieces::cueFromKey($formatKey, $aspect));
         $this->offerSurprisePreview(
             $view,
             $chatId,
@@ -2646,11 +2719,10 @@ class PostService
             $draft = SurpriseDraft::load($userId);
             $formatKey = is_array($draft) ? (string) ($draft['format'] ?? 'photo') : $this->chosenFormatKey($user);
             SurpriseDraft::clear($userId);
-            if ($formatKey !== null && $formatKey !== '' && $formatKey !== 'photo') {
-                $this->users->update($userId, [
-                    'pending_action' => 'where:' . $destination . '|fmt:' . $formatKey,
-                ]);
-                $user['pending_action'] = 'where:' . $destination . '|fmt:' . $formatKey;
+            if ($formatKey !== null && IdeaPieces::isFormatKey($formatKey)) {
+                $again = 'kind:ia' . ($destination === 'story' ? '@story' : '') . '|fmt:' . $formatKey;
+                $this->users->update($userId, ['pending_action' => $again]);
+                $user['pending_action'] = $again;
             } else {
                 $this->users->update($userId, ['pending_action' => null]);
                 $user['pending_action'] = null;
@@ -2738,9 +2810,7 @@ class PostService
         $destination = ($destination ?? $this->chosenDestination($user)) === 'story' ? 'story' : 'feed';
         $formatKey = $formatKey ?? $this->chosenFormatKey($user) ?? 'photo';
         $aspect = $destination === 'story' ? '9:16' : '4:5';
-        if ($formatKey !== 'photo') {
-            $idea = IdeaPieces::applyCue($idea, IdeaPieces::cueFromKey($formatKey, $aspect));
-        }
+        $idea = IdeaPieces::applyCue($idea, IdeaPieces::cueFromKey($formatKey, $aspect));
         SurpriseDraft::clear($userId);
         if (!SurpriseDraft::save($userId, $idea, $phrase, $destination, $formatKey)) {
             $this->channel->sendText($chatId, Messages::ideaFailed());
@@ -3322,8 +3392,11 @@ class PostService
                 || str_starts_with($pending, 'sched:')
                 || str_starts_with($pending, 'aiv:')
                 || str_starts_with($pending, 'surprise:')
+                || str_starts_with($pending, 'newpost:')
+                || str_starts_with($pending, 'photoask:')
             )
         ) {
+            $this->abandonQuestionDraft((int) $user['id'], $pending);
             $this->users->update((int) $user['id'], ['pending_action' => null]);
             if (str_starts_with($pending, 'surprise:')) {
                 SurpriseDraft::clear((int) $user['id']);
@@ -3340,7 +3413,7 @@ class PostService
         $where = $where === 'story' ? 'story' : 'feed';
         $this->users->update((int) $user['id'], ['pending_action' => 'where:' . $where]);
         $user['pending_action'] = 'where:' . $where;
-        $this->sendFormatMenu($user, $chatId, $where);
+        $this->sendKindMenu($user, $chatId, $where);
     }
 
     /**
@@ -3354,24 +3427,42 @@ class PostService
 
             return;
         }
+        // O formato só vale para a IA; um botão de formato antigo também leva para a IA.
+        if ($this->selectedKind($user) !== 'ia' && !$this->aiAllowed((int) $user['id'])) {
+            $this->channel->sendText($chatId, Messages::aiPlan());
+
+            return;
+        }
         $where = $this->chosenDestination($user);
-        $this->users->update((int) $user['id'], [
-            'pending_action' => 'where:' . $where . '|fmt:' . $formatKey,
-        ]);
-        $user['pending_action'] = 'where:' . $where . '|fmt:' . $formatKey;
+        $pending = 'kind:ia' . ($where === 'story' ? '@story' : '') . '|fmt:' . $formatKey;
+        $this->users->update((int) $user['id'], ['pending_action' => $pending]);
+        $user['pending_action'] = $pending;
         $label = IdeaPieces::formatLabel($formatKey);
         if ($label !== '') {
             $this->channel->sendText($chatId, Messages::ideaFormatPicked($label));
         }
-        $this->sendKindMenu($user, $chatId, $where);
+        if ($this->tryConsumeIncomingStash($user, $chatId)) {
+            return;
+        }
+        $this->sendIdeaPrompt($chatId, $where);
+    }
+
+    private function sendIdeaPrompt(int $chatId, string $where): void
+    {
+        $this->channel->sendText(
+            $chatId,
+            $where === 'story' ? Messages::kindStoryIa() : Messages::kindIa(),
+            Keyboards::surpriseMe(),
+        );
     }
 
     /**
      * @param array<string, mixed> $user
      */
-    private function sendFormatMenu(array $user, int $chatId, string $where): void
+    private function sendFormatMenu(array $user, int $chatId, string $where, bool $explain = false): void
     {
-        $this->channel->sendText($chatId, Messages::askIdeaFormat(), Keyboards::ideaFormatPick());
+        $text = $explain ? Messages::ideaFormats() . "\n\n" . Messages::askIdeaFormat() : Messages::askIdeaFormat();
+        $this->channel->sendText($chatId, $text, Keyboards::ideaFormatPick());
     }
 
     public function askPostKind(int $chatId, ?array $user = null): void
@@ -3403,6 +3494,11 @@ class PostService
      */
     public function choosePostKind(array $user, int $chatId, string $kind): void
     {
+        if ($kind === 'formatos') {
+            $this->sendFormatMenu($user, $chatId, $this->chosenDestination($user), true);
+
+            return;
+        }
         if (!in_array($kind, ['foto', 'album', 'video', 'ia', 'aivideo', 'surpresa'], true)) {
             $this->askPostKind($chatId, $user);
 
@@ -3444,16 +3540,19 @@ class PostService
             return;
         }
         $mark = $where === 'story' ? '@story' : '';
-        $fmt = $this->formatSuffixFromPending((string) ($user['pending_action'] ?? ''));
-        $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind . $mark . $fmt]);
-        $user['pending_action'] = 'kind:' . $kind . $mark . $fmt;
+        $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind . $mark]);
+        $user['pending_action'] = 'kind:' . $kind . $mark;
+        if ($kind === 'ia') {
+            $this->sendFormatMenu($user, $chatId, $where);
+
+            return;
+        }
         $text = match ($kind) {
             'album' => Messages::kindAlbum(),
             'video' => $where === 'story' ? Messages::kindStoryVideo() : Messages::kindVideo(),
-            'ia' => $where === 'story' ? Messages::kindStoryIa() : Messages::kindIa(),
             default => $where === 'story' ? Messages::kindStoryFoto() : Messages::kindFoto(),
         };
-        $this->channel->sendText($chatId, $text, $kind === 'ia' ? Keyboards::surpriseMe() : null);
+        $this->channel->sendText($chatId, $text);
         $this->tryConsumeIncomingStash($user, $chatId);
     }
 
@@ -3498,6 +3597,9 @@ class PostService
      */
     public function replyWhenIdle(array $user, int $chatId): void
     {
+        if ($this->remindOpenQuestion($user, $chatId)) {
+            return;
+        }
         $pending = (string) ($user['pending_action'] ?? '');
         if ($pending === 'surprise:wait') {
             $draft = SurpriseDraft::load((int) $user['id']);
@@ -3518,13 +3620,7 @@ class PostService
             return;
         }
         if (str_starts_with($pending, 'where:')) {
-            $where = $this->chosenDestination($user);
-            if ($this->chosenFormatKey($user) === null) {
-                $this->sendFormatMenu($user, $chatId, $where);
-
-                return;
-            }
-            $this->sendKindMenu($user, $chatId, $where);
+            $this->sendKindMenu($user, $chatId, $this->chosenDestination($user));
 
             return;
         }
@@ -3536,6 +3632,11 @@ class PostService
                 return;
             }
             $where = $this->chosenDestination($user);
+            if ($kind === 'ia' && $this->chosenFormatKey($user) === null) {
+                $this->sendFormatMenu($user, $chatId, $where);
+
+                return;
+            }
             $text = match ($kind) {
                 'album' => Messages::kindAlbum(),
                 'video' => $where === 'story' ? Messages::kindStoryVideo() : Messages::kindVideo(),
@@ -3846,7 +3947,21 @@ class PostService
 
             return true;
         }
-        $this->startIdea($user, $chatId, mb_substr($idea, 0, 1000), null);
+        $idea = mb_substr($idea, 0, 1000);
+        if ($this->chosenFormatKey($user) === null) {
+            IncomingMediaStash::saveText((int) $user['id'], $idea);
+            $this->channel->sendText($chatId, Messages::ideaNeedFormat());
+            $this->sendFormatMenu($user, $chatId, $this->chosenDestination($user));
+
+            return true;
+        }
+        if ($this->posts->findOpenWorkflowForUser((int) $user['id']) !== null) {
+            $this->channel->sendText($chatId, Messages::postInProgress());
+
+            return true;
+        }
+        $this->cancelPendingPostsForUser($user, $chatId, true);
+        $this->startIdea($user, $chatId, $idea, null);
 
         return true;
     }
@@ -3871,23 +3986,19 @@ class PostService
         }
         $destination = ($destination ?? $this->chosenDestination($user)) === 'story' ? 'story' : 'feed';
         $formatKey = $this->chosenFormatKey($user);
+        $resume = $this->selectedKind($user) === 'ia' ? (string) ($user['pending_action'] ?? '') : '';
         $profile = $this->profileView($user);
         $this->users->update($userId, ['pending_action' => null]);
         $isStory = $destination === 'story';
         $aspect = $isStory ? '9:16' : '4:5';
-        if (IdeaImage::isDesigned($idea)) {
-            $rolled = '';
-        } else {
-            [$idea, $rolled] = $this->dressIdeaWithChosenFormat($idea, $aspect, $formatKey, $surprisePhrase !== null);
+        if ($surprisePhrase === null && $formatKey !== null) {
+            $idea = IdeaPieces::applyCue($idea, IdeaPieces::cueFromKey($formatKey, $aspect));
         }
         $designed = IdeaImage::isDesigned($idea);
         if ($surprisePhrase !== null) {
             $this->channel->sendText($chatId, $designed ? Messages::surpriseStartedDesign() : Messages::surpriseStarted());
         } else {
             $this->channel->sendText($chatId, Messages::ideaWorking());
-        }
-        if ($rolled !== '' && $formatKey === null) {
-            $this->channel->sendText($chatId, Messages::ideaFormatRolled($rolled));
         }
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
         SlowNotice::arm($postId, $chatId);
@@ -3928,6 +4039,10 @@ class PostService
             try {
                 $this->wakeDatabase();
                 $this->failPost($postId, PostStatus::Generating, 'idea_image', $e->getMessage());
+                if ($resume !== '') {
+                    // Deixa a pessoa reenviar a ideia sem refazer /novo, destino e formato.
+                    $this->users->update($userId, ['pending_action' => $resume]);
+                }
             } catch (\Throwable) {
             }
             $this->channel->sendText($chatId, Messages::ideaFailed());
@@ -3971,91 +4086,161 @@ class PostService
     /**
      * @param array<string, mixed> $user
      */
-    private function tryConsumeIncomingStash(array $user, int $chatId): void
+    private function tryConsumeIncomingStash(array $user, int $chatId): bool
     {
         $payload = IncomingMediaStash::load((int) $user['id']);
         if ($payload === null) {
-            return;
+            return false;
         }
         $message = IncomingMediaStash::toMessage($payload);
         $kind = $this->selectedKind($user);
         if ($kind === null) {
-            return;
+            return false;
         }
 
         if ($kind === 'ia') {
+            if ($this->chosenFormatKey($user) === null) {
+                return false;
+            }
             $idea = $this->extractTheme($message);
             IncomingMediaStash::clear((int) $user['id']);
             if ($idea !== null && $idea !== '') {
-                $this->startIdea($user, $chatId, $idea, $message);
+                if ($this->posts->findOpenWorkflowForUser((int) $user['id']) !== null) {
+                    $this->channel->sendText($chatId, Messages::postInProgress());
 
-                return;
+                    return true;
+                }
+                $this->cancelPendingPostsForUser($user, $chatId, true);
+                $this->startIdea($user, $chatId, $idea, $this->extractFile($message) !== null ? $message : null);
+
+                return true;
             }
             if ($this->stashIdeaReference($user, $message)) {
-                $this->channel->sendText($chatId, Messages::kindIaNeedTextWithPhoto());
+                $this->channel->sendText($chatId, Messages::kindIaNeedTextWithPhoto(), Keyboards::surpriseMe());
+
+                return true;
             }
 
-            return;
+            return false;
         }
 
-        if ($kind === 'album') {
-            if (!isset($message['media_group_id'])) {
-                return;
-            }
+        if ($this->extractFile($message) === null) {
+            IncomingMediaStash::clear((int) $user['id']);
+
+            return false;
+        }
+        if ($kind === 'album' && !isset($message['media_group_id'])) {
+            return false;
         }
 
         $block = $this->incomingBlock($user, $message);
         if ($block !== null) {
             $this->channel->sendText($chatId, $block);
 
-            return;
+            return true;
         }
 
         IncomingMediaStash::clear((int) $user['id']);
 
-        if ($kind === 'album' && isset($message['media_group_id'])) {
+        if ($kind === 'album') {
             $this->handleAlbumItem($user, $chatId, $message, (string) $message['media_group_id']);
 
-            return;
+            return true;
         }
 
-        if ($kind === 'foto') {
-            if ($this->startIdeaFromPhotoReference($user, $chatId, $message)) {
-                return;
-            }
-            $this->startSinglePost($user, $chatId, $message);
-
-            return;
+        if ($kind === 'foto' && $this->askPhotoChoice($user, $chatId, $message)) {
+            return true;
         }
+        $this->startSinglePost($user, $chatId, $message);
 
-        if ($kind === 'video') {
-            $this->startSinglePost($user, $chatId, $message);
-        }
+        return true;
     }
 
     /**
-     * Texto longo com foto costuma ser pedido de IA, não publicação da foto original.
+     * Foto com texto longo em "1 foto": antes de trocar a foto por IA, pergunta.
      *
      * @param array<string, mixed> $user
      * @param array<string, mixed> $message
      */
-    private function startIdeaFromPhotoReference(array $user, int $chatId, array $message): bool
+    private function askPhotoChoice(array $user, int $chatId, array $message): bool
     {
+        if (isset($message['media_group_id'])) {
+            return false;
+        }
         $file = $this->extractFile($message);
-        if ($file === null || $file['kind'] !== 'image') {
-            return false;
-        }
         $idea = $this->extractTheme($message);
-        if ($idea === null || mb_strlen($idea) < 150) {
+        if ($file === null || $file['kind'] !== 'image' || $idea === null || mb_strlen($idea) < 150) {
             return false;
         }
-        if (!$this->aiAllowed((int) $user['id'])) {
+        if (!$this->aiAllowed((int) $user['id']) || $this->incomingBlock($user, $message) !== null) {
             return false;
         }
-        $this->cancelPendingPostsForUser($user, $chatId, true);
-        $this->startIdea($user, $chatId, $idea, $message);
+        $draftId = $this->createDraftFromMessage($user, $message);
+        $this->users->update((int) $user['id'], ['pending_action' => 'photoask:' . $draftId]);
+        $this->channel->sendText($chatId, Messages::photoAsk(), Keyboards::photoAsk($draftId));
 
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $draft
+     */
+    private function draftWantsPhotoChoice(array $user, array $draft): bool
+    {
+        $theme = trim((string) ($draft['theme_text'] ?? ''));
+        if (mb_strlen($theme) < 150 || !empty($draft['media_group_id']) || !$this->aiAllowed((int) $user['id'])) {
+            return false;
+        }
+        $media = $this->posts->media((int) $draft['id']);
+
+        return count($media) === 1 && (string) ($media[0]['kind'] ?? '') === 'image';
+    }
+
+    /**
+     * Pergunta aberta (descartar anterior / minha foto ou IA): repete a pergunta com os botões.
+     *
+     * @param array<string, mixed> $user
+     */
+    private function remindOpenQuestion(array &$user, int $chatId): bool
+    {
+        $pending = (string) ($user['pending_action'] ?? '');
+        if (preg_match('/^(newpost|photoask):(\d+)$/', $pending, $m) !== 1) {
+            return false;
+        }
+        $draft = $this->posts->find((int) $m[2]);
+        if ($draft === null || (string) $draft['status'] !== PostStatus::Collecting->value) {
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+            $user['pending_action'] = null;
+
+            return false;
+        }
+        if ($m[1] === 'newpost') {
+            $this->channel->sendText($chatId, Messages::replacePending(), Keyboards::yesNoPending());
+        } else {
+            $this->channel->sendText($chatId, Messages::photoAskReminder(), Keyboards::photoAsk((int) $m[2]));
+        }
+
+        return true;
+    }
+
+    /**
+     * Rascunho criado só para uma pergunta que ficou sem resposta.
+     */
+    private function abandonQuestionDraft(int $userId, string $pending): void
+    {
+        if (preg_match('/^(?:newpost|photoask):(\d+)$/', $pending, $m) !== 1) {
+            return;
+        }
+        $draft = $this->posts->find((int) $m[1]);
+        if (
+            $draft !== null
+            && (int) $draft['user_id'] === $userId
+            && (string) $draft['status'] === PostStatus::Collecting->value
+            && $this->posts->transition((int) $draft['id'], PostStatus::Collecting, PostStatus::Cancelled)
+        ) {
+            $this->discardPublicMedia((int) $draft['id']);
+        }
     }
 
     /**
@@ -4078,41 +4263,6 @@ class PostService
         if ($notify) {
             $this->channel->sendText($chatId, Messages::pendingPostAutoDiscarded());
         }
-    }
-
-    /**
-     * @param array<string, mixed> $user
-     */
-    private function finalizeCollectingDraftAsIdea(array $user, int $chatId, int $draftId): bool
-    {
-        $draft = $this->posts->find($draftId);
-        if ($draft === null || (string) $draft['status'] !== PostStatus::Collecting->value) {
-            return false;
-        }
-        $idea = trim((string) ($draft['theme_text'] ?? ''));
-        if ($idea === '' || mb_strlen($idea) < 150 || !$this->aiAllowed((int) $user['id'])) {
-            return false;
-        }
-        $media = $this->posts->media($draftId);
-        $first = $media[0] ?? null;
-        if (!is_array($first) || (string) ($first['kind'] ?? '') !== 'image') {
-            return false;
-        }
-        $fileId = (string) ($first['telegram_file_id'] ?? '');
-        if ($fileId === '') {
-            return false;
-        }
-        if (!$this->posts->transition($draftId, PostStatus::Collecting, PostStatus::Cancelled)) {
-            return false;
-        }
-        $this->discardPublicMedia($draftId);
-        $message = [
-            'caption' => $idea,
-            'photo' => [['file_id' => $fileId]],
-        ];
-        $this->startIdea($user, $chatId, mb_substr($idea, 0, 1000), $message);
-
-        return true;
     }
 
     private function stashIdeaReference(array $user, array $message): bool
@@ -4274,15 +4424,6 @@ class PostService
         return in_array($kind, ['foto', 'album', 'video', 'ia'], true) ? $kind : null;
     }
 
-    private function formatSuffixFromPending(string $pending): string
-    {
-        if (preg_match('/\|fmt:([a-z0-9_]+)/', $pending, $match) !== 1) {
-            return '';
-        }
-
-        return '|fmt:' . $match[1];
-    }
-
     /**
      * @param array<string, mixed> $user
      */
@@ -4295,31 +4436,6 @@ class PostService
         $key = $match[1];
 
         return IdeaPieces::isFormatKey($key) ? $key : null;
-    }
-
-    /**
-     * @return array{0:string,1:string}
-     */
-    private function dressIdeaWithChosenFormat(
-        string $idea,
-        string $aspect,
-        ?string $formatKey,
-        bool $surprise,
-    ): array {
-        if ($formatKey === 'photo') {
-            return [$idea, ''];
-        }
-        if ($formatKey !== null && $formatKey !== 'photo') {
-            $cue = IdeaPieces::cueFromKey($formatKey, $aspect);
-            if ($cue !== '') {
-                return [IdeaPieces::applyCue($idea, $cue), $cue];
-            }
-        }
-        if ($surprise) {
-            return IdeaPieces::dress($idea, $aspect, true);
-        }
-
-        return IdeaPieces::dress($idea, $aspect, false);
     }
 
     /**

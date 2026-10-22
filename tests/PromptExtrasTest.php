@@ -11,17 +11,17 @@ final class PromptExtrasTest extends TestCase
 {
     public function testMatchesTriggerCaseInsensitive(): void
     {
-        $this->assertTrue(PromptExtras::matches('Post sobre a ADESIG em Maringá', 'adesig'));
+        $this->assertTrue(PromptExtras::matches('Post sobre a ADESIG em MaringÃ¡', 'adesig'));
         $this->assertFalse(PromptExtras::matches('Consultoria geral', 'adesig'));
     }
 
     public function testFormatsMatchedBlocksForCaption(): void
     {
         $text = PromptExtras::formatForCaption([
-            ['trigger_word' => 'adesig', 'prompt_text' => 'Consultoria em gestão.'],
+            ['trigger_word' => 'adesig', 'prompt_text' => 'Consultoria em gestÃ£o.'],
         ]);
         $this->assertStringContainsString('[adesig]', $text);
-        $this->assertStringContainsString('Consultoria em gestão.', $text);
+        $this->assertStringContainsString('Consultoria em gestÃ£o.', $text);
     }
 
     public function testMissingImageReturnsNull(): void
@@ -36,7 +36,7 @@ final class PromptExtrasTest extends TestCase
         $defs = [
             ['id' => 1, 'trigger_word' => 'adesig', 'prompt_text' => 'Consultoria ADESIG.'],
         ];
-        $resolved = PromptExtras::resolve($defs, 'Infográfico sobre Maringá', "Consultoria em gestão ADESIG\n@adesig_oficial");
+        $resolved = PromptExtras::resolve($defs, 'InfogrÃ¡fico sobre MaringÃ¡', "Consultoria em gestÃ£o ADESIG\n@adesig_oficial");
         $this->assertCount(1, $resolved);
         $this->assertSame('adesig', $resolved[0]['trigger_word']);
     }
@@ -56,7 +56,7 @@ final class PromptExtrasTest extends TestCase
             ['id' => 1, 'trigger_word' => 'adesig', 'prompt_text' => 'Parceiro sigsistem no mesmo grupo.'],
             ['id' => 2, 'trigger_word' => 'sigsistem', 'prompt_text' => 'Software SIG.'],
         ];
-        $resolved = PromptExtras::resolve($defs, 'Infográfico em Maringá', 'Trabalho da ADESIG');
+        $resolved = PromptExtras::resolve($defs, 'InfogrÃ¡fico em MaringÃ¡', 'Trabalho da ADESIG');
         $triggers = array_column($resolved, 'trigger_word');
         $this->assertContains('adesig', $triggers);
         $this->assertContains('sigsistem', $triggers);

@@ -57,7 +57,7 @@ final class PortalOrchestratorTest extends TestCase
         $orch->saveProfile($customerId, [
             'display_name' => 'Web Nome',
             'profession' => 'Consultoria',
-            'city' => 'Maringá',
+            'city' => 'MaringÃ¡',
             'tone' => 'profissional',
             'contact_cta' => 'WhatsApp',
             'about' => 'Sobre web',

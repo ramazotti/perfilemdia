@@ -62,6 +62,26 @@ final class IncomingMediaStash
     }
 
     /**
+     * Ideia em texto enviada antes de escolher o formato da IA; mantém a foto já guardada.
+     */
+    public static function saveText(int $userId, string $text): bool
+    {
+        $payload = self::load($userId) ?? ['message_id' => 0];
+        $payload['caption'] = $text;
+        $path = self::path($userId);
+        $dir = dirname($path);
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return false;
+        }
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        if ($json === false) {
+            return false;
+        }
+
+        return file_put_contents($path, $json) !== false;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public static function load(int $userId): ?array

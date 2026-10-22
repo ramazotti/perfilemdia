@@ -136,7 +136,7 @@
     root.setAttribute('data-expecting', expect);
     root.querySelectorAll('.portal-compose-card').forEach(function (card) {
       var forKind = card.getAttribute('data-for');
-      card.classList.toggle('portal-compose-card--active', forKind === 'media' ? expect === 'media' : expect !== 'media');
+      card.classList.toggle('portal-compose-card--active', forKind === 'media' ? (expect === 'media' || expect === 'idea') : expect !== 'media');
     });
     if (statusText && state && state.expecting_label) {
       statusText.textContent = state.expecting_label;
@@ -205,11 +205,11 @@
           showAlert(data.error, true);
         }
         if (data && data.ok === false && !data.error) {
-          showAlert('N„o foi possÌvel concluir.', true);
+          showAlert('N√£o foi poss√≠vel concluir.', true);
         }
       })
       .catch(function () {
-        showAlert('Falha de conex„o. Tente de novo.', true);
+        showAlert('Falha de conex√£o. Tente de novo.', true);
       })
       .finally(function () {
         setLoading(false);
@@ -268,7 +268,7 @@
       }
       var fileInput = formMedia.querySelector('input[type="file"]');
       if (!fileInput || !fileInput.files || !fileInput.files[0]) {
-        showAlert('Escolha uma foto ou vÌdeo antes de enviar.', true);
+        showAlert('Escolha uma foto ou v√≠deo antes de enviar.', true);
         return;
       }
       postAction(fd).then(function () {

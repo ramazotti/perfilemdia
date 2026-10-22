@@ -362,16 +362,6 @@ final class PortalOrchestrator
         $channel = new WebStudioChannel();
         $posts = PortalFactory::postService($this->pdo, $channel);
         $chatId = (int) ($user['telegram_chat_id'] ?? $userId);
-        if ($posts->handleSurpriseText($user, $chatId, $trim)) {
-            $this->flushBot($userId, $channel);
-
-            return;
-        }
-        if ($posts->handleThemeText($user, $chatId, $trim)) {
-            $this->flushBot($userId, $channel);
-
-            return;
-        }
         if ($trim === '/novo' || strcasecmp($trim, 'novo post') === 0) {
             $posts->beginNewPost($user, $chatId);
             $this->flushBot($userId, $channel);
@@ -384,7 +374,17 @@ final class PortalOrchestrator
 
             return;
         }
-        $posts->replyWhenIdle($user, $chatId);
+        // Mesma ordem do Telegram (UpdateHandler::resumeText), sem onboarding e chamados.
+        $handled = $posts->handleScheduleText($user, $chatId, $trim)
+            || $posts->handleLogoWait($user, $chatId)
+            || $posts->handleAiVideoText($user, $chatId, $trim)
+            || $posts->handlePhraseText($user, $chatId, $trim)
+            || $posts->handleSurpriseText($user, $chatId, $trim)
+            || $posts->handleIdeaText($user, $chatId, $trim)
+            || $posts->handleThemeText($user, $chatId, $trim);
+        if (!$handled) {
+            $posts->replyWhenIdle($user, $chatId);
+        }
         $this->flushBot($userId, $channel);
     }
 
@@ -481,6 +481,11 @@ final class PortalOrchestrator
 
             return;
         }
+        if (preg_match('/^pa:(own|ia):(\d+)$/', $data, $m) === 1) {
+            $posts->handlePhotoChoice($user, $chatId, $m[1] === 'own', (int) $m[2]);
+
+            return;
+        }
         if (str_starts_with($data, 'pk:')) {
             $posts->choosePostKind($user, $chatId, substr($data, 3));
 
@@ -493,6 +498,11 @@ final class PortalOrchestrator
         }
         if ($data === 'id:sur') {
             $posts->surprise($user, $chatId);
+
+            return;
+        }
+        if ($data === 'id:ia') {
+            $posts->createFromStoredIdea($user, $chatId);
 
             return;
         }
@@ -581,11 +591,11 @@ final class PortalOrchestrator
         if ($pending === 'surprise:wait') {
             return 'surprise_confirm';
         }
+        if (str_starts_with($pending, 'kind:ia') || str_starts_with($pending, 'aiv:')) {
+            return 'idea';
+        }
         if (str_starts_with($pending, 'kind:')) {
             return 'media';
-        }
-        if ($pending === 'kind:ia' || str_starts_with($pending, 'aiv:')) {
-            return 'idea';
         }
 
         return 'text';

@@ -522,7 +522,20 @@ final class Keyboards
     {
         return [
             [['text' => 'Surpreenda-me (IA decide)', 'callback_data' => 'pk:surpresa']],
-            [['text' => 'Ver formatos', 'callback_data' => 'pk:formatos']],
+            [['text' => 'Trocar formato', 'callback_data' => 'pk:formatos']],
+        ];
+    }
+
+    /**
+     * Foto com texto longo em "1 foto": a pessoa decide entre publicar a foto ou pedir imagem nova à IA.
+     *
+     * @return list<list<array{text:string, callback_data:string}>>
+     */
+    public static function photoAsk(int $draftId): array
+    {
+        return [
+            [['text' => 'Publicar minha foto como está', 'callback_data' => 'pa:own:' . $draftId]],
+            [['text' => 'IA cria uma imagem nova a partir dela', 'callback_data' => 'pa:ia:' . $draftId]],
         ];
     }
 

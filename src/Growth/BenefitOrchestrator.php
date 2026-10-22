@@ -60,20 +60,9 @@ final class BenefitOrchestrator
         $ai = ($generator ?? new SurpriseBriefGenerator())->generate($user, $now, $destination, $formatKey);
         if ($ai !== null) {
             $idea = trim($ai['idea']);
-            $cue = IdeaPieces::cueFromKey($formatKey, $aspect);
-            if ($cue !== '' && !IdeaPieces::isDesigned($idea)) {
-                $idea = IdeaPieces::applyCue($idea, $cue);
-            }
+            $idea = IdeaPieces::applyCue($idea, IdeaPieces::cueFromKey($formatKey, $aspect));
             if (!IdeaFormatBrief::isDesignedKey($formatKey)) {
-                if ($destination === 'story') {
-                    $idea .= ' Enquadramento vertical 9:16, sem texto longo na imagem.';
-                } else {
-                    $idea .= ' Enquadramento vertical 4:5, sem texto longo na imagem.';
-                }
-            } else {
-                $idea .= $destination === 'story'
-                    ? ' Enquadramento vertical 9:16.'
-                    : ' Enquadramento vertical 4:5.';
+                $idea .= ' Sem texto longo na imagem.';
             }
             $brand = trim((string) ($user['brand_style'] ?? ''));
             if ($brand !== '') {

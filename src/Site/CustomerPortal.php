@@ -335,7 +335,7 @@ final class CustomerPortal
         $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '4:5';
         $count = $theme !== '' ? count(IdeaImage::pieces($theme, $aspect)) : 1;
         if ($count > 1) {
-            return 'Gerando ' . $count . ' slides na IA (cada um pode levar 1 a 3 min). Não saia da conversa; o Telegram avisa a cada slide.';
+            return 'Gerando ' . $count . ' slides na IA (cada um pode levar 1 a 3 min). NÃ£o saia da conversa; o Telegram avisa a cada slide.';
         }
 
         return 'Gerando imagem e legenda na IA (1 a 3 min). Se passar de 1 min, chega um lembrete no Telegram.';
@@ -349,9 +349,9 @@ final class CustomerPortal
             'caption' => 'Envie o texto final da legenda na caixa de mensagem.',
             'image_edit' => 'Descreva a mudanÃ§a que quer na imagem (mensagem escrita).',
             'media' => 'Envie foto ou vÃ­deo no painel ao lado (legenda opcional).',
-            'idea' => 'Descreva a ideia na mensagem ou use os botões do assistente.',
+            'idea' => 'Descreva a ideia na mensagem. Se quiser, envie uma foto de referÃªncia no painel ao lado.',
             'surprise_add' => 'Escreva o complemento do Surpreenda-me na mensagem escrita.',
-            'surprise_confirm' => 'Use os botões do assistente: Gerar agora, Complementar ou Cancelar.',
+            'surprise_confirm' => 'Use os botÃµes do assistente: Gerar agora, Complementar ou Cancelar.',
             default => 'Comece com Novo post ou escreva /novo na mensagem escrita.',
         };
     }
@@ -1047,7 +1047,7 @@ final class CustomerPortal
     {
         $extras = is_array($bundle['prompt_extras'] ?? null) ? $bundle['prompt_extras'] : [];
         $html = '<div class="box" style="margin-top:20px"><h2>Extras para a IA</h2>';
-        $html .= '<p class="meta">O sistema usa estes extras quando o tema, o perfil ou a @ ativa combina com o gatilho (ex.: adesig). Se houver só um extra na conta, ele entra sempre. Extras ligados no texto (ex.: ADESIG citando SIG SISTEM) podem entrar juntos. Não é preciso repetir o gatilho em todo post.</p>';
+        $html .= '<p class="meta">O sistema usa estes extras quando o tema, o perfil ou a @ ativa combina com o gatilho (ex.: adesig). Se houver sÃ³ um extra na conta, ele entra sempre. Extras ligados no texto (ex.: ADESIG citando SIG SISTEM) podem entrar juntos. NÃ£o Ã© preciso repetir o gatilho em todo post.</p>';
         foreach ($extras as $row) {
             $id = (int) ($row['id'] ?? 0);
             $trigger = (string) ($row['trigger_word'] ?? '');
@@ -1158,7 +1158,7 @@ final class CustomerPortal
         $html .= '</div>';
         $html .= '<div class="portal-compose-split">';
         $textActive = $expect !== 'media' ? ' portal-compose-card--active' : '';
-        $mediaActive = $expect === 'media' ? ' portal-compose-card--active' : '';
+        $mediaActive = $expect === 'media' || $expect === 'idea' ? ' portal-compose-card--active' : '';
         $html .= '<section class="portal-compose-card portal-compose-card--text' . $textActive . '" data-for="text">';
         $html .= '<h2 class="portal-compose-title">Mensagem escrita</h2>';
         $html .= '<p class="portal-compose-desc">Tema do post, ajustes pedidos pelo bot, legenda quando solicitada, ou comandos como <code>/novo</code> e <code>/cancelar</code>.</p>';

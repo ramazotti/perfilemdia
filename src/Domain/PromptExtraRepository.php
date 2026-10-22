@@ -65,7 +65,7 @@ final class PromptExtraRepository
         if ($id !== null && $id > 0) {
             $owned = $this->findForAccount($id, $accountId);
             if ($owned === null) {
-                throw new RuntimeException('Extra não encontrado.');
+                throw new RuntimeException('Extra nÃ£o encontrado.');
             }
             $stmt = $this->pdo->prepare(
                 'UPDATE instagram_prompt_extras SET trigger_word = ?, prompt_text = ? WHERE id = ? AND instagram_account_id = ?'
@@ -86,7 +86,7 @@ final class PromptExtraRepository
             $stmt->execute([$accountId, $trigger, $text, $sort]);
         } catch (\PDOException $e) {
             if (str_contains($e->getMessage(), 'Duplicate')) {
-                throw new RuntimeException('Já existe um extra com essa palavra-gatilho.');
+                throw new RuntimeException('JÃ¡ existe um extra com essa palavra-gatilho.');
             }
             throw $e;
         }
@@ -98,7 +98,7 @@ final class PromptExtraRepository
     {
         $row = $this->findForAccount($id, $accountId);
         if ($row === null) {
-            throw new RuntimeException('Extra não encontrado.');
+            throw new RuntimeException('Extra nÃ£o encontrado.');
         }
         $this->pdo->prepare('DELETE FROM instagram_prompt_extras WHERE id = ? AND instagram_account_id = ?')
             ->execute([$id, $accountId]);
@@ -108,7 +108,7 @@ final class PromptExtraRepository
     public function setImagePath(int $accountId, int $id, string $relativePath): void
     {
         if ($this->findForAccount($id, $accountId) === null) {
-            throw new RuntimeException('Extra não encontrado.');
+            throw new RuntimeException('Extra nÃ£o encontrado.');
         }
         $stmt = $this->pdo->prepare(
             'UPDATE instagram_prompt_extras SET image_path = ? WHERE id = ? AND instagram_account_id = ?'
