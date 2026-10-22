@@ -2562,14 +2562,29 @@ class PostService
     /**
      * @param array<string, mixed> $user
      */
-    private function offerFreshSurpriseBrief(array $user, int $chatId): void
+    private function offerFreshSurpriseBrief(array $user, int $chatId, ?string $destination = null): void
     {
         $view = $this->profileView($user);
         $now = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
-        $destination = $this->chosenDestination($user) === 'story' ? 'story' : 'feed';
+        $destination = ($destination ?? $this->chosenDestination($user)) === 'story' ? 'story' : 'feed';
         $this->channel->sendText($chatId, Messages::surpriseThinking());
         $brief = BenefitOrchestrator::surpriseBrief($view, $now, null, $destination);
-        $this->offerSurprisePreview($view, $chatId, mb_substr($brief['idea'], 0, 1000), $brief['phrase']);
+        $aspect = $destination === 'story' ? '9:16' : '4:5';
+        $formatKey = $this->chosenFormatKey($user);
+        if ($formatKey !== null && $formatKey !== 'photo') {
+            $brief['idea'] = IdeaPieces::applyCue(
+                $brief['idea'],
+                IdeaPieces::cueFromKey($formatKey, $aspect),
+            );
+        }
+        $this->offerSurprisePreview(
+            $view,
+            $chatId,
+            mb_substr($brief['idea'], 0, 1000),
+            $brief['phrase'],
+            $destination,
+            $formatKey,
+        );
     }
 
     /**
@@ -2595,9 +2610,20 @@ class PostService
             return;
         }
         if ($data === 'sur:again') {
+            $destination = $this->chosenDestination($user);
+            $draft = SurpriseDraft::load($userId);
+            $formatKey = is_array($draft) ? (string) ($draft['format'] ?? 'photo') : $this->chosenFormatKey($user);
             SurpriseDraft::clear($userId);
-            $this->users->update($userId, ['pending_action' => null]);
-            $this->offerFreshSurpriseBrief($user, $chatId);
+            if ($formatKey !== null && $formatKey !== '' && $formatKey !== 'photo') {
+                $this->users->update($userId, [
+                    'pending_action' => 'where:' . $destination . '|fmt:' . $formatKey,
+                ]);
+                $user['pending_action'] = 'where:' . $destination . '|fmt:' . $formatKey;
+            } else {
+                $this->users->update($userId, ['pending_action' => null]);
+                $user['pending_action'] = null;
+            }
+            $this->offerFreshSurpriseBrief($user, $chatId, $destination);
 
             return;
         }
@@ -2668,12 +2694,23 @@ class PostService
     /**
      * @param array<string, mixed> $user
      */
-    private function offerSurprisePreview(array $user, int $chatId, string $idea, string $phrase): void
-    {
+    private function offerSurprisePreview(
+        array $user,
+        int $chatId,
+        string $idea,
+        string $phrase,
+        ?string $destination = null,
+        ?string $formatKey = null,
+    ): void {
         $userId = (int) $user['id'];
-        $destination = $this->chosenDestination($user);
+        $destination = ($destination ?? $this->chosenDestination($user)) === 'story' ? 'story' : 'feed';
+        $formatKey = $formatKey ?? $this->chosenFormatKey($user) ?? 'photo';
+        $aspect = $destination === 'story' ? '9:16' : '4:5';
+        if ($formatKey !== 'photo') {
+            $idea = IdeaPieces::applyCue($idea, IdeaPieces::cueFromKey($formatKey, $aspect));
+        }
         SurpriseDraft::clear($userId);
-        if (!SurpriseDraft::save($userId, $idea, $phrase, $destination)) {
+        if (!SurpriseDraft::save($userId, $idea, $phrase, $destination, $formatKey)) {
             $this->channel->sendText($chatId, Messages::ideaFailed());
 
             return;
@@ -3271,7 +3308,38 @@ class PostService
         $where = $where === 'story' ? 'story' : 'feed';
         $this->users->update((int) $user['id'], ['pending_action' => 'where:' . $where]);
         $user['pending_action'] = 'where:' . $where;
+        $this->sendFormatMenu($user, $chatId, $where);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function chooseIdeaFormat(array $user, int $chatId, string $formatKey): void
+    {
+        if (!IdeaPieces::isFormatKey($formatKey)) {
+            $where = $this->chosenDestination($user);
+            $this->sendFormatMenu($user, $chatId, $where);
+
+            return;
+        }
+        $where = $this->chosenDestination($user);
+        $this->users->update((int) $user['id'], [
+            'pending_action' => 'where:' . $where . '|fmt:' . $formatKey,
+        ]);
+        $user['pending_action'] = 'where:' . $where . '|fmt:' . $formatKey;
+        $label = IdeaPieces::formatLabel($formatKey);
+        if ($label !== '') {
+            $this->channel->sendText($chatId, Messages::ideaFormatPicked($label));
+        }
         $this->sendKindMenu($user, $chatId, $where);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function sendFormatMenu(array $user, int $chatId, string $where): void
+    {
+        $this->channel->sendText($chatId, Messages::askIdeaFormat(), Keyboards::ideaFormatPick());
     }
 
     public function askPostKind(int $chatId, ?array $user = null): void
@@ -3344,8 +3412,9 @@ class PostService
             return;
         }
         $mark = $where === 'story' ? '@story' : '';
-        $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind . $mark]);
-        $user['pending_action'] = 'kind:' . $kind . $mark;
+        $fmt = $this->formatSuffixFromPending((string) ($user['pending_action'] ?? ''));
+        $this->users->update((int) $user['id'], ['pending_action' => 'kind:' . $kind . $mark . $fmt]);
+        $user['pending_action'] = 'kind:' . $kind . $mark . $fmt;
         $text = match ($kind) {
             'album' => Messages::kindAlbum(),
             'video' => $where === 'story' ? Messages::kindStoryVideo() : Messages::kindVideo(),
@@ -3417,12 +3486,23 @@ class PostService
             return;
         }
         if (str_starts_with($pending, 'where:')) {
-            $this->sendKindMenu($user, $chatId, substr($pending, 6) === 'story' ? 'story' : 'feed');
+            $where = $this->chosenDestination($user);
+            if ($this->chosenFormatKey($user) === null) {
+                $this->sendFormatMenu($user, $chatId, $where);
+
+                return;
+            }
+            $this->sendKindMenu($user, $chatId, $where);
 
             return;
         }
         if (str_starts_with($pending, 'kind:')) {
-            $kind = explode('@', substr($pending, 5), 2)[0];
+            $kind = $this->selectedKind($user);
+            if ($kind === null) {
+                $this->askPostKind($chatId, $user);
+
+                return;
+            }
             $where = $this->chosenDestination($user);
             $text = match ($kind) {
                 'album' => Messages::kindAlbum(),
@@ -3758,11 +3838,16 @@ class PostService
             return;
         }
         $destination = ($destination ?? $this->chosenDestination($user)) === 'story' ? 'story' : 'feed';
+        $formatKey = $this->chosenFormatKey($user);
         $profile = $this->profileView($user);
         $this->users->update($userId, ['pending_action' => null]);
         $isStory = $destination === 'story';
         $aspect = $isStory ? '9:16' : '4:5';
-        [$idea, $rolled] = IdeaPieces::dress($idea, $aspect, $surprisePhrase !== null);
+        if (IdeaImage::isDesigned($idea)) {
+            $rolled = '';
+        } else {
+            [$idea, $rolled] = $this->dressIdeaWithChosenFormat($idea, $aspect, $formatKey, $surprisePhrase !== null);
+        }
         $designed = IdeaImage::isDesigned($idea);
         if ($surprisePhrase !== null) {
             $this->channel->sendText($chatId, $designed ? Messages::surpriseStartedDesign() : Messages::surpriseStarted());
@@ -3770,7 +3855,11 @@ class PostService
             $this->channel->sendText($chatId, Messages::ideaWorking());
         }
         if ($rolled !== '') {
-            $this->channel->sendText($chatId, Messages::ideaFormatPicked($rolled));
+            $label = IdeaPieces::formatLabel((string) ($formatKey ?? ''));
+            $this->channel->sendText(
+                $chatId,
+                $label !== '' ? Messages::ideaFormatPicked($label) : Messages::ideaFormatRolled($rolled),
+            );
         }
         $postId = $this->posts->create((int) $user['id'], PostStatus::Generating, $idea, null, $this->activeInstagramAccountId($user));
         SlowNotice::arm($postId, $chatId);
@@ -4060,9 +4149,55 @@ class PostService
         if (!str_starts_with($pending, 'kind:')) {
             return null;
         }
-        $kind = explode('@', substr($pending, 5), 2)[0];
+        $tail = explode('|', substr($pending, 5), 2)[0];
+        $kind = explode('@', $tail, 2)[0];
 
         return in_array($kind, ['foto', 'album', 'video', 'ia'], true) ? $kind : null;
+    }
+
+    private function formatSuffixFromPending(string $pending): string
+    {
+        if (preg_match('/\|fmt:([a-z0-9_]+)/', $pending, $match) !== 1) {
+            return '';
+        }
+
+        return '|fmt:' . $match[1];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function chosenFormatKey(array $user): ?string
+    {
+        $pending = (string) ($user['pending_action'] ?? '');
+        if (preg_match('/\|fmt:([a-z0-9_]+)/', $pending, $match) !== 1) {
+            return null;
+        }
+        $key = $match[1];
+
+        return IdeaPieces::isFormatKey($key) ? $key : null;
+    }
+
+    /**
+     * @return array{0:string,1:string}
+     */
+    private function dressIdeaWithChosenFormat(
+        string $idea,
+        string $aspect,
+        ?string $formatKey,
+        bool $surprise,
+    ): array {
+        if ($formatKey !== null && $formatKey !== 'photo') {
+            $cue = IdeaPieces::cueFromKey($formatKey, $aspect);
+            if ($cue !== '') {
+                return [IdeaPieces::applyCue($idea, $cue), $cue];
+            }
+        }
+        if ($surprise) {
+            return IdeaPieces::dress($idea, $aspect, true);
+        }
+
+        return IdeaPieces::dress($idea, $aspect, false);
     }
 
     /**
@@ -4076,10 +4211,18 @@ class PostService
             return $fromPost;
         }
         if (str_starts_with($pending, 'where:')) {
-            return substr($pending, 6) === 'story' ? 'story' : 'feed';
+            $rest = explode('|', substr($pending, 6), 2)[0];
+
+            return $rest === 'story' ? 'story' : 'feed';
         }
         if (str_contains($pending, '@story')) {
             return 'story';
+        }
+        if ($pending === 'surprise:wait' || $pending === 'surprise:add') {
+            $draft = SurpriseDraft::load((int) ($user['id'] ?? 0));
+            if ($draft !== null) {
+                return $draft['destination'] === 'story' ? 'story' : 'feed';
+            }
         }
 
         return 'feed';

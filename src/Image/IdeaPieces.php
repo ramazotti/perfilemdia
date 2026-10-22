@@ -38,6 +38,75 @@ final class IdeaPieces
     }
 
     /**
+     * @return list<array{key:string, label:string}>
+     */
+    public static function formatChoices(): array
+    {
+        return [
+            ['key' => 'photo', 'label' => 'Foto simples (sem layout)'],
+            ['key' => 'infographic', 'label' => 'Infográfico (sequência)'],
+            ['key' => 'quote', 'label' => 'Citação'],
+            ['key' => 'checklist', 'label' => 'Checklist'],
+            ['key' => 'compare', 'label' => 'Comparativo'],
+            ['key' => 'before_after', 'label' => 'Antes e depois'],
+            ['key' => 'steps', 'label' => 'Passo a passo'],
+            ['key' => 'steps3', 'label' => 'Passo a passo (3 passos)'],
+        ];
+    }
+
+    public static function isFormatKey(string $key): bool
+    {
+        foreach (self::formatChoices() as $choice) {
+            if ($choice['key'] === $key) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function formatLabel(string $key): string
+    {
+        foreach (self::formatChoices() as $choice) {
+            if ($choice['key'] === $key) {
+                return $choice['label'];
+            }
+        }
+
+        return '';
+    }
+
+    public static function cueFromKey(string $key, string $aspect): string
+    {
+        if (!self::isFormatKey($key) || $key === 'photo') {
+            return '';
+        }
+
+        return match ($key) {
+            'quote' => 'Citação:',
+            'checklist' => 'Checklist:',
+            'compare' => 'Comparativo:',
+            'before_after' => 'Antes e depois:',
+            'steps' => 'Passo a passo:',
+            'steps3' => 'Passo a passo com 3:',
+            'infographic' => $aspect === '9:16'
+                ? 'Story com 3 telas:'
+                : 'Infográfico com 3 slides:',
+            default => '',
+        };
+    }
+
+    public static function applyCue(string $idea, string $cue): string
+    {
+        $idea = trim($idea);
+        if ($cue === '' || self::isDesigned($idea)) {
+            return $idea;
+        }
+
+        return rtrim($cue) . ' ' . $idea;
+    }
+
+    /**
      * @return array{0:string,1:string}
      */
     public static function dress(string $idea, string $aspect, bool $surprise): array

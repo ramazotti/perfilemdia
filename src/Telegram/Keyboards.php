@@ -41,6 +41,30 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data?:string, url?:string}>>
      */
+    public static function ideaFormatPick(): array
+    {
+        $rows = [];
+        $row = [];
+        foreach (\PerfilEmDia\Image\IdeaPieces::formatChoices() as $choice) {
+            $row[] = [
+                'text' => $choice['label'],
+                'callback_data' => 'fm:' . $choice['key'],
+            ];
+            if (count($row) === 2) {
+                $rows[] = $row;
+                $row = [];
+            }
+        }
+        if ($row !== []) {
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data?:string, url?:string}>>
+     */
     public static function storyKind(): array
     {
         return [

@@ -476,6 +476,11 @@ final class PortalOrchestrator
 
             return;
         }
+        if (str_starts_with($data, 'fm:')) {
+            $posts->chooseIdeaFormat($user, $chatId, substr($data, 3));
+
+            return;
+        }
         if (str_starts_with($data, 'pk:')) {
             $posts->choosePostKind($user, $chatId, substr($data, 3));
 

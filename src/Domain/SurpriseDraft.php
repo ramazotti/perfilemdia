@@ -25,7 +25,7 @@ final class SurpriseDraft
     }
 
     /**
-     * @return array{idea:string, phrase:string, destination:string}|null
+     * @return array{idea:string, phrase:string, destination:string, format:string}|null
      */
     public static function load(int $userId): ?array
     {
@@ -47,16 +47,23 @@ final class SurpriseDraft
         }
 
         $destination = (string) ($data['destination'] ?? 'feed');
+        $format = (string) ($data['format'] ?? 'photo');
 
         return [
             'idea' => $idea,
             'phrase' => trim((string) ($data['phrase'] ?? '')),
             'destination' => $destination === 'story' ? 'story' : 'feed',
+            'format' => $format !== '' ? $format : 'photo',
         ];
     }
 
-    public static function save(int $userId, string $idea, string $phrase, string $destination = 'feed'): bool
-    {
+    public static function save(
+        int $userId,
+        string $idea,
+        string $phrase,
+        string $destination = 'feed',
+        string $format = 'photo',
+    ): bool {
         $idea = trim($idea);
         if ($idea === '') {
             return false;
@@ -65,6 +72,7 @@ final class SurpriseDraft
             'idea' => $idea,
             'phrase' => trim($phrase),
             'destination' => $destination === 'story' ? 'story' : 'feed',
+            'format' => $format !== '' ? $format : 'photo',
         ], JSON_UNESCAPED_UNICODE);
         if ($payload === false) {
             return false;
@@ -90,6 +98,12 @@ final class SurpriseDraft
         }
         $draft['idea'] = trim($draft['idea'] . "\n\nComplemento: " . $complement);
 
-        return self::save($userId, $draft['idea'], $draft['phrase']);
+        return self::save(
+            $userId,
+            $draft['idea'],
+            $draft['phrase'],
+            $draft['destination'],
+            $draft['format'] ?? 'photo',
+        );
     }
 }

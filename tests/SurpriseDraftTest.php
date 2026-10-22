@@ -36,6 +36,26 @@ final class SurpriseDraftTest extends TestCase
         $this->assertTrue(SurpriseDraft::appendComplement($this->userId, $city));
         $draft = SurpriseDraft::load($this->userId);
         $this->assertStringContainsString('Complemento: ' . $city, (string) ($draft['idea'] ?? ''));
+        $this->assertSame('feed', $draft['destination']);
+        $this->assertSame('photo', $draft['format']);
+    }
+
+    public function testSaveKeepsFormatKey(): void
+    {
+        $this->assertTrue(SurpriseDraft::save($this->userId, 'Citação: ideia', 'Frase', 'feed', 'quote'));
+        $draft = SurpriseDraft::load($this->userId);
+        $this->assertNotNull($draft);
+        $this->assertSame('quote', $draft['format']);
+    }
+
+    public function testAppendComplementKeepsStoryDestination(): void
+    {
+        $this->assertTrue(SurpriseDraft::save($this->userId, 'Ideia story', 'Frase', 'story'));
+        $this->assertTrue(SurpriseDraft::appendComplement($this->userId, 'Incluir a cidade'));
+        $draft = SurpriseDraft::load($this->userId);
+        $this->assertNotNull($draft);
+        $this->assertSame('story', $draft['destination']);
+        $this->assertStringContainsString('Complemento: Incluir a cidade', $draft['idea']);
     }
 
     public function testSaveDestinationForStory(): void

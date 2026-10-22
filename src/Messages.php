@@ -735,9 +735,29 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
 
     public static function ideaFormats(): string
     {
-        return "Palavras que mudam o desenho: infogrÃ¡fico, citaÃ§Ã£o, checklist, comparativo, antes e depois, passo a passo. "
-            . "3 slides no feed fazem uma sequÃªncia, atÃ© 10. No story, 3 telas, atÃ© 3, e a frase nÃ£o entra por cima. "
-            . "No Surpreenda-me, se vocÃª nÃ£o disser o formato, eu sorteio.";
+        return 'Depois de Feed ou Story, escolha o formato visual (infogr'
+            . "\u{00e1}fico, cita\u{00e7}\u{00e3}o, checklist e outros). "
+            . '3 slides no feed formam sequ'
+            . "\u{00ea}ncia (at\u{00e9} 10). No story, 3 telas (at\u{00e9} 3). "
+            . 'S'
+            . "\u{00f3} depois disso voc\u{00ea} escolhe foto, v\u{00ed}deo ou IA.";
+    }
+
+    public static function askIdeaFormat(): string
+    {
+        return 'Qual formato visual você quer nesta publicação? Toque em uma opção abaixo. Depois disso você escolhe foto, vídeo ou IA.';
+    }
+
+    public static function ideaFormatPicked(string $label): string
+    {
+        return 'Formato: ' . $label . '. Agora escolha como montar o post.';
+    }
+
+    public static function ideaFormatRolled(string $cue): string
+    {
+        $name = rtrim(trim($cue), ':');
+
+        return 'Sorteio do desenho: ' . $name . '.';
     }
 
     public static function ideaWorking(): string
@@ -844,15 +864,6 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
     public static function ideaImageRetryFailed(): string
     {
         return 'NÃ£o consegui criar outra foto agora. A legenda segue para uma nova versÃ£o.';
-    }
-
-
-
-    public static function ideaFormatPicked(string $cue): string
-    {
-        $name = rtrim(trim($cue), ':');
-
-        return 'Sorteio do desenho: ' . $name . '.';
     }
 
     public static function surpriseThinking(): string

@@ -11,6 +11,7 @@ use PerfilEmDia\Db;
 use PerfilEmDia\Domain\PostRepository;
 use PerfilEmDia\Domain\PostService;
 use PerfilEmDia\Domain\PostStatus;
+use PerfilEmDia\Domain\SurpriseDraft;
 use PerfilEmDia\Domain\UserRepository;
 use PerfilEmDia\Image\ImageNormalizerInterface;
 use PerfilEmDia\Image\NormalizedImage;
@@ -314,6 +315,40 @@ final class PostServiceTest extends TestCase
         $this->assertFalse($access->canEditPhoto($userId));
         $this->assertFalse($access->canPublishVideo($userId));
         $this->assertFalse($access->canCreateWithAi($userId));
+    }
+
+    public function testAnotherSurpriseKeepsStoryDestination(): void
+    {
+        $userId = $this->users->create(920020, 920020, 'storyagain');
+        $this->users->update($userId, [
+            'display_name' => 'Ana',
+            'onboarding_step' => 'done',
+            'pending_action' => 'surprise:wait',
+        ]);
+        SurpriseDraft::save($userId, 'Ideia para o story', 'Frase no story', 'story');
+        $user = $this->users->find($userId);
+        $this->assertNotNull($user);
+
+        $previous = $_ENV['OPENROUTER_API_KEY'] ?? null;
+        $_ENV['OPENROUTER_API_KEY'] = '';
+        $_SERVER['OPENROUTER_API_KEY'] = '';
+        putenv('OPENROUTER_API_KEY=');
+        try {
+            $this->service->handleSurprisePreviewCallback($user, 920020, 'cb-again', 'sur:again');
+            $draft = SurpriseDraft::load($userId);
+            $this->assertNotNull($draft);
+            $this->assertSame('story', $draft['destination']);
+        } finally {
+            if ($previous === null) {
+                unset($_ENV['OPENROUTER_API_KEY'], $_SERVER['OPENROUTER_API_KEY']);
+                putenv('OPENROUTER_API_KEY');
+            } else {
+                $_ENV['OPENROUTER_API_KEY'] = $previous;
+                $_SERVER['OPENROUTER_API_KEY'] = $previous;
+                putenv('OPENROUTER_API_KEY=' . $previous);
+            }
+            SurpriseDraft::clear($userId);
+        }
     }
 
     private function subscribe(int $userId, string $slug): void

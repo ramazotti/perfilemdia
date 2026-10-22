@@ -375,6 +375,12 @@ final class UpdateHandler
 
             return;
         }
+        if (str_starts_with($data, 'fm:')) {
+            $this->channel->answerCallback($callbackId);
+            $this->postsService->chooseIdeaFormat($user, $chatId, substr($data, 3));
+
+            return;
+        }
         if (str_starts_with($data, 'pk:')) {
             $this->channel->answerCallback($callbackId);
             $this->postsService->choosePostKind($user, $chatId, substr($data, 3));
