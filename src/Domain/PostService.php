@@ -96,6 +96,45 @@ class PostService
             $userPending = '';
         }
 
+        $kind = $this->selectedKind($user);
+
+        if ($kind === 'ia') {
+            if ($this->posts->findOpenWorkflowForUser((int) $user['id']) !== null) {
+                $this->channel->sendText($chatId, Messages::postInProgress());
+
+                return;
+            }
+            $this->cancelPendingPostsForUser($user, $chatId, true);
+            $idea = $this->extractTheme($message);
+            if ($idea === null || $idea === '') {
+                $stashed = $this->stashIdeaReference($user, $message);
+                $this->channel->sendText(
+                    $chatId,
+                    $stashed ? Messages::kindIaNeedTextWithPhoto() : Messages::kindIaNeedText(),
+                );
+
+                return;
+            }
+            $this->startIdea($user, $chatId, $idea, $message);
+
+            return;
+        }
+
+        if ($kind === 'foto' && $this->posts->findOpenWorkflowForUser((int) $user['id']) === null) {
+            $idea = $this->extractTheme($message);
+            if (
+                $idea !== null
+                && mb_strlen($idea) >= 150
+                && $this->aiAllowed((int) $user['id'])
+                && $this->extractFile($message) !== null
+            ) {
+                $this->cancelPendingPostsForUser($user, $chatId, true);
+                $this->startIdea($user, $chatId, $idea, $message);
+
+                return;
+            }
+        }
+
         $pending = $this->posts->findPendingForUser((int) $user['id']);
         if ($pending !== null && !str_starts_with($userPending, 'newpost:')) {
             if ($this->shouldBlockMediaWhilePending($userPending, $pending)) {
@@ -121,7 +160,6 @@ class PostService
             return;
         }
 
-        $kind = $this->selectedKind($user);
         if ($kind === null) {
             if ($this->posts->findOpenWorkflowForUser((int) $user['id']) !== null) {
                 $this->channel->sendText($chatId, Messages::postInProgress());
@@ -143,21 +181,6 @@ class PostService
             return;
         }
 
-        if ($kind === 'ia') {
-            $idea = $this->extractTheme($message);
-            if ($idea === null || $idea === '') {
-                $stashed = $this->stashIdeaReference($user, $message);
-                $this->channel->sendText(
-                    $chatId,
-                    $stashed ? Messages::kindIaNeedTextWithPhoto() : Messages::kindIaNeedText(),
-                );
-
-                return;
-            }
-            $this->startIdea($user, $chatId, $idea, $message);
-
-            return;
-        }
         $block = $this->incomingBlock($user, $message);
         if ($block !== null) {
             $this->channel->sendText($chatId, $block);
@@ -228,6 +251,10 @@ class PostService
             }
             $this->channel->sendText($chatId, Messages::askTheme());
 
+            return;
+        }
+
+        if ($this->finalizeCollectingDraftAsIdea($user, $chatId, $draftId)) {
             return;
         }
 
@@ -4029,7 +4056,65 @@ class PostService
         if (!$this->aiAllowed((int) $user['id'])) {
             return false;
         }
+        $this->cancelPendingPostsForUser($user, $chatId, true);
         $this->startIdea($user, $chatId, $idea, $message);
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function cancelPendingPostsForUser(array $user, int $chatId, bool $notify): void
+    {
+        $old = $this->posts->findPendingForUser((int) $user['id']);
+        if ($old === null) {
+            return;
+        }
+        $from = PostStatus::from((string) $old['status']);
+        if (!$from->isPending()) {
+            return;
+        }
+        if (!$this->posts->transition((int) $old['id'], $from, PostStatus::Cancelled)) {
+            return;
+        }
+        $this->discardPublicMedia((int) $old['id']);
+        if ($notify) {
+            $this->channel->sendText($chatId, Messages::pendingPostAutoDiscarded());
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function finalizeCollectingDraftAsIdea(array $user, int $chatId, int $draftId): bool
+    {
+        $draft = $this->posts->find($draftId);
+        if ($draft === null || (string) $draft['status'] !== PostStatus::Collecting->value) {
+            return false;
+        }
+        $idea = trim((string) ($draft['theme_text'] ?? ''));
+        if ($idea === '' || mb_strlen($idea) < 150 || !$this->aiAllowed((int) $user['id'])) {
+            return false;
+        }
+        $media = $this->posts->media($draftId);
+        $first = $media[0] ?? null;
+        if (!is_array($first) || (string) ($first['kind'] ?? '') !== 'image') {
+            return false;
+        }
+        $fileId = (string) ($first['telegram_file_id'] ?? '');
+        if ($fileId === '') {
+            return false;
+        }
+        if (!$this->posts->transition($draftId, PostStatus::Collecting, PostStatus::Cancelled)) {
+            return false;
+        }
+        $this->discardPublicMedia($draftId);
+        $message = [
+            'caption' => $idea,
+            'photo' => [['file_id' => $fileId]],
+        ];
+        $this->startIdea($user, $chatId, mb_substr($idea, 0, 1000), $message);
 
         return true;
     }

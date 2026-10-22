@@ -210,7 +210,12 @@ final class Messages
 
     public static function replacePending(): string
     {
-        return 'VocÃª tem um post esperando aprovaÃ§Ã£o. Quer descartar ele e comeÃ§ar este?';
+        return 'Ainda existe um post aguardando aprovação (pode estar mais acima no chat). Quer descartá-lo e usar esta mídia como envio simples de foto?';
+    }
+
+    public static function pendingPostAutoDiscarded(): string
+    {
+        return 'Havia um post anterior aguardando aprovação; descartei para seguir com a criação pela IA.';
     }
 
     public static function alreadyProcessed(): string
