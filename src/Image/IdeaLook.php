@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace PerfilEmDia\Image;
 
 /**
- * Visual direction for a generated photo, from the profile the person already chose.
+ * Visual direction from the profile the person already chose:
+ * brief() for a photographic scene, design() for a designed card with text.
  */
 final class IdeaLook
 {
     /**
      * @param array<string, mixed> $user
      */
-    public static function brief(array $user, string $promptExtras = ''): string
+    public static function brief(array $user, string $promptExtras = '', string $idea = ''): string
     {
         $tone = (string) ($user['tone'] ?? '');
         $bits = [self::tone($tone), self::composition($tone)];
@@ -29,7 +30,7 @@ final class IdeaLook
             $bits[] = 'Brand look: ' . $brand . '.';
         }
         $where = self::plain((string) ($user['city'] ?? ''));
-        if ($where !== '' && mb_strtolower($where) !== 'online') {
+        if ($where !== '' && mb_strtolower($where) !== 'online' && self::asksForPlace($idea, $where)) {
             $bits[] = 'Setting should feel like a real, well kept place in ' . $where . ', not a generic stock location.';
         }
         $about = self::plain((string) ($user['about'] ?? ''));
@@ -46,6 +47,72 @@ final class IdeaLook
         }
 
         return implode(' ', $bits);
+    }
+
+    /**
+     * Direção para arte com texto: paleta, tipografia e público. Sem cenário, luz ou cidade.
+     *
+     * @param array<string, mixed> $user
+     */
+    public static function design(array $user, string $promptExtras = ''): string
+    {
+        $bits = [];
+        $brand = self::plain((string) ($user['brand_style'] ?? ''));
+        $bits[] = $brand !== ''
+            ? 'Palette and style come from the brand: ' . $brand . '. Use those colors as the main palette, with one accent and one neutral background.'
+            : self::nichePalette($user);
+        $bits[] = self::typography((string) ($user['tone'] ?? ''));
+        $who = self::plain((string) ($user['profession'] ?? ''));
+        $about = mb_substr(self::plain((string) ($user['about'] ?? '')), 0, 120);
+        if ($who !== '' || $about !== '') {
+            $bits[] = 'Audience: followers of ' . ($who !== '' ? 'a ' . $who : 'this profile')
+                . ($about !== '' ? ' (' . $about . ')' : '') . '. Keep the mood fitting for them.';
+        }
+        $bits[] = 'Background stays simple: flat color, soft gradient, or a subtle texture. One small simple icon or line illustration is fine if it helps. No photographic scene, no rooms, no people.';
+        $extra = trim($promptExtras);
+        if ($extra !== '') {
+            $bits[] = $extra;
+        }
+
+        return implode(' ', $bits);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private static function nichePalette(array $user): string
+    {
+        return match (IdeaFormatBrief::niche($user)) {
+            'spiritual' => 'Palette: deep blue or burgundy, warm gold accent, off-white. Serene and reverent.',
+            'accounting' => 'Palette: navy or dark teal, one fresh accent, white. Trustworthy and orderly.',
+            'education' => 'Palette: soft light background with one cheerful accent color. Friendly, never childish chaos.',
+            default => 'Palette: two harmonious colors plus a neutral background. Clean and modern.',
+        };
+    }
+
+    private static function typography(string $tone): string
+    {
+        return match ($tone) {
+            'profissional' => 'Type: clean modern sans-serif, strong hierarchy, generous spacing.',
+            'descontraido' => 'Type: rounded friendly sans-serif, relaxed but easy to read.',
+            'tecnico' => 'Type: precise sans-serif on a tidy grid, numbers and labels very clear.',
+            'acolhedor' => 'Type: warm elegant serif for the headline with a simple sans-serif for the rest.',
+            default => 'Type: one clear headline font and one simple body font.',
+        };
+    }
+
+    /**
+     * A cidade só entra quando o pedido fala de um lugar; senão puxa cartão-postal.
+     */
+    private static function asksForPlace(string $idea, string $city): bool
+    {
+        $idea = mb_strtolower($idea);
+        if ($idea === '') {
+            return false;
+        }
+
+        return mb_stripos($idea, mb_strtolower($city)) !== false
+            || preg_match('/\b(cidade|bairro|rua|pra[cç]a|centro|fachada|vitrine|loja|consult[oó]rio|escrit[oó]rio|igreja|par[oó]quia|sal[aã]o)\b/u', $idea) === 1;
     }
 
     private static function tone(string $tone): string

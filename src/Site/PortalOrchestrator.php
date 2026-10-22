@@ -378,6 +378,7 @@ final class PortalOrchestrator
         $handled = $posts->handleScheduleText($user, $chatId, $trim)
             || $posts->handleLogoWait($user, $chatId)
             || $posts->handleAiVideoText($user, $chatId, $trim)
+            || $posts->handleIdeaChangeText($user, $chatId, $trim)
             || $posts->handlePhraseText($user, $chatId, $trim)
             || $posts->handleSurpriseText($user, $chatId, $trim)
             || $posts->handleIdeaText($user, $chatId, $trim)
@@ -506,7 +507,7 @@ final class PortalOrchestrator
 
             return;
         }
-        if (preg_match('/^a:(pub|adj|reg|man|can|img|txt|wm|sch|uns|sty|pic|mor|look|back):(\d+)$/', $data, $m) === 1) {
+        if (preg_match('/^a:(pub|adj|reg|man|can|img|txt|wm|sch|uns|sty|pic|pix|mor|look|back):(\d+)$/', $data, $m) === 1) {
             $posts->handleApprovalCallback($user, $chatId, 'web', $m[1], (int) $m[2]);
 
             return;

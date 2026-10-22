@@ -163,6 +163,9 @@ final class UpdateHandler
         if ($this->postsService->handleAiVideoText($user, $chatId, $text)) {
             return;
         }
+        if ($this->postsService->handleIdeaChangeText($user, $chatId, $text)) {
+            return;
+        }
         if ($this->postsService->handlePhraseText($user, $chatId, $text)) {
             return;
         }
@@ -488,7 +491,7 @@ final class UpdateHandler
 
             return;
         }
-        if (preg_match('/^a:(pub|adj|reg|man|can|img|txt|wm|sch|uns|sty|pic|mor|look|back):(\d+)$/', $data, $m) === 1) {
+        if (preg_match('/^a:(pub|adj|reg|man|can|img|txt|wm|sch|uns|sty|pic|pix|mor|look|back):(\d+)$/', $data, $m) === 1) {
             $this->postsService->handleApprovalCallback($user, $chatId, $callbackId, $m[1], (int) $m[2]);
 
             return;

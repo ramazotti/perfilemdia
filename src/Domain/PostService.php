@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use PerfilEmDia\Ai\CaptionException;
 use PerfilEmDia\Ai\CaptionGeneratorInterface;
+use PerfilEmDia\Ai\SeriesPlanner;
 use PerfilEmDia\Billing\CustomerAccess;
 use PerfilEmDia\Billing\PlanAccess;
 use PerfilEmDia\Channel\ChannelInterface;
@@ -433,6 +434,10 @@ class PostService
 
             return;
         }
+        if ($action !== 'pic' && str_starts_with((string) ($user['pending_action'] ?? ''), 'pic:')) {
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+            $user['pending_action'] = null;
+        }
 
         match ($action) {
             'pub' => $this->publish(
@@ -453,7 +458,8 @@ class PostService
             'can' => (string) $post['status'] === PostStatus::Scheduled->value
                 ? $this->unschedule($user, $chatId, $post)
                 : $this->handleApprovalAction($user, $chatId, $action, $post),
-            'pic' => $this->regenIdea($user, $chatId, $post),
+            'pic' => $this->askIdeaChange($user, $chatId, $post),
+            'pix' => $this->regenIdea($user, $chatId, $post),
             'adj', 'reg', 'man' => $this->handleApprovalAction($user, $chatId, $action, $post),
             default => null,
         };
@@ -607,6 +613,7 @@ class PostService
             || str_starts_with($pendingAction, 'aiv:')
             || str_starts_with($pendingAction, 'newpost:')
             || str_starts_with($pendingAction, 'photoask:')
+            || str_starts_with($pendingAction, 'pic:')
             || str_starts_with($pendingAction, 'surprise:');
         if (!$wizard) {
             return false;
@@ -2024,6 +2031,12 @@ class PostService
 
             return;
         }
+        if ((int) ($post['creative'] ?? 0) === 1 && IdeaImage::isDesigned((string) ($post['theme_text'] ?? ''))) {
+            // Arte com texto: editar por cima borra as letras; refaz com o pedido.
+            $this->askIdeaChange($user, $chatId, $post);
+
+            return;
+        }
         if (!$this->photoEditAllowed((int) $user['id'])) {
             $this->channel->sendText($chatId, Messages::photoEditPlan());
 
@@ -2285,7 +2298,11 @@ class PostService
      * @param array<string, mixed> $user
      * @param array<string, mixed> $post
      */
-    private function renewIdeaImage(array $user, int $chatId, array $post): bool
+    /**
+     * Nova versão da imagem da IA. Com pedido ("mais claro", "sem pessoas"), o pedido entra no tema;
+     * a imagem anterior só vira referência quando a pessoa pede para manter algo dela.
+     */
+    private function renewIdeaImage(array $user, int $chatId, array $post, string $change = ''): bool
     {
         if ((int) ($post['idea_regen_count'] ?? 0) >= $this->ideaImageLimit()) {
             return false;
@@ -2299,19 +2316,20 @@ class PostService
         }
         $savedRef = IdeaReference::postPath($postId);
         $aspect = (string) ($post['destination'] ?? 'feed') === 'story' ? '9:16' : '4:5';
-        $idea = (string) ($post['theme_text'] ?? '');
-        $series = count(IdeaImage::pieces($idea, $aspect)) > 1;
-        $reference = is_file($savedRef) ? $savedRef : (!$series && is_file($path) ? $path : null);
+        $idea = self::withImageChange((string) ($post['theme_text'] ?? ''), $change);
+        $keepPrevious = self::asksToKeep($change) && is_file($path);
+        $reference = is_file($savedRef) ? $savedRef : ($keepPrevious ? $path : null);
         $matchedExtras = $this->matchedPromptExtras($user, $post, $idea);
         $reference = $this->ideaApiReference($reference, $idea, $matchedExtras);
         try {
-            $generator = $this->ideas ?? new IdeaImage();
-            $look = $this->ideaLookBrief($this->captionContext($user, $post), $idea, $matchedExtras);
-            $frames = $generator instanceof IdeaImage
-                ? $generator->createSet($idea, $reference, $look, $aspect)
-                : [$generator->create($idea, $reference, $look, $aspect)];
-            $frames = $this->applyBrandLogoOverlays($frames, $idea, $matchedExtras);
-            $this->storeIdeaFrames($postId, $frames, 0);
+            $context = $this->captionContext($user, $post);
+            $overlay = $aspect === '9:16' || trim((string) ($post['photo_phrase'] ?? '')) !== '';
+            $look = $this->ideaLookBrief($context, $idea, $matchedExtras, $overlay ? $this->phrasePlaceOf($user, $post) : null);
+            $frames = $this->renderIdeaFrames($idea, $reference, $look, $aspect, $context);
+            $this->storeIdeaFrames($postId, $frames, 0, $idea, $matchedExtras);
+            if ($idea !== (string) ($post['theme_text'] ?? '')) {
+                $this->posts->update($postId, ['theme_text' => $idea]);
+            }
 
             return true;
         } catch (\Throwable $e) {
@@ -2320,6 +2338,80 @@ class PostService
 
             return false;
         }
+    }
+
+    /**
+     * Uma linha "Ajuste da imagem:" por vez: o pedido novo substitui o anterior.
+     */
+    private static function withImageChange(string $idea, string $change): string
+    {
+        $change = trim(preg_replace('/\s+/u', ' ', strip_tags($change)) ?? '');
+        if ($change === '') {
+            return $idea;
+        }
+        $base = trim((string) preg_replace('/\n?Ajuste da imagem:[^\n]*/u', '', $idea));
+
+        return $base . "\nAjuste da imagem: " . mb_substr($change, 0, 300);
+    }
+
+    private static function asksToKeep(string $change): bool
+    {
+        return preg_match('/\b(mant[eé]m|manter|mantenha|mesma|mesmo|igual|s[oó] (muda|troca|tira|ajusta))/iu', $change) === 1;
+    }
+
+    /**
+     * @param array<string, mixed> $profile
+     * @param (callable(int, int): void)|null $onSlide
+     * @return list<string>
+     */
+    private function renderIdeaFrames(
+        string $idea,
+        ?string $reference,
+        string $look,
+        string $aspect,
+        array $profile,
+        ?callable $onSlide = null,
+    ): array {
+        $generator = $this->ideas ?? new IdeaImage();
+        $pieces = IdeaImage::pieces($idea, $aspect);
+        if ($generator instanceof IdeaImage) {
+            return $generator->createSet($idea, $reference, $look, $aspect, $this->seriesPlan($idea, $aspect, $profile), $onSlide);
+        }
+        $frames = [];
+        foreach ($pieces as $piece) {
+            if ($onSlide !== null && count($pieces) > 1) {
+                $onSlide($piece['index'], count($pieces));
+            }
+            $frames[] = $generator->create($idea, $reference, $look, $aspect);
+        }
+
+        return $frames;
+    }
+
+    /**
+     * Texto de cada slide antes de desenhar. Usa os itens que a pessoa já escreveu; senão pede o plano à IA.
+     *
+     * @param array<string, mixed> $profile
+     * @return list<array{title:string, text:string}>|null
+     */
+    private function seriesPlan(string $idea, string $aspect, array $profile): ?array
+    {
+        $pieces = IdeaImage::pieces($idea, $aspect);
+        $count = count($pieces);
+        $kind = $pieces[0]['kind'] ?? 'photo';
+        if ($count < 2 || $kind === 'photo') {
+            return null;
+        }
+        $items = IdeaPieces::listedItems($idea, $kind);
+        if (count($items) >= $count) {
+            return array_map(
+                static fn (string $item, int $i): array => ['title' => $kind === 'steps' ? 'Passo ' . ($i + 1) : $item, 'text' => $kind === 'steps' ? $item : ''],
+                array_slice($items, 0, $count),
+                range(0, $count - 1),
+            );
+        }
+
+        return (new SeriesPlanner())->plan($idea, $kind, $count, $aspect === '9:16', $profile);
     }
 
     private function editor(): ImageEditorInterface
@@ -3243,8 +3335,66 @@ class PostService
      * @param array<string, mixed> $user
      * @param array<string, mixed> $post
      */
-    private function regenIdea(array $user, int $chatId, array $post): void
+    /**
+     * Antes de refazer a imagem da IA, pergunta o que mudar (ou "Outra versão" sem pedido).
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $post
+     */
+    private function askIdeaChange(array $user, int $chatId, array $post): void
     {
+        if ((int) ($post['creative'] ?? 0) !== 1 || !$this->inMenu($post)) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        if (!$this->aiAllowed((int) $user['id'])) {
+            $this->channel->sendText($chatId, Messages::aiPlan());
+
+            return;
+        }
+        if ((int) ($post['idea_regen_count'] ?? 0) >= $this->ideaImageLimit()) {
+            $this->channel->sendText($chatId, Messages::ideaImageLimit());
+
+            return;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => 'pic:' . (int) $post['id']]);
+        $this->channel->sendText($chatId, Messages::askIdeaChange(), Keyboards::ideaChange((int) $post['id']));
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function handleIdeaChangeText(array $user, int $chatId, string $text): bool
+    {
+        if (preg_match('/^pic:(\d+)$/', (string) ($user['pending_action'] ?? ''), $m) !== 1) {
+            return false;
+        }
+        $this->users->update((int) $user['id'], ['pending_action' => null]);
+        $post = $this->posts->find((int) $m[1]);
+        if ($post === null || (int) $post['user_id'] !== (int) $user['id']) {
+            return false;
+        }
+        $post = $this->ensureMenu($post);
+        if ($post === null) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return true;
+        }
+        $change = trim(strip_tags($text));
+        if ($change !== '') {
+            $this->channel->sendText($chatId, Messages::ideaChanging());
+        }
+        $this->regenIdea($user, $chatId, $post, $change);
+
+        return true;
+    }
+
+    private function regenIdea(array $user, int $chatId, array $post, string $change = ''): void
+    {
+        if (str_starts_with((string) ($user['pending_action'] ?? ''), 'pic:')) {
+            $this->users->update((int) $user['id'], ['pending_action' => null]);
+        }
         if ((int) ($post['creative'] ?? 0) !== 1) {
             return;
         }
@@ -3264,7 +3414,7 @@ class PostService
 
             return;
         }
-        if (!$this->renewIdeaImage($user, $chatId, $post)) {
+        if (!$this->renewIdeaImage($user, $chatId, $post, $change)) {
             $this->returnToMenu($postId, PostStatus::Generating);
             $this->sendPreview($user, $chatId, $postId, $this->adjustButtons($user, $postId));
 
@@ -3394,6 +3544,7 @@ class PostService
                 || str_starts_with($pending, 'surprise:')
                 || str_starts_with($pending, 'newpost:')
                 || str_starts_with($pending, 'photoask:')
+                || str_starts_with($pending, 'pic:')
             )
         ) {
             $this->abandonQuestionDraft((int) $user['id'], $pending);
@@ -3854,8 +4005,13 @@ class PostService
     /**
      * @param list<string> $frames
      */
-    private function storeIdeaFrames(int $postId, array $frames, int $messageId): void
+    /**
+     * @param list<string> $frames
+     * @param list<array<string, mixed>> $matchedExtras logos dos extras, carimbados depois do corte
+     */
+    private function storeIdeaFrames(int $postId, array $frames, int $messageId, string $idea = '', array $matchedExtras = []): void
     {
+        $logos = IdeaImage::isDesigned($idea) ? PromptExtras::allImageAbsolutes($matchedExtras) : [];
         $dir = Config::root() . '/storage/media';
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
             throw new RuntimeException('Nao foi possivel criar storage/media');
@@ -3880,6 +4036,9 @@ class PostService
             $dest = $dir . '/' . $postId . '_' . $index . '.jpg';
             if (!copy($normalized[0]->absolutePath, $dest)) {
                 throw new RuntimeException('Nao foi possivel gravar a imagem');
+            }
+            if ($logos !== []) {
+                PromptExtras::stampLogosOnFile($dest, $logos);
             }
             if (is_file($raw)) {
                 unlink($raw);
@@ -4008,27 +4167,19 @@ class PostService
         $reference = $this->resolveIdeaReference($user, $postId, $message);
         $matchedExtras = $this->matchedPromptExtras($user, ['instagram_account_id' => $this->activeInstagramAccountId($user)], $idea);
         $reference = $this->ideaApiReference($reference, $idea, $matchedExtras);
-        $look = $this->ideaLookBrief($profile, $idea, $matchedExtras);
+        $textOverlay = $isStory || $surprisePhrase !== null;
+        $look = $this->ideaLookBrief($profile, $idea, $matchedExtras, $textOverlay ? $this->phrasePlaceOf($user) : null);
 
         try {
             $count = count(IdeaImage::pieces($idea, $aspect));
             if ($count > 1) {
                 $this->channel->sendText($chatId, Messages::ideaSlidesStarted($count, $isStory));
             }
-            $generator = $this->ideas ?? new IdeaImage();
-            $pieces = IdeaImage::pieces($idea, $aspect);
-            $frames = [];
-            foreach ($pieces as $piece) {
-                if (count($pieces) > 1) {
-                    $this->channel->sendText($chatId, Messages::ideaSlideProgress($piece['index'], count($pieces)));
-                }
-                $frames[] = $generator instanceof IdeaImage
-                    ? $generator->create($idea, $reference, $look, $aspect, $piece['index'])
-                    : $generator->create($idea, $reference, $look, $aspect);
-            }
-            $frames = $this->applyBrandLogoOverlays($frames, $idea, $matchedExtras);
+            $frames = $this->renderIdeaFrames($idea, $reference, $look, $aspect, $profile, function (int $index, int $total) use ($chatId): void {
+                $this->channel->sendText($chatId, Messages::ideaSlideProgress($index, $total));
+            });
             $this->wakeDatabase();
-            $this->storeIdeaFrames($postId, $frames, (int) ($message['message_id'] ?? 0));
+            $this->storeIdeaFrames($postId, $frames, (int) ($message['message_id'] ?? 0), $idea, $matchedExtras);
             $deferPhrase = $isStory && $surprisePhrase !== null ? $surprisePhrase : null;
             $this->generateAndPreview($userId, $chatId, $postId, $surprisePhrase === null, false, $deferPhrase);
             if ($surprisePhrase !== null) {
@@ -4634,31 +4785,27 @@ class PostService
      * @param array<string, mixed> $profile
      * @param list<array<string, mixed>> $matchedExtras
      */
-    private function ideaLookBrief(array $profile, string $idea, array $matchedExtras): string
+    /**
+     * @param list<array<string, mixed>> $matchedExtras
+     * @param string|null $overlayPlace onde a frase será pintada depois (foto de story ou do Surpreenda-me)
+     */
+    private function ideaLookBrief(array $profile, string $idea, array $matchedExtras, ?string $overlayPlace = null): string
     {
-        $look = IdeaLook::brief($profile, PromptExtras::formatForImageBrief($matchedExtras));
+        $extras = PromptExtras::formatForImageBrief($matchedExtras);
         if (IdeaImage::isDesigned($idea)) {
-            $look .= PromptExtras::designedLogoBriefSuffix($matchedExtras);
+            return IdeaLook::design($profile, $extras) . PromptExtras::designedLogoBriefSuffix($matchedExtras);
+        }
+        $look = IdeaLook::brief($profile, $extras, $idea);
+        if ($overlayPlace !== null) {
+            $band = match ($overlayPlace) {
+                PhrasePlace::TOPO => 'top third',
+                PhrasePlace::RODAPE => 'bottom third',
+                default => 'middle band',
+            };
+            $look .= ' A text box is placed over the ' . $band . ' later: keep that area calm and low in detail, and put the main subject elsewhere in the frame.';
         }
 
         return $look;
-    }
-
-    /**
-     * @param list<string> $frames
-     * @param list<array<string, mixed>> $matchedExtras
-     * @return list<string>
-     */
-    private function applyBrandLogoOverlays(array $frames, string $idea, array $matchedExtras): array
-    {
-        if (!IdeaImage::isDesigned($idea) || PromptExtras::allImageAbsolutes($matchedExtras) === []) {
-            return $frames;
-        }
-
-        return array_map(
-            static fn (string $jpeg): string => PromptExtras::applyLogosToJpegBinary($jpeg, $matchedExtras),
-            $frames,
-        );
     }
 
     private function aiAllowed(int $userId): bool

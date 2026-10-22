@@ -527,6 +527,17 @@ final class Keyboards
     }
 
     /**
+     * @return list<list<array{text:string, callback_data:string}>>
+     */
+    public static function ideaChange(int $postId): array
+    {
+        return [
+            [['text' => 'Outra versão', 'callback_data' => 'a:pix:' . $postId]],
+            [['text' => 'Voltar', 'callback_data' => 'a:back:' . $postId]],
+        ];
+    }
+
+    /**
      * Foto com texto longo em "1 foto": a pessoa decide entre publicar a foto ou pedir imagem nova à IA.
      *
      * @return list<list<array{text:string, callback_data:string}>>

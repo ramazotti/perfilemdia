@@ -269,6 +269,69 @@ final class PostFunnelTest extends TestCase
         $this->assertContains(Messages::kindStoryIa(), $this->channel->texts());
     }
 
+    public function testDesignedCardGetsADesignBriefNotAPhotoScene(): void
+    {
+        $this->users->update($this->userId, ['brand_style' => 'azul marinho e dourado', 'city' => 'Belo Horizonte', 'profession' => 'Padre', 'tone' => 'acolhedor']);
+        $this->setPending('kind:ia|fmt:quote');
+
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'misericórdia');
+
+        $brand = $this->ideas->calls[0]['brand'];
+        $this->assertStringContainsString('azul marinho e dourado', $brand);
+        $this->assertStringContainsString('Type:', $brand);
+        $this->assertStringNotContainsString('Setting', $brand);
+        $this->assertStringNotContainsString('natural light', $brand);
+        $this->assertStringNotContainsString('Belo Horizonte', $brand);
+    }
+
+    public function testStoryPhotoKeepsRoomForThePaintedText(): void
+    {
+        $this->setPending('kind:ia@story|fmt:photo');
+
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'um café da manhã em família');
+
+        $this->assertStringContainsString('A text box is placed over', $this->ideas->calls[0]['brand']);
+    }
+
+    public function testChangeImageAsksWhatToChangeAndUsesTheRequest(): void
+    {
+        $this->setPending('kind:ia|fmt:photo');
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'vitrine da livraria');
+        $post = $this->posts->findPendingForUser($this->userId);
+        $this->assertNotNull($post);
+        $postId = (int) $post['id'];
+
+        $this->service->handleApprovalCallback($this->user(), self::TELEGRAM_ID, 'cb', 'pic', $postId);
+        $this->assertContains(Messages::askIdeaChange(), $this->channel->texts());
+        $this->assertSame('pic:' . $postId, $this->pending());
+        $this->assertCount(1, $this->ideas->calls);
+
+        $this->assertTrue($this->service->handleIdeaChangeText($this->user(), self::TELEGRAM_ID, 'sem pessoas, luz da tarde'));
+        $this->assertCount(2, $this->ideas->calls);
+        $this->assertStringContainsString('Ajuste da imagem: sem pessoas, luz da tarde', $this->ideas->calls[1]['idea']);
+        $this->assertNull($this->ideas->calls[1]['reference']);
+
+        $this->service->handleApprovalCallback($this->user(), self::TELEGRAM_ID, 'cb', 'pic', $postId);
+        $this->service->handleIdeaChangeText($this->user(), self::TELEGRAM_ID, 'mantém a cena e só troca a cor do toldo');
+        $this->assertCount(3, $this->ideas->calls);
+        $this->assertNotNull($this->ideas->calls[2]['reference']);
+        $this->assertSame(1, substr_count($this->ideas->calls[2]['idea'], 'Ajuste da imagem:'));
+        $this->assertSame('', $this->pending());
+    }
+
+    public function testEditOnADesignedCardAsksForARedoInstead(): void
+    {
+        $this->setPending('kind:ia|fmt:checklist');
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'o que levar para a missa');
+        $post = $this->posts->findPendingForUser($this->userId);
+        $this->assertNotNull($post);
+
+        $this->service->handleApprovalCallback($this->user(), self::TELEGRAM_ID, 'cb', 'img', (int) $post['id']);
+
+        $this->assertContains(Messages::askIdeaChange(), $this->channel->texts());
+        $this->assertSame(PostStatus::AwaitingApproval->value, $this->posts->find((int) $post['id'])['status']);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -423,7 +486,7 @@ final class FunnelChannel implements \PerfilEmDia\Channel\ChannelInterface
 
 final class FunnelIdea implements IdeaImageGenerator
 {
-    /** @var list<array{idea:string, reference:?string, aspect:string}> */
+    /** @var list<array{idea:string, reference:?string, aspect:string, brand:string}> */
     public array $calls = [];
 
     public bool $fail = false;
@@ -433,7 +496,7 @@ final class FunnelIdea implements IdeaImageGenerator
         if ($this->fail) {
             throw new \RuntimeException('falhou');
         }
-        $this->calls[] = ['idea' => $idea, 'reference' => $referenceJpeg, 'aspect' => $aspect];
+        $this->calls[] = ['idea' => $idea, 'reference' => $referenceJpeg, 'aspect' => $aspect, 'brand' => $brand];
 
         return self::jpeg();
     }

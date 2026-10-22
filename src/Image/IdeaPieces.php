@@ -201,8 +201,20 @@ final class IdeaPieces
         return $pieces;
     }
 
-    public static function prompt(string $idea, bool $hasReference, string $brand, string $aspect, int $index = 1, int $count = 0): string
-    {
+    /**
+     * @param array{title:string, text:string}|null $slide texto planejado para este slide da série
+     * @param bool $styleReference a última imagem anexada é o slide 1 da mesma série
+     */
+    public static function prompt(
+        string $idea,
+        bool $hasReference,
+        string $brand,
+        string $aspect,
+        int $index = 1,
+        int $count = 0,
+        ?array $slide = null,
+        bool $styleReference = false,
+    ): string {
         $pieces = self::pieces($idea, $aspect);
         $piece = $pieces[0];
         foreach ($pieces as $candidate) {
@@ -226,7 +238,32 @@ final class IdeaPieces
             $piece['kind'],
             $piece['index'],
             $piece['count'],
+            $slide,
+            $styleReference,
         );
+    }
+
+    /**
+     * Itens que a pessoa (ou o Surpreenda-me) já escreveu para entrar na arte.
+     *
+     * @return list<string>
+     */
+    public static function listedItems(string $idea, string $kind): array
+    {
+        $pattern = match ($kind) {
+            'checklist' => '/Item\s*\d+\s*:\s*([^\n;]+?)(?=\s*(?:Item\s*\d+\s*:|[;\n]|$))/iu',
+            'steps' => '/Passo\s*\d+\s*[:\x{2013}\-]\s*([^\n;]+?)(?=\s*(?:Passo\s*\d+\s*[:\x{2013}\-]|[;\n]|$))/iu',
+            'compare' => '/Coluna\s+(?:esquerda|direita)\s*:\s*([^\n;]+?)(?=\s*(?:Coluna\s+(?:esquerda|direita)\s*:|[;\n]|$))/iu',
+            default => '',
+        };
+        if ($pattern === '' || preg_match_all($pattern, $idea, $matches) < 1) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(static fn (string $item): string => trim(rtrim(trim($item), '.')), $matches[1]),
+            static fn (string $item): bool => $item !== '',
+        ));
     }
 
     /**
@@ -310,22 +347,79 @@ final class IdeaPieces
         return $value > 0 ? $value : 0;
     }
 
-    private static function imageBrief(string $idea, string $kind = 'photo'): string
+    /**
+     * @param array{title:string, text:string}|null $slide
+     */
+    private static function imageBrief(string $idea, string $kind = 'photo', ?array $slide = null, int $index = 1): string
     {
-        $body = self::stripFormatCue($idea);
-        $exact = self::exactWords($idea);
         $parts = ['Before drawing, decide what the picture shows.'];
-        if ($exact !== '') {
+        if ($kind === 'photo') {
+            // Aspas no pedido de foto são contexto, nunca texto na imagem.
+            $parts[] = 'Do not write any words on the image.';
+            $parts[] = 'Idea to show, never printed: ' . rtrim(self::stripFormatCue($idea), ' .') . '.';
+
+            return implode(' ', $parts);
+        }
+
+        $exact = self::exactWords($idea);
+        $credit = self::credit($idea);
+        $items = self::listedItems($idea, $kind);
+        if ($slide !== null) {
+            $parts[] = 'Exact text on this image, spelled as written, and nothing else: headline "' . $slide['title'] . '"'
+                . ($slide['text'] !== '' ? '; body "' . $slide['text'] . '"' : '') . '.';
+        } elseif ($exact !== '') {
             $parts[] = 'Exact text on the image, spelled as written. Do not add any other sentence from the assignment: "' . $exact . '".';
         } elseif ($kind === 'quote') {
             $parts[] = 'The assignment gives no exact quote. Pick one short, real, well-known quote in Brazilian Portuguese that fits the idea. If it is from the Bible, use the exact wording and put the correct book chapter:verse in a small credit line. Never invent an author or a reference. Do not print the assignment itself.';
+        } elseif ($kind === 'steps' && isset($items[$index - 1]) && count($items) > 1 && self::seriesStep($idea)) {
+            $parts[] = 'Exact text of this step, spelled as written: "' . $items[$index - 1] . '".';
+        } elseif ($items !== []) {
+            $parts[] = 'Print exactly these items, in this order, spelled as written: ' . implode(' | ', array_map(
+                static fn (string $item): string => '"' . $item . '"',
+                $items,
+            )) . '. Add only a short title if needed.';
         } else {
             $parts[] = 'No sentence from the assignment may appear on the image. If the layout needs words, write new short ones in Brazilian Portuguese about the idea.';
         }
-        $parts[] = 'Idea to show, never printed: ' . $body . '.';
+        if ($credit !== '' && $slide === null) {
+            $parts[] = 'Small credit line under the main text, spelled as written: "' . $credit . '".';
+        }
+        $parts[] = 'Idea to show, never printed: ' . rtrim(self::briefBody($idea), ' .') . '.';
         $parts[] = 'Do not print the format name, a sentence that starts with Mostre, the label Visual, or the label Para.';
 
         return implode(' ', $parts);
+    }
+
+    private static function seriesStep(string $idea): bool
+    {
+        return count(self::pieces($idea, '4:5')) > 1;
+    }
+
+    /**
+     * Pedido sem o rótulo do formato e sem os trechos que já viraram texto exato.
+     */
+    private static function briefBody(string $idea): string
+    {
+        $body = self::stripFormatCue($idea);
+        $clean = preg_replace(
+            [
+                '/Texto na imagem:\s*[\x{00ab}"\x{201c}][^\x{00bb}"\x{201d}]*[\x{00bb}"\x{201d}]\s*/u',
+                '/Cr[e\x{00e9}]dito:\s*[^\n]*?(?=\.\s|\.$|\n|$)\.?\s*/u',
+            ],
+            '',
+            $body,
+        );
+
+        return trim(is_string($clean) && trim($clean) !== '' ? $clean : $body);
+    }
+
+    private static function credit(string $idea): string
+    {
+        if (preg_match('/Cr[e\x{00e9}]dito:\s*([^\n]{2,80}?)(?=\.\s|\.$|\n|$)/u', $idea, $match) !== 1) {
+            return '';
+        }
+
+        return trim($match[1], " \t\"\x{00ab}\x{00bb}");
     }
 
     private static function stripFormatCue(string $idea): string
@@ -357,7 +451,8 @@ final class IdeaPieces
         $story = $aspect === '9:16';
         $feedPortrait = $aspect === '4:5';
         $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
-        $clean = ' No text, letters, numbers, logos, or watermarks.';
+        $clean = ' No text, letters, numbers, logos, or watermarks.'
+            . ' People: no identifiable faces unless the idea asks for a specific person; prefer hands, silhouettes, people seen from behind, or objects.';
         if ($hasReference) {
             $frame = $story
                 ? ' Photorealistic, natural color, shot on a camera, vertical full screen, 9:16.'
@@ -390,16 +485,21 @@ final class IdeaPieces
         string $kind,
         int $index,
         int $count,
+        ?array $slide = null,
+        bool $styleReference = false,
     ): string {
         $frame = $aspect === '9:16'
-            ? 'Full-screen vertical design, 9:16.'
+            ? 'Full-screen vertical design, 9:16. Instagram covers the top 14% (profile name) and the bottom 20% (reply bar): keep every word out of those bands.'
             : 'Vertical design, 3:4. The picture will be trimmed to 4:5, so keep every word, number and credit line at least 8% away from the top and bottom edges.';
         $source = $hasReference
-            ? 'The attached photo is only a reference for subject or color. Do not return that photo with a caption bar.'
+            ? 'The first attached photo is only a reference for subject or color. Do not return that photo with a caption bar. Do not make a photograph.'
             : 'Do not make a photograph.';
         $place = $count > 1
-            ? ' This is image ' . $index . ' of ' . $count . ' in one series. Use the same colors, type, and margins on every image. Print ' . $index . '/' . $count . ' in a corner.'
+            ? ' This is image ' . $index . ' of ' . $count . ' in one series. Use the same colors, type, and margins on every image. Print ' . $index . '/' . $count . ' small in the bottom-right corner.'
             : '';
+        if ($styleReference) {
+            $place .= ' The last attached image is image 1 of this same series: match its palette, fonts, layout grid, and margins exactly. Change only the text and the small illustration.';
+        }
         $job = match ($kind) {
             'quote' => 'Design a quote card for Instagram, not a scenic photo. Print the exact quote from Texto na imagem or from guillemets in the assignment, in very large high-contrast type. Add a small credit line (author or Bible reference) when the assignment includes Crédito. Background may be subtle texture or soft color tied to the niche; text must dominate.',
             'compare' => 'Design one comparison with two clear columns. The labels come from the request.',
@@ -427,6 +527,6 @@ final class IdeaPieces
             . ' Large type, high contrast, generous margins, and every word fully inside the frame.'
             . ' Flat or editorial layout, few colors, no watermark, no tiny footnotes, no English labels.'
             . $look
-            . ' ' . self::imageBrief($idea, $kind);
+            . ' ' . self::imageBrief($idea, $kind, $slide, $index);
     }
 }

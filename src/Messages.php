@@ -874,6 +874,16 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
         return 'A foto criada pela IA deste post já teve as duas versões novas. A legenda ainda pode mudar.';
     }
 
+    public static function askIdeaChange(): string
+    {
+        return 'O que você quer mudar na imagem? Ex.: "mais clara", "sem pessoas", "fundo dourado", "mantém o texto e troca as cores". Ou toque em Outra versão.';
+    }
+
+    public static function ideaChanging(): string
+    {
+        return 'Certo, vou refazer a imagem com esse pedido. Aviso quando a prévia ficar pronta.';
+    }
+
     public static function ideaImageRetryFailed(): string
     {
         return 'Não consegui criar outra foto agora. A legenda segue para uma nova versão.';

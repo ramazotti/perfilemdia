@@ -368,18 +368,18 @@ final class ImageEditTest extends TestCase
 
         try {
             $posts->update($postId, ['preview_message_id' => 99]);
-            $service->handleApprovalCallback($user, 930001, 'cb', 'pic', $postId);
+            $service->handleApprovalCallback($user, 930001, 'cb', 'pix', $postId);
             $this->assertSame(1, $ideas->calls);
             $this->openAdjustMenu($service, $user, 930001, $postId);
             $this->assertContains('Trocar imagem (IA)', $this->buttonLabels($channel));
 
-            $service->handleApprovalCallback($user, 930001, 'cb2', 'pic', $postId);
+            $service->handleApprovalCallback($user, 930001, 'cb2', 'pix', $postId);
             $this->assertSame(2, $ideas->calls);
             $this->assertSame(2, (int) $posts->find($postId)['idea_regen_count']);
             $this->openAdjustMenu($service, $user, 930001, $postId);
             $this->assertNotContains('Trocar imagem (IA)', $this->buttonLabels($channel));
 
-            $service->handleApprovalCallback($user, 930001, 'cb3', 'pic', $postId);
+            $service->handleApprovalCallback($user, 930001, 'cb3', 'pix', $postId);
             $this->assertSame(2, $ideas->calls);
             $texts = implode(' ', array_column($channel->sent, 'text'));
             $this->assertStringContainsString('duas versões novas', $texts);

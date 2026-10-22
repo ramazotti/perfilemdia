@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PerfilEmDia\Image;
 
 use PerfilEmDia\Config;
+use PerfilEmDia\Logger;
 use PerfilEmDia\Support\GuzzleHttpPoster;
 use PerfilEmDia\Support\HttpPoster;
 
@@ -34,9 +35,19 @@ final class IdeaImage implements IdeaImageGenerator
         return IdeaPieces::pieces($idea, $aspect);
     }
 
-    public static function promptFor(string $idea, bool $hasReference, string $brand, string $aspect, int $index = 1): string
-    {
-        return IdeaPieces::prompt($idea, $hasReference, $brand, $aspect, $index);
+    /**
+     * @param array{title:string, text:string}|null $slide
+     */
+    public static function promptFor(
+        string $idea,
+        bool $hasReference,
+        string $brand,
+        string $aspect,
+        int $index = 1,
+        ?array $slide = null,
+        bool $styleReference = false,
+    ): string {
+        return IdeaPieces::prompt($idea, $hasReference, $brand, $aspect, $index, 0, $slide, $styleReference);
     }
 
     /**
@@ -65,13 +76,48 @@ final class IdeaImage implements IdeaImageGenerator
     }
 
     /**
+     * Série inteira: cada slide recebe o seu texto planejado e, do 2º em diante, o slide 1 como guia de estilo.
+     *
+     * @param list<array{title:string, text:string}>|null $plan
+     * @param (callable(int, int): void)|null $onSlide
      * @return list<string>
      */
-    public function createSet(string $idea, ?string $referenceJpeg = null, string $brand = '', string $aspect = ''): array
-    {
+    public function createSet(
+        string $idea,
+        ?string $referenceJpeg = null,
+        string $brand = '',
+        string $aspect = '',
+        ?array $plan = null,
+        ?callable $onSlide = null,
+    ): array {
+        $pieces = self::pieces($idea, $aspect);
         $frames = [];
-        foreach (self::pieces($idea, $aspect) as $piece) {
-            $frames[] = $this->render($idea, $referenceJpeg, $brand, $aspect, $piece['index']);
+        $style = null;
+        try {
+            foreach ($pieces as $piece) {
+                if ($onSlide !== null && count($pieces) > 1) {
+                    $onSlide($piece['index'], count($pieces));
+                }
+                $frames[] = $this->render(
+                    $idea,
+                    $referenceJpeg,
+                    $brand,
+                    $aspect,
+                    $piece['index'],
+                    $plan[$piece['index'] - 1] ?? null,
+                    $style,
+                );
+                if ($style === null && count($pieces) > 1 && self::isDesigned($idea)) {
+                    $style = tempnam(sys_get_temp_dir(), 'pd-style');
+                    if ($style === false || file_put_contents($style, $frames[0]) === false) {
+                        $style = null;
+                    }
+                }
+            }
+        } finally {
+            if (is_string($style) && is_file($style)) {
+                unlink($style);
+            }
         }
 
         return $frames;
@@ -82,8 +128,18 @@ final class IdeaImage implements IdeaImageGenerator
         return $this->render($idea, $referenceJpeg, $brand, $aspect, $index);
     }
 
-    private function render(string $idea, ?string $referenceJpeg, string $brand, string $aspect, int $index): string
-    {
+    /**
+     * @param array{title:string, text:string}|null $slide
+     */
+    private function render(
+        string $idea,
+        ?string $referenceJpeg,
+        string $brand,
+        string $aspect,
+        int $index,
+        ?array $slide = null,
+        ?string $styleJpeg = null,
+    ): string {
         Config::load();
         $key = trim(Config::get('OPENROUTER_API_KEY', ''));
         if ($key === '') {
@@ -99,10 +155,11 @@ final class IdeaImage implements IdeaImageGenerator
             }
         }
 
+        $styleUrl = $styleJpeg !== null && is_file($styleJpeg) ? $this->referenceDataUrl($styleJpeg) : null;
         $options = self::requestOptions($idea, $aspect);
         $payload = [
             'model' => $options['model'] ?? Config::get('OPENROUTER_IMAGE_MODEL', 'google/gemini-3.1-flash-image'),
-            'prompt' => self::promptFor($idea, $hasReference, $brand, $aspect, $index),
+            'prompt' => self::promptFor($idea, $hasReference, $brand, $aspect, $index, $slide, $styleUrl !== null),
         ];
         if ($options['output_format'] !== null) {
             $payload['output_format'] = $options['output_format'];
@@ -116,11 +173,14 @@ final class IdeaImage implements IdeaImageGenerator
         if ($options['quality'] !== null) {
             $payload['quality'] = $options['quality'];
         }
-        if ($referenceUrl !== null) {
-            $payload['input_references'] = [[
-                'type' => 'image_url',
-                'image_url' => ['url' => $referenceUrl],
-            ]];
+        $references = [];
+        foreach ([$referenceUrl, $styleUrl] as $url) {
+            if ($url !== null) {
+                $references[] = ['type' => 'image_url', 'image_url' => ['url' => $url]];
+            }
+        }
+        if ($references !== []) {
+            $payload['input_references'] = $references;
         }
 
         $http = $this->http ?? new GuzzleHttpPoster();
@@ -144,6 +204,17 @@ final class IdeaImage implements IdeaImageGenerator
         $binary = base64_decode($b64, true);
         if ($binary === false || $binary === '') {
             throw new ImageEditException('Image API returned no image');
+        }
+
+        $size = @getimagesizefromstring($binary);
+        if (is_array($size)) {
+            // Confere se o modelo respeitou a proporção pedida (o corte depois tira o que sobrar).
+            Logger::get()->info('Imagem da IA', [
+                'model' => $payload['model'],
+                'asked' => $payload['aspect_ratio'] ?? null,
+                'width' => $size[0],
+                'height' => $size[1],
+            ]);
         }
 
         return $this->toJpeg($binary);
