@@ -73,6 +73,12 @@ final class IdeaImagePromptTest extends TestCase
 
         $quote = IdeaImage::requestOptions("Cita\u{00e7}\u{00e3}o do dia", '9:16');
         $this->assertSame('openai/gpt-image-2', $quote['model']);
+
+        $quoteIdea = "Cita\u{00e7}\u{00e3}o: card limpo. Texto na imagem: \u{00ab}O Senhor est\u{00e1} perto.\u{00bb} Cr\u{00e9}dito: Salmos 34,18.";
+        $quotePrompt = IdeaImage::promptFor($quoteIdea, false, '', '9:16');
+        $this->assertStringContainsString('quote card', $quotePrompt);
+        $this->assertStringContainsString('O Senhor est', $quotePrompt);
+        $this->assertStringNotContainsString('No text, letters', $quotePrompt);
         $this->assertTrue(IdeaImage::isDesigned('Checklist da semana'));
         $this->assertFalse(IdeaImage::isDesigned('Foto da consulta de hoje'));
     }

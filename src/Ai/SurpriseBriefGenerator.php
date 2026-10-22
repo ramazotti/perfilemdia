@@ -9,6 +9,7 @@ use DateTimeZone;
 use PerfilEmDia\Billing\Settings;
 use PerfilEmDia\Config;
 use PerfilEmDia\Growth\BenefitOrchestrator;
+use PerfilEmDia\Image\IdeaFormatBrief;
 use PerfilEmDia\Support\GuzzleHttpPoster;
 use PerfilEmDia\Support\HttpPoster;
 
@@ -27,8 +28,12 @@ final class SurpriseBriefGenerator
      * @param array<string, mixed> $user Perfil (about, profession, tone, brand_style, city, display_name, contact_cta)
      * @return array{idea:string, phrase:string}|null
      */
-    public function generate(array $user, DateTimeImmutable $now, string $destination = 'feed'): ?array
-    {
+    public function generate(
+        array $user,
+        DateTimeImmutable $now,
+        string $destination = 'feed',
+        ?string $formatKey = null,
+    ): ?array {
         Config::load();
         $key = trim(Config::get('OPENROUTER_API_KEY', ''));
         if ($key === '') {
@@ -36,10 +41,11 @@ final class SurpriseBriefGenerator
         }
 
         $destination = $destination === 'story' ? 'story' : 'feed';
+        $formatKey = IdeaFormatBrief::normalizeKey($formatKey);
         $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
         $model = $this->model();
         $fallback = $this->fallbackModel();
-        $userText = $this->buildUserPrompt($user, $now, $destination);
+        $userText = $this->buildUserPrompt($user, $now, $destination, $formatKey);
         $http = $this->http ?? new GuzzleHttpPoster();
 
         foreach ([$model, $fallback] as $attemptModel) {
@@ -60,7 +66,7 @@ final class SurpriseBriefGenerator
                         'max_tokens' => 700,
                         'temperature' => 0.9,
                         'messages' => [
-                            ['role' => 'system', 'content' => $this->systemPrompt()],
+                            ['role' => 'system', 'content' => $this->systemPrompt($formatKey)],
                             ['role' => 'user', 'content' => $userText],
                         ],
                     ],
@@ -86,28 +92,40 @@ final class SurpriseBriefGenerator
         return null;
     }
 
-    private function systemPrompt(): string
+    private function systemPrompt(string $formatKey): string
     {
-        return implode("\n", [
+        $lines = [
             'Você cria sugestões de post para Instagram no Brasil, para qualquer nicho ou profissão.',
             'Responda SOMENTE com JSON válido, sem markdown, no formato:',
             '{"idea":"...","phrase":"..."}',
-            'idea: briefing visual em português (2 a 4 frases) para gerar a imagem depois. Descreva cena, luz, objetos, clima. Sem rostos identificáveis, sem marcas de terceiros, sem texto longo dentro da imagem.',
-            'phrase: frase curta para sobrepor na foto (4 a 55 caracteres), impacto emocional ou curiosidade.',
-            'Diversifique sempre: mude cenário, época do dia, tipo de objeto e ângulo. Não repita o mesmo molde entre sugestões.',
-            'Evite clichês visuais batidos: mesa genérica com Bíblia aberta, vela, terço, xícara e “luz acolhedora”, salvo se o perfil pedir isso explicitamente.',
-            'Prefira metáforas concretas, cenas do cotidiano, detalhes inesperados, perguntas visuais, antes/depois simbólico, natureza urbana, mãos em ação (sem rosto), papel e caneta, trilha, porta, janela, etc.',
-        ]);
+        ];
+        if (IdeaFormatBrief::isDesignedKey($formatKey)) {
+            $lines[] = 'idea: briefing em português para gerar ARTE com texto legível (layout, cores, tipografia). Siga o formato pedido no prompt do usuário.';
+            $lines[] = 'phrase: gancho curto para legenda do Instagram (4 a 55 caracteres).';
+        } else {
+            $lines[] = 'idea: briefing visual em português (2 a 4 frases) para gerar foto depois. Descreva cena, luz, objetos, clima. Sem rostos identificáveis, sem marcas de terceiros, sem texto longo dentro da imagem.';
+            $lines[] = 'phrase: frase curta para sobrepor na foto (4 a 55 caracteres), impacto emocional ou curiosidade.';
+            $lines[] = 'Diversifique sempre: mude cenário, época do dia, tipo de objeto e ângulo. Não repita o mesmo molde entre sugestões.';
+            $lines[] = 'Evite clichês visuais batidos: mesa genérica com Bíblia aberta, vela, terço, xícara e “luz acolhedora”, salvo se o perfil pedir isso explicitamente.';
+            $lines[] = 'Prefira metáforas concretas, cenas do cotidiano, detalhes inesperados, perguntas visuais, natureza urbana, mãos em ação (sem rosto), etc.';
+        }
+        $addon = IdeaFormatBrief::surpriseSystemAddon($formatKey);
+        if ($addon !== '') {
+            $lines[] = $addon;
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
      * @param array<string, mixed> $user
      */
-    private function buildUserPrompt(array $user, DateTimeImmutable $now, string $destination): string
+    private function buildUserPrompt(array $user, DateTimeImmutable $now, string $destination, string $formatKey): string
     {
         $lines = [
             'Data (Brasil): ' . $now->format('d/m/Y') . ' (' . $this->weekdayLabel($now) . ').',
             'Formato: ' . ($destination === 'story' ? 'story vertical 9:16' : 'feed 4:5'),
+            IdeaFormatBrief::surpriseUserAddonForProfile($user, $formatKey, $destination),
         ];
         $date = BenefitOrchestrator::commemorative($now);
         if ($date !== null) {
@@ -128,7 +146,9 @@ final class SurpriseBriefGenerator
             }
         }
         $lines[] = 'Invente um tema novo e específico para ESTE perfil, não um post genérico.';
-        $lines[] = 'Enfoque desta sugestão (obrigatório): ' . $this->pickAngle($now);
+        if (!IdeaFormatBrief::isDesignedKey($formatKey)) {
+            $lines[] = 'Enfoque desta sugestão (obrigatório): ' . $this->pickAngle($now);
+        }
 
         return implode("\n", $lines);
     }

@@ -294,6 +294,9 @@ final class IdeaPieces
 
     private static function exactWords(string $idea): string
     {
+        if (preg_match('/Texto na imagem:\s*[«"\x{201c}]([^»"\x{201d}]{2,220})[»"\x{201d}]/u', $idea, $match) === 1) {
+            return trim($match[1]);
+        }
         if (preg_match('/["\x{201c}]([^"\x{201d}]{2,160})["\x{201d}]/u', $idea, $match) === 1) {
             return trim($match[1]);
         }
@@ -352,7 +355,7 @@ final class IdeaPieces
             ? ' This is image ' . $index . ' of ' . $count . ' in one series. Use the same colors, type, and margins on every image. Print ' . $index . '/' . $count . ' in a corner.'
             : '';
         $job = match ($kind) {
-            'quote' => 'Design a quote card. One short sentence in very large type, and a small credit line only if the request names who said it.',
+            'quote' => 'Design a quote card for Instagram, not a scenic photo. Print the exact quote from Texto na imagem or from guillemets in the assignment, in very large high-contrast type. Add a small credit line (author or Bible reference) when the assignment includes Crédito. Background may be subtle texture or soft color tied to the niche; text must dominate.',
             'compare' => 'Design one comparison with two clear columns. The labels come from the request.',
             'checklist' => 'Design one checklist. Short items, each with a simple mark, six items at most.',
             'steps' => $count > 1

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace PerfilEmDia\Growth;
 
 use PerfilEmDia\Ai\SurpriseBriefGenerator;
+use PerfilEmDia\Image\IdeaFormatBrief;
+use PerfilEmDia\Image\IdeaPieces;
 use DateTimeImmutable;
 use DateTimeZone;
 
@@ -50,15 +52,28 @@ final class BenefitOrchestrator
         ?int $roll = null,
         string $destination = 'feed',
         ?SurpriseBriefGenerator $generator = null,
+        ?string $formatKey = null,
     ): array {
         $destination = $destination === 'story' ? 'story' : 'feed';
-        $ai = ($generator ?? new SurpriseBriefGenerator())->generate($user, $now, $destination);
+        $formatKey = IdeaFormatBrief::normalizeKey($formatKey);
+        $aspect = $destination === 'story' ? '9:16' : '4:5';
+        $ai = ($generator ?? new SurpriseBriefGenerator())->generate($user, $now, $destination, $formatKey);
         if ($ai !== null) {
             $idea = trim($ai['idea']);
-            if ($destination === 'story') {
-                $idea .= ' Enquadramento vertical 9:16, sem texto longo na imagem.';
+            $cue = IdeaPieces::cueFromKey($formatKey, $aspect);
+            if ($cue !== '' && !IdeaPieces::isDesigned($idea)) {
+                $idea = IdeaPieces::applyCue($idea, $cue);
+            }
+            if (!IdeaFormatBrief::isDesignedKey($formatKey)) {
+                if ($destination === 'story') {
+                    $idea .= ' Enquadramento vertical 9:16, sem texto longo na imagem.';
+                } else {
+                    $idea .= ' Enquadramento vertical 4:5, sem texto longo na imagem.';
+                }
             } else {
-                $idea .= ' Enquadramento vertical 4:5, sem texto longo na imagem.';
+                $idea .= $destination === 'story'
+                    ? ' Enquadramento vertical 9:16.'
+                    : ' Enquadramento vertical 4:5.';
             }
             $brand = trim((string) ($user['brand_style'] ?? ''));
             if ($brand !== '') {
@@ -71,15 +86,26 @@ final class BenefitOrchestrator
             ];
         }
 
-        return self::surpriseBriefFromTemplates($user, $now, $roll);
+        return self::surpriseBriefFromTemplates($user, $now, $roll, $formatKey, $destination);
     }
 
     /**
      * @param array<string, mixed> $user
      * @return array{idea:string, phrase:string}
      */
-    public static function surpriseBriefFromTemplates(array $user, DateTimeImmutable $now, ?int $roll = null): array
-    {
+    public static function surpriseBriefFromTemplates(
+        array $user,
+        DateTimeImmutable $now,
+        ?int $roll = null,
+        ?string $formatKey = null,
+        string $destination = 'feed',
+    ): array {
+        $formatKey = IdeaFormatBrief::normalizeKey($formatKey);
+        $designed = self::surpriseDesignedTemplate($user, $formatKey, $roll ?? 0, $destination);
+        if ($designed !== null) {
+            return $designed;
+        }
+
         $now = $now->setTimezone(new DateTimeZone('America/Sao_Paulo'));
         $profileScenes = self::surpriseScenesForProfile($user);
         $scenes = $profileScenes !== []
@@ -345,6 +371,68 @@ final class BenefitOrchestrator
         }
 
         return mb_substr($line, 0, 480);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return list<array{0:string,1:string}>
+     */
+    /**
+     * @param array<string, mixed> $user
+     * @return array{idea:string, phrase:string}|null
+     */
+    private static function surpriseDesignedTemplate(
+        array $user,
+        string $formatKey,
+        int $roll,
+        string $destination,
+    ): ?array {
+        if (!IdeaFormatBrief::isDesignedKey($formatKey)) {
+            return null;
+        }
+        $niche = IdeaFormatBrief::niche($user);
+        if ($formatKey === 'quote' && $niche === 'spiritual') {
+            $verses = [
+                ['Criai em mim um coração puro, ó Deus.', 'Salmos 51,10', 'Coração novo.'],
+                ['Buscai primeiro o Reino de Deus.', 'Mateus 6,33', 'Ordem certa.'],
+                ['O Senhor está perto dos coração contritos.', 'Salmos 34,18', 'Ele escuta.'],
+                ['Examinai-vos a vós mesmos.', '2 Coríntios 13,5', 'Exame honesto.'],
+                ['Vinde a mim, todos os cansados.', 'Mateus 11,28', 'Descanso.'],
+            ];
+            $pick = $verses[abs($roll) % count($verses)];
+            $idea = 'Citação: card vertical limpo, tipografia grande, fundo suave sem foto dominante. '
+                . 'Texto na imagem: «' . $pick[0] . '» Crédito: ' . $pick[1] . '.';
+
+            return [
+                'idea' => self::withPlace($user, $idea),
+                'phrase' => $pick[2],
+            ];
+        }
+        if ($formatKey === 'quote' && $niche === 'accounting') {
+            $quotes = [
+                ['Organize hoje o que evita multa amanhã.', 'Rotina contábil'],
+                ['Documento guardado vale mais que memória.', 'Arquivo fiscal'],
+                ['Prazo no calendário, paz no escritório.', 'Gestão de prazos'],
+            ];
+            $pick = $quotes[abs($roll) % count($quotes)];
+            $idea = 'Citação: layout profissional, fundo claro. Texto na imagem: «' . $pick[0] . '» Crédito: ' . $pick[1] . '.';
+
+            return [
+                'idea' => self::withPlace($user, $idea),
+                'phrase' => 'Dica do dia.',
+            ];
+        }
+        if ($formatKey === 'checklist') {
+            $idea = 'Checklist: arte com caixas marcáveis. Item 1: Revisar pendências do dia. Item 2: Separar documentos. '
+                . 'Item 3: Confirmar prazos. Item 4: Registrar o que foi feito.';
+
+            return [
+                'idea' => self::withPlace($user, $idea),
+                'phrase' => 'Lista prática.',
+            ];
+        }
+
+        return null;
     }
 
     /**

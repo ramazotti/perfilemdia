@@ -15,6 +15,7 @@ use PerfilEmDia\Config;
 use PerfilEmDia\Db;
 use PerfilEmDia\Growth\BenefitOrchestrator;
 use PerfilEmDia\Telegram\SlowNotice;
+use PerfilEmDia\Image\IdeaFormatBrief;
 use PerfilEmDia\Image\IdeaImage;
 use PerfilEmDia\Image\IdeaPieces;
 use PerfilEmDia\Image\IdeaLook;
@@ -2568,10 +2569,10 @@ class PostService
         $now = new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo'));
         $destination = ($destination ?? $this->chosenDestination($user)) === 'story' ? 'story' : 'feed';
         $this->channel->sendText($chatId, Messages::surpriseThinking());
-        $brief = BenefitOrchestrator::surpriseBrief($view, $now, null, $destination);
+        $formatKey = IdeaFormatBrief::normalizeKey($this->chosenFormatKey($user));
+        $brief = BenefitOrchestrator::surpriseBrief($view, $now, null, $destination, null, $formatKey);
         $aspect = $destination === 'story' ? '9:16' : '4:5';
-        $formatKey = $this->chosenFormatKey($user);
-        if ($formatKey !== null && $formatKey !== 'photo') {
+        if ($formatKey !== 'photo') {
             $brief['idea'] = IdeaPieces::applyCue(
                 $brief['idea'],
                 IdeaPieces::cueFromKey($formatKey, $aspect),

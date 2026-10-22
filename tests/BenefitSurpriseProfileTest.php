@@ -32,6 +32,41 @@ final class BenefitSurpriseProfileTest extends TestCase
         $this->assertStringContainsString('Contexto do perfil:', $idea);
     }
 
+    public function testQuoteTemplateUsesBibleVerseForSpiritualProfile(): void
+    {
+        $user = [
+            'about' => 'Ajuda católicos a se prepararem para a confissão.',
+            'profession' => 'Exame de consciência',
+            'brand_style' => 'Visual limpo.',
+        ];
+        $previous = $_ENV['OPENROUTER_API_KEY'] ?? null;
+        $_ENV['OPENROUTER_API_KEY'] = '';
+        $_SERVER['OPENROUTER_API_KEY'] = '';
+        putenv('OPENROUTER_API_KEY=');
+        try {
+            $brief = BenefitOrchestrator::surpriseBrief(
+                $user,
+                new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')),
+                0,
+                'story',
+                null,
+                'quote',
+            );
+            $this->assertStringContainsString('Texto na imagem:', $brief['idea']);
+            $this->assertStringContainsString('Crédito:', $brief['idea']);
+            $this->assertStringContainsString('Citação:', $brief['idea']);
+        } finally {
+            if ($previous === null) {
+                unset($_ENV['OPENROUTER_API_KEY'], $_SERVER['OPENROUTER_API_KEY']);
+                putenv('OPENROUTER_API_KEY');
+            } else {
+                $_ENV['OPENROUTER_API_KEY'] = $previous;
+                $_SERVER['OPENROUTER_API_KEY'] = $previous;
+                putenv('OPENROUTER_API_KEY=' . $previous);
+            }
+        }
+    }
+
     public function testStoredIdeaRejectedWhenProfileIsSpiritualButIdeaIsGenericWork(): void
     {
         $user = [
