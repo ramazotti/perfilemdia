@@ -162,6 +162,7 @@ final class CustomerPortal
             'extra_id' => (string) ($_POST['extra_id'] ?? ''),
             'trigger_word' => (string) ($_POST['trigger_word'] ?? ''),
             'prompt_text' => (string) ($_POST['prompt_text'] ?? ''),
+            'image_role' => (string) ($_POST['image_role'] ?? ''),
         ]);
         if (isset($_FILES['extra_image']) && is_array($_FILES['extra_image'])
             && ($_FILES['extra_image']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
@@ -1040,6 +1041,16 @@ final class CustomerPortal
         return $html;
     }
 
+    private function extraRoleField(string $id, string $current): string
+    {
+        $current = \PerfilEmDia\Domain\PromptExtras::normalizeRole($current);
+
+        return '<div class="field"><label for="' . $id . '">Uso da imagem</label><select class="in" id="' . $id . '" name="image_role">'
+            . $this->selectOption(\PerfilEmDia\Domain\PromptExtras::ROLE_LOGO, 'Logo: carimbada no canto da arte', $current)
+            . $this->selectOption(\PerfilEmDia\Domain\PromptExtras::ROLE_STYLE, 'Referência de estilo: guia a IA (cores, produto)', $current)
+            . '</select></div>';
+    }
+
     /**
      * @param array<string, mixed> $bundle
      */
@@ -1069,6 +1080,7 @@ final class CustomerPortal
             $html .= '<textarea class="in" id="prompt-' . $id . '" name="prompt_text" rows="4" required>' . Layout::e($text) . '</textarea></div>';
             $html .= $this->fileUploadField('extra-file-' . $id, 'extra_image', 'image/*');
             $html .= '<p class="hint">Deixe o arquivo vazio para manter a imagem atual.</p>';
+            $html .= $this->extraRoleField('role-' . $id, (string) ($row['image_role'] ?? ''));
             $html .= '<div class="portal-form-actions portal-form-actions--split">';
             $html .= '<button class="btn btn-primary" type="submit">Salvar extra</button>';
             $html .= '</div></form>';
@@ -1091,6 +1103,7 @@ final class CustomerPortal
             $html .= '<div class="field"><label for="prompt-new">Texto para a IA</label>';
             $html .= '<textarea class="in" id="prompt-new" name="prompt_text" rows="4" placeholder="Marca, tom, o que mostrar na arte..." required></textarea></div>';
             $html .= $this->fileUploadField('extra-file-new', 'extra_image', 'image/*');
+            $html .= $this->extraRoleField('role-new', '');
             $html .= '<div class="portal-form-actions"><button class="btn btn-primary" type="submit">Adicionar extra</button></div>';
             $html .= '</form></div>';
         }

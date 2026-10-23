@@ -372,6 +372,18 @@ final class UpdateHandler
 
             return;
         }
+        if ($data === 'qt:ok' || $data === 'qt:new') {
+            $this->channel->answerCallback($callbackId);
+            $this->postsService->chooseQuote($user, $chatId, $data === 'qt:ok');
+
+            return;
+        }
+        if ($data === 'rf:keep' || $data === 'rf:free') {
+            $this->channel->answerCallback($callbackId);
+            $this->postsService->chooseReferenceMode($user, $chatId, $data === 'rf:keep');
+
+            return;
+        }
         if (preg_match('/^pa:(own|ia):(\d+)$/', $data, $m) === 1) {
             $this->channel->answerCallback($callbackId);
             $this->postsService->handlePhotoChoice($user, $chatId, $m[1] === 'own', (int) $m[2]);

@@ -18,6 +18,25 @@ final class PromptExtras
 
     public const MAX_TRIGGER_CHARS = 48;
 
+    /** Imagem carimbada na arte. */
+    public const ROLE_LOGO = 'logo';
+
+    /** Imagem que só orienta a IA (estilo, cores, produto). */
+    public const ROLE_STYLE = 'style';
+
+    public static function normalizeRole(string $role): string
+    {
+        return $role === self::ROLE_STYLE ? self::ROLE_STYLE : self::ROLE_LOGO;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    public static function roleOf(array $row): string
+    {
+        return self::normalizeRole((string) ($row['image_role'] ?? self::ROLE_LOGO));
+    }
+
     public static function normalizeTrigger(string $raw): string
     {
         $clean = mb_strtolower(trim(strip_tags($raw)));
@@ -194,11 +213,16 @@ final class PromptExtras
     }
 
     /**
+     * Primeira imagem de referência de estilo (nunca um logo).
+     *
      * @param list<array<string, mixed>> $matched
      */
     public static function firstImageAbsolute(array $matched): ?string
     {
         foreach ($matched as $row) {
+            if (self::roleOf($row) !== self::ROLE_STYLE) {
+                continue;
+            }
             $path = self::absoluteImagePath((string) ($row['image_path'] ?? ''));
             if ($path !== null) {
                 return $path;
@@ -209,6 +233,8 @@ final class PromptExtras
     }
 
     /**
+     * Logos a carimbar (imagens de estilo ficam de fora).
+     *
      * @param list<array<string, mixed>> $matched
      * @return list<string>
      */
@@ -216,6 +242,9 @@ final class PromptExtras
     {
         $paths = [];
         foreach ($matched as $row) {
+            if (self::roleOf($row) !== self::ROLE_LOGO) {
+                continue;
+            }
             $path = self::absoluteImagePath((string) ($row['image_path'] ?? ''));
             if ($path !== null) {
                 $paths[] = $path;

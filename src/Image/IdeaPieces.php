@@ -12,6 +12,9 @@ final class IdeaPieces
 
     public const PHOTO_CUE = 'Foto simples:';
 
+    /** Escolha "Manter o que aparece na foto" (fica no tema para valer também ao refazer). */
+    public const KEEP_REFERENCE = 'Referência: manter o que aparece na foto.';
+
     private const NUMBER = '(?:[0-9]{1,2}|um|uma|dois|duas|tr[e\x{00ea}]s|quatro|cinco|seis|sete|oito|nove|dez)';
 
     /**
@@ -422,13 +425,50 @@ final class IdeaPieces
         return trim($match[1], " \t\"\x{00ab}\x{00bb}");
     }
 
+    private static function keepsReference(string $idea): bool
+    {
+        return str_contains($idea, self::KEEP_REFERENCE);
+    }
+
     private static function stripFormatCue(string $idea): string
     {
-        $text = trim($idea);
+        $text = trim(str_replace(self::KEEP_REFERENCE, '', $idea));
         $pattern = '/^(?:foto\s+simples|infogr[a\x{00e1}]fico(?:\s+com\s+\d+\s+slides?)?|story\s+com\s+\d+\s+telas?|cita[c\x{00e7}][a\x{00e3}]o|check\s*list|comparativo|antes\s+e\s+depois|passo\s+a\s+passo(?:\s+(?:com|de)\s+(?:[0-9]{1,2}|um|uma|dois|duas|tr[e\x{00ea}]s|quatro|cinco|seis|sete|oito|nove|dez))?)\s*:\s*/iu';
         $stripped = preg_replace($pattern, '', $text, 1);
 
         return trim(is_string($stripped) ? $stripped : $text);
+    }
+
+    /**
+     * Texto exato já definido para a arte («...» em Texto na imagem, ou entre aspas).
+     */
+    public static function exactText(string $idea): string
+    {
+        return self::exactWords($idea);
+    }
+
+    /**
+     * Pedido sem o texto exato e sem o crédito (para escolher outra citação).
+     */
+    public static function withoutExactText(string $idea): string
+    {
+        $clean = preg_replace(
+            [
+                '/\s*Texto na imagem:\s*[\x{00ab}"\x{201c}][^\x{00bb}"\x{201d}]*[\x{00bb}"\x{201d}]/u',
+                '/\s*Cr[e\x{00e9}]dito:\s*[^\n]*?(?=\.\s|\.$|\n|$)\.?/u',
+            ],
+            '',
+            $idea,
+        );
+
+        return trim(is_string($clean) ? $clean : $idea);
+    }
+
+    public static function withExactQuote(string $idea, string $quote, string $credit = ''): string
+    {
+        $base = self::withoutExactText($idea);
+
+        return $base . ' Texto na imagem: «' . trim($quote) . '»' . (trim($credit) !== '' ? ' Crédito: ' . trim($credit) . '.' : '');
     }
 
     private static function exactWords(string $idea): string
@@ -453,6 +493,16 @@ final class IdeaPieces
         $look = trim($brand) !== '' ? ' ' . trim($brand) : '';
         $clean = ' No text, letters, numbers, logos, or watermarks.'
             . ' People: no identifiable faces unless the idea asks for a specific person; prefer hands, silhouettes, people seen from behind, or objects.';
+        if ($hasReference && self::keepsReference($idea)) {
+            $frame = $story
+                ? ' Photorealistic, natural color, vertical full screen, 9:16.'
+                : ($feedPortrait ? ' Photorealistic, natural color, vertical 4:5.' : ' Photorealistic, natural color.');
+
+            return 'The attached photo shows the real subject (a product, a person, or a place). Keep that subject faithful: same shape, colors, labels, and details; do not invent a different one.'
+                . ' Change only what the idea below asks for: background, setting, light, angle, or framing.'
+                . $frame . $clean . $look
+                . ' ' . self::imageBrief($idea);
+        }
         if ($hasReference) {
             $frame = $story
                 ? ' Photorealistic, natural color, shot on a camera, vertical full screen, 9:16.'
@@ -491,9 +541,11 @@ final class IdeaPieces
         $frame = $aspect === '9:16'
             ? 'Full-screen vertical design, 9:16. Instagram covers the top 14% (profile name) and the bottom 20% (reply bar): keep every word out of those bands.'
             : 'Vertical design, 3:4. The picture will be trimmed to 4:5, so keep every word, number and credit line at least 8% away from the top and bottom edges.';
-        $source = $hasReference
-            ? 'The first attached photo is only a reference for subject or color. Do not return that photo with a caption bar. Do not make a photograph.'
-            : 'Do not make a photograph.';
+        $source = match (true) {
+            $hasReference && self::keepsReference($idea) => 'Place the real subject of the first attached photo inside the design, faithful to it (same shape, colors, and labels), cut out or framed. The rest of the design is not a photograph.',
+            $hasReference => 'The first attached photo is only a reference for subject or color. Do not return that photo with a caption bar. Do not make a photograph.',
+            default => 'Do not make a photograph.',
+        };
         $place = $count > 1
             ? ' This is image ' . $index . ' of ' . $count . ' in one series. Use the same colors, type, and margins on every image. Print ' . $index . '/' . $count . ' small in the bottom-right corner.'
             : '';

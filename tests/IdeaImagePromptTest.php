@@ -37,7 +37,7 @@ final class IdeaImagePromptTest extends TestCase
         $photo = IdeaImage::requestOptions('Foto da consulta', '4:5');
 
         $this->assertSame('openai/gpt-image-2', $story['model']);
-        $this->assertSame('medium', $story['quality']);
+        $this->assertSame('high', $story['quality']);
         $this->assertSame('9:16', $story['aspect_ratio']);
         $this->assertNull($story['output_format']);
         $this->assertSame('3:4', $feed['aspect_ratio']);

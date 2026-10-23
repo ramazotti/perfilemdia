@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PerfilEmDia\Tests;
 
 use PerfilEmDia\Ai\SeriesPlanner;
+use PerfilEmDia\Domain\PromptExtras;
 use PerfilEmDia\Image\IdeaImage;
 use PerfilEmDia\Image\IdeaLook;
 use PerfilEmDia\Image\IdeaPieces;
@@ -100,6 +101,43 @@ final class ImagePromptQualityTest extends TestCase
         $idea = 'Passo a passo com 3: Passo 1: examine; Passo 2: confesse; Passo 3: cumpra a penitência';
         $this->assertCount(3, IdeaPieces::pieces($idea, '4:5'));
         $this->assertStringContainsString('"confesse"', IdeaImage::promptFor($idea, false, '', '4:5', 2));
+    }
+
+    public function testKeepReferenceAsksForTheSameSubject(): void
+    {
+        $keep = IdeaImage::promptFor("Foto simples: meu bolo numa mesa de festa\n" . IdeaPieces::KEEP_REFERENCE, true, '', '4:5');
+        $free = IdeaImage::promptFor('Foto simples: meu bolo numa mesa de festa', true, '', '4:5');
+
+        $this->assertStringContainsString('Keep that subject faithful', $keep);
+        $this->assertStringNotContainsString('Do not return the same picture', $keep);
+        $this->assertStringNotContainsString('Referência: manter', $keep);
+        $this->assertStringContainsString('Do not return the same picture', $free);
+    }
+
+    public function testExtraImagesAreEitherStampedLogosOrStyleReferences(): void
+    {
+        $matched = [
+            ['trigger_word' => 'marca', 'prompt_text' => 'x', 'image_path' => 'public/assets/logo.png', 'image_role' => 'logo'],
+            ['trigger_word' => 'bolo', 'prompt_text' => 'y', 'image_path' => 'public/assets/demo-1.jpg', 'image_role' => 'style'],
+            ['trigger_word' => 'antigo', 'prompt_text' => 'z', 'image_path' => 'public/assets/og.png'],
+        ];
+
+        $logos = PromptExtras::allImageAbsolutes($matched);
+        $this->assertCount(2, $logos);
+        $this->assertStringEndsWith('logo.png', $logos[0]);
+        $this->assertStringEndsWith('og.png', $logos[1]);
+        $this->assertStringEndsWith('demo-1.jpg', (string) PromptExtras::firstImageAbsolute($matched));
+        $this->assertNull(PromptExtras::firstImageAbsolute([$matched[0]]));
+    }
+
+    public function testQuotePickerDecodesOnlyARealAnswer(): void
+    {
+        $this->assertSame(
+            ['quote' => 'O Senhor é meu pastor', 'credit' => 'Salmo 23,1'],
+            \PerfilEmDia\Ai\QuotePicker::decode('{"quote":"«O Senhor é meu pastor»","credit":"Salmo 23,1"}'),
+        );
+        $this->assertNull(\PerfilEmDia\Ai\QuotePicker::decode('{"quote":"","credit":"x"}'));
+        $this->assertNull(\PerfilEmDia\Ai\QuotePicker::decode('não sei'));
     }
 
     public function testSeriesPlanDecodesOnlyACompletePlan(): void

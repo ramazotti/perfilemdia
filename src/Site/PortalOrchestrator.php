@@ -121,6 +121,7 @@ final class PortalOrchestrator
             $id,
             (string) ($fields['trigger_word'] ?? ''),
             (string) ($fields['prompt_text'] ?? ''),
+            (string) ($fields['image_role'] ?? PromptExtras::ROLE_LOGO),
         );
     }
 
@@ -479,6 +480,16 @@ final class PortalOrchestrator
         }
         if (str_starts_with($data, 'fm:')) {
             $posts->chooseIdeaFormat($user, $chatId, substr($data, 3));
+
+            return;
+        }
+        if ($data === 'qt:ok' || $data === 'qt:new') {
+            $posts->chooseQuote($user, $chatId, $data === 'qt:ok');
+
+            return;
+        }
+        if ($data === 'rf:keep' || $data === 'rf:free') {
+            $posts->chooseReferenceMode($user, $chatId, $data === 'rf:keep');
 
             return;
         }

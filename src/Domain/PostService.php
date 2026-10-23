@@ -8,6 +8,8 @@ use DateTimeImmutable;
 use DateTimeZone;
 use PerfilEmDia\Ai\CaptionException;
 use PerfilEmDia\Ai\CaptionGeneratorInterface;
+use PerfilEmDia\Ai\QuotePicker;
+use PerfilEmDia\Ai\QuotePickerInterface;
 use PerfilEmDia\Ai\SeriesPlanner;
 use PerfilEmDia\Billing\CustomerAccess;
 use PerfilEmDia\Billing\PlanAccess;
@@ -64,6 +66,7 @@ class PostService
         private readonly ?ImageEditorInterface $images = null,
         private readonly ?IdeaImageGenerator $ideas = null,
         private readonly ?IdeaVideoGenerator $videos = null,
+        private readonly ?QuotePickerInterface $quotes = null,
     ) {
     }
 
@@ -118,6 +121,9 @@ class PostService
                 $this->channel->sendText($chatId, Messages::ideaNeedFormat());
                 $this->sendFormatMenu($user, $chatId, $this->chosenDestination($user));
 
+                return;
+            }
+            if ($this->askReferenceMode($user, $chatId, $message)) {
                 return;
             }
             $this->cancelPendingPostsForUser($user, $chatId, true);
@@ -1032,8 +1038,9 @@ class PostService
                 '/\s*Sem texto longo na imagem\.?/u',
                 '/\s*Enquadramento vertical [0-9:]+[^.]*\.?/u',
                 '/\s*Visual da marca:[^.\n]*\.?/u',
+                '/\s*' . preg_quote(IdeaPieces::KEEP_REFERENCE, '/') . '/u',
             ],
-            ['', '', '', ''],
+            ['', '', '', '', ''],
             $theme,
         );
 
@@ -2291,7 +2298,7 @@ class PostService
 
     private function ideaImageLimit(): int
     {
-        return max(1, (int) Config::get('IDEA_IMAGE_REGENS', '2'));
+        return max(1, (int) Config::get('IDEA_IMAGE_REGENS', '3'));
     }
 
     /**
@@ -3354,7 +3361,7 @@ class PostService
             return;
         }
         if ((int) ($post['idea_regen_count'] ?? 0) >= $this->ideaImageLimit()) {
-            $this->channel->sendText($chatId, Messages::ideaImageLimit());
+            $this->channel->sendText($chatId, Messages::ideaImageLimit($this->ideaImageLimit()));
 
             return;
         }
@@ -3404,7 +3411,7 @@ class PostService
             return;
         }
         if ((int) ($post['idea_regen_count'] ?? 0) >= $this->ideaImageLimit()) {
-            $this->channel->sendText($chatId, Messages::ideaImageLimit());
+            $this->channel->sendText($chatId, Messages::ideaImageLimit($this->ideaImageLimit()));
 
             return;
         }
@@ -4107,10 +4114,21 @@ class PostService
             return true;
         }
         $idea = mb_substr($idea, 0, 1000);
+        if (str_contains((string) ($user['pending_action'] ?? ''), '|qt')) {
+            $this->useTypedQuote($user, $chatId, mb_substr($idea, 0, 220));
+
+            return true;
+        }
         if ($this->chosenFormatKey($user) === null) {
             IncomingMediaStash::saveText((int) $user['id'], $idea);
             $this->channel->sendText($chatId, Messages::ideaNeedFormat());
             $this->sendFormatMenu($user, $chatId, $this->chosenDestination($user));
+
+            return true;
+        }
+        if (IdeaReference::hasStash((int) $user['id']) && $this->referenceMode($user) === null) {
+            IncomingMediaStash::saveText((int) $user['id'], $idea);
+            $this->channel->sendText($chatId, Messages::referenceAsk(), Keyboards::referenceMode());
 
             return true;
         }
@@ -4123,6 +4141,157 @@ class PostService
         $this->startIdea($user, $chatId, $idea, null);
 
         return true;
+    }
+
+    /**
+     * Foto de referência na IA: pergunta se mantém o que aparece ou se é só inspiração.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $message
+     */
+    private function askReferenceMode(array $user, int $chatId, array $message): bool
+    {
+        $file = $this->extractFile($message);
+        if ($file === null || $file['kind'] !== 'image' || $this->referenceMode($user) !== null) {
+            return false;
+        }
+        $userId = (int) $user['id'];
+        if ($this->extractTheme($message) !== null) {
+            IncomingMediaStash::save($userId, $message);
+        } else {
+            IncomingMediaStash::clear($userId);
+            if (!$this->stashIdeaReference($user, $message)) {
+                return false;
+            }
+        }
+        $this->channel->sendText($chatId, Messages::referenceAsk(), Keyboards::referenceMode());
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function chooseReferenceMode(array $user, int $chatId, bool $keep): void
+    {
+        if ($this->selectedKind($user) !== 'ia' || $this->chosenFormatKey($user) === null) {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        $pending = (string) preg_replace('/\|ref:[a-z]+/', '', (string) ($user['pending_action'] ?? ''))
+            . '|ref:' . ($keep ? 'keep' : 'free');
+        $this->users->update((int) $user['id'], ['pending_action' => $pending]);
+        $user['pending_action'] = $pending;
+        if ($this->tryConsumeIncomingStash($user, $chatId)) {
+            return;
+        }
+        if (IdeaReference::hasStash((int) $user['id'])) {
+            $this->channel->sendText($chatId, Messages::kindIaNeedTextWithPhoto());
+
+            return;
+        }
+        $this->sendIdeaPrompt($chatId, $this->chosenDestination($user));
+    }
+
+    /**
+     * Citação sem texto definido: escolhe uma e mostra para a pessoa conferir antes de desenhar.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed>|null $message
+     * @param array<string, mixed> $profile
+     */
+    private function offerQuote(array $user, int $chatId, string $idea, ?array $message, array $profile, string $avoid = ''): bool
+    {
+        if (IdeaPieces::kind($idea) !== 'quote' || IdeaPieces::exactText($idea) !== '') {
+            return false;
+        }
+        $picker = $this->quotes ?? ($this->ideas === null ? new QuotePicker() : null);
+        $picked = $picker?->pick(IdeaPieces::withoutExactText($idea), $profile, $avoid);
+        if ($picked === null) {
+            return false;
+        }
+        $stash = ['caption' => IdeaPieces::withExactQuote($idea, $picked['quote'], $picked['credit'])];
+        if ($message !== null && $this->extractFile($message) !== null) {
+            $stash['photo'] = $message['photo'] ?? null;
+            $stash['document'] = $message['document'] ?? null;
+        }
+        IncomingMediaStash::clear((int) $user['id']);
+        if (isset($stash['photo']) || isset($stash['document'])) {
+            IncomingMediaStash::save((int) $user['id'], $stash);
+        } else {
+            IncomingMediaStash::saveText((int) $user['id'], $stash['caption']);
+        }
+        $pending = (string) ($user['pending_action'] ?? '');
+        if (!str_contains($pending, '|qt')) {
+            $this->users->update((int) $user['id'], ['pending_action' => $pending . '|qt']);
+        }
+        $this->channel->sendText($chatId, Messages::quoteConfirm($picked['quote'], $picked['credit']), Keyboards::quoteConfirm());
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    public function chooseQuote(array $user, int $chatId, bool $ok): void
+    {
+        $pending = (string) ($user['pending_action'] ?? '');
+        $payload = IncomingMediaStash::load((int) $user['id']);
+        $caption = is_array($payload) ? (string) ($payload['caption'] ?? '') : '';
+        if (!str_contains($pending, '|qt') || $caption === '') {
+            $this->channel->sendText($chatId, Messages::alreadyProcessed());
+
+            return;
+        }
+        if (!$ok) {
+            $idea = IdeaPieces::withoutExactText($caption);
+            $message = IncomingMediaStash::toMessage($payload);
+            if (!$this->offerQuote($user, $chatId, $idea, $message, $this->profileView($user), IdeaPieces::exactText($caption))) {
+                $this->channel->sendText($chatId, Messages::ideaFailed());
+            }
+
+            return;
+        }
+        $this->resumeQuote($user, $chatId);
+    }
+
+    /**
+     * Citação digitada pela pessoa no lugar da sugerida.
+     *
+     * @param array<string, mixed> $user
+     */
+    private function useTypedQuote(array $user, int $chatId, string $quote): void
+    {
+        $payload = IncomingMediaStash::load((int) $user['id']) ?? [];
+        $caption = IdeaPieces::withExactQuote((string) ($payload['caption'] ?? ''), $quote);
+        IncomingMediaStash::saveText((int) $user['id'], $caption);
+        $this->resumeQuote($user, $chatId);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function resumeQuote(array $user, int $chatId): void
+    {
+        $pending = str_replace('|qt', '', (string) ($user['pending_action'] ?? ''));
+        $this->users->update((int) $user['id'], ['pending_action' => $pending]);
+        $user['pending_action'] = $pending;
+        if (!$this->tryConsumeIncomingStash($user, $chatId)) {
+            $this->channel->sendText($chatId, Messages::ideaFailed());
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function referenceMode(array $user): ?string
+    {
+        if (preg_match('/\|ref:(keep|free)/', (string) ($user['pending_action'] ?? ''), $m) !== 1) {
+            return null;
+        }
+
+        return $m[1];
     }
 
     /**
@@ -4147,11 +4316,17 @@ class PostService
         $formatKey = $this->chosenFormatKey($user);
         $resume = $this->selectedKind($user) === 'ia' ? (string) ($user['pending_action'] ?? '') : '';
         $profile = $this->profileView($user);
-        $this->users->update($userId, ['pending_action' => null]);
         $isStory = $destination === 'story';
         $aspect = $isStory ? '9:16' : '4:5';
         if ($surprisePhrase === null && $formatKey !== null) {
             $idea = IdeaPieces::applyCue($idea, IdeaPieces::cueFromKey($formatKey, $aspect));
+        }
+        if ($surprisePhrase === null && $resume !== '' && $this->offerQuote($user, $chatId, $idea, $message, $profile)) {
+            return;
+        }
+        $this->users->update($userId, ['pending_action' => null]);
+        if ($this->referenceMode($user) === 'keep') {
+            $idea .= "\n" . IdeaPieces::KEEP_REFERENCE;
         }
         $designed = IdeaImage::isDesigned($idea);
         if ($surprisePhrase !== null) {
@@ -4252,6 +4427,9 @@ class PostService
         if ($kind === 'ia') {
             if ($this->chosenFormatKey($user) === null) {
                 return false;
+            }
+            if ($this->askReferenceMode($user, $chatId, $message)) {
+                return true;
             }
             $idea = $this->extractTheme($message);
             IncomingMediaStash::clear((int) $user['id']);
@@ -4773,9 +4951,6 @@ class PostService
     {
         if (PromptExtras::isPromptExtraImagePath($reference)) {
             $reference = null;
-        }
-        if (IdeaImage::isDesigned($idea)) {
-            return $reference;
         }
 
         return $reference ?? PromptExtras::firstImageAbsolute($matchedExtras);

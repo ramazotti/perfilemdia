@@ -42,6 +42,7 @@ final class PostFunnelTest extends TestCase
     private UserRepository $users;
     private PostRepository $posts;
     private FunnelIdea $ideas;
+    private FunnelQuotes $quotes;
     private PostService $service;
     private int $userId = 0;
 
@@ -53,6 +54,7 @@ final class PostFunnelTest extends TestCase
         $this->users = new UserRepository($this->pdo, new Crypto(sodium_crypto_secretbox_keygen()));
         $this->posts = new PostRepository($this->pdo);
         $this->ideas = new FunnelIdea();
+        $this->quotes = new FunnelQuotes();
         $this->service = new PostService(
             $this->users,
             $this->posts,
@@ -63,6 +65,8 @@ final class PostFunnelTest extends TestCase
             new PlanAccess($this->pdo),
             null,
             $this->ideas,
+            null,
+            $this->quotes,
         );
         $this->userId = $this->users->create(self::TELEGRAM_ID, self::TELEGRAM_ID, 'funil');
         $this->users->update($this->userId, [
@@ -90,6 +94,49 @@ final class PostFunnelTest extends TestCase
         $this->cleanup();
     }
 
+    public function testQuoteIsShownForConfirmationBeforeDrawing(): void
+    {
+        $this->setPending('kind:ia|fmt:quote');
+
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'perdão e misericórdia');
+
+        $this->assertSame([], $this->ideas->calls);
+        $this->assertContains(Messages::quoteConfirm('Felizes os misericordiosos.', 'Mateus 5,7'), $this->channel->texts());
+
+        $this->service->chooseQuote($this->user(), self::TELEGRAM_ID, false);
+        $this->assertSame('Felizes os misericordiosos.', $this->quotes->avoided);
+        $this->assertSame([], $this->ideas->calls);
+
+        $this->service->chooseQuote($this->user(), self::TELEGRAM_ID, true);
+        $this->assertCount(1, $this->ideas->calls);
+        $this->assertStringContainsString('Texto na imagem: «Felizes os misericordiosos.»', $this->ideas->calls[0]['idea']);
+        $this->assertStringContainsString('Crédito: Mateus 5,7.', $this->ideas->calls[0]['idea']);
+        $this->assertSame('', $this->pending());
+    }
+
+    public function testTypedQuoteReplacesTheSuggestion(): void
+    {
+        $this->setPending('kind:ia@story|fmt:quote');
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'perdão');
+
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'Deus não se cansa de perdoar');
+
+        $this->assertCount(1, $this->ideas->calls);
+        $this->assertStringContainsString('«Deus não se cansa de perdoar»', $this->ideas->calls[0]['idea']);
+        $this->assertStringNotContainsString('misericordiosos', $this->ideas->calls[0]['idea']);
+        $this->assertSame('9:16', $this->ideas->calls[0]['aspect']);
+    }
+
+    public function testQuoteGivenByThePersonIsNotQuestioned(): void
+    {
+        $this->setPending('kind:ia|fmt:quote');
+
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'use a frase "Coragem, sou eu"');
+
+        $this->assertCount(1, $this->ideas->calls);
+        $this->assertSame(0, $this->quotes->calls);
+    }
+
     public function testFormatIsAskedOnlyForAiAndChosenFormatWinsOverWords(): void
     {
         $this->service->chooseWhere($this->user(), self::TELEGRAM_ID, 'story');
@@ -103,6 +150,7 @@ final class PostFunnelTest extends TestCase
         $this->assertSame('kind:ia@story|fmt:quote', $this->pending());
 
         $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, '3 passos para uma boa confissão');
+        $this->service->chooseQuote($this->user(), self::TELEGRAM_ID, true);
 
         $this->assertCount(1, $this->ideas->calls);
         $this->assertStringStartsWith("Cita\u{00e7}\u{00e3}o:", $this->ideas->calls[0]['idea']);
@@ -179,10 +227,36 @@ final class PostFunnelTest extends TestCase
         $this->assertContains(Messages::askIdeaFormat(), $this->channel->texts());
 
         $this->service->chooseIdeaFormat($this->user(), self::TELEGRAM_ID, 'quote');
+        $this->assertContains(Messages::referenceAsk(), $this->channel->texts());
+        $this->assertSame([], $this->ideas->calls);
+
+        $this->service->chooseReferenceMode($this->user(), self::TELEGRAM_ID, true);
+        $this->service->chooseQuote($this->user(), self::TELEGRAM_ID, true);
 
         $this->assertCount(1, $this->ideas->calls);
         $this->assertNotNull($this->ideas->calls[0]['reference']);
         $this->assertSame('9:16', $this->ideas->calls[0]['aspect']);
+        $this->assertStringContainsString(\PerfilEmDia\Image\IdeaPieces::KEEP_REFERENCE, $this->ideas->calls[0]['idea']);
+    }
+
+    public function testPhotoWithoutTextAsksHowToUseItThenWaitsForTheIdea(): void
+    {
+        $this->setPending('kind:ia|fmt:photo');
+        $message = $this->photo('');
+        unset($message['caption']);
+
+        $this->service->handleIncomingMedia($this->user(), self::TELEGRAM_ID, $message);
+        $this->assertContains(Messages::referenceAsk(), $this->channel->texts());
+
+        $this->service->chooseReferenceMode($this->user(), self::TELEGRAM_ID, false);
+        $this->assertContains(Messages::kindIaNeedTextWithPhoto(), $this->channel->texts());
+        $this->assertSame('kind:ia|fmt:photo|ref:free', $this->pending());
+
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'a mesma praça ao entardecer');
+
+        $this->assertCount(1, $this->ideas->calls);
+        $this->assertNotNull($this->ideas->calls[0]['reference']);
+        $this->assertStringNotContainsString(\PerfilEmDia\Image\IdeaPieces::KEEP_REFERENCE, $this->ideas->calls[0]['idea']);
     }
 
     public function testReplacingWithLongTextAsksInsteadOfSayingReceived(): void
@@ -275,6 +349,7 @@ final class PostFunnelTest extends TestCase
         $this->setPending('kind:ia|fmt:quote');
 
         $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'misericórdia');
+        $this->service->chooseQuote($this->user(), self::TELEGRAM_ID, true);
 
         $brand = $this->ideas->calls[0]['brand'];
         $this->assertStringContainsString('azul marinho e dourado', $brand);
@@ -510,6 +585,21 @@ final class FunnelIdea implements IdeaImageGenerator
         imagedestroy($image);
 
         return $jpeg;
+    }
+}
+
+final class FunnelQuotes implements \PerfilEmDia\Ai\QuotePickerInterface
+{
+    public int $calls = 0;
+
+    public string $avoided = '';
+
+    public function pick(string $idea, array $profile, string $avoid = ''): ?array
+    {
+        $this->calls++;
+        $this->avoided = $avoid;
+
+        return ['quote' => 'Felizes os misericordiosos.', 'credit' => 'Mateus 5,7'];
     }
 }
 

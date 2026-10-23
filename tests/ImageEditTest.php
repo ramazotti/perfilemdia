@@ -356,7 +356,7 @@ final class ImageEditTest extends TestCase
         $this->assertSame(PostStatus::AwaitingApproval->value, $posts->find($postId)['status']);
     }
 
-    public function testCreatedPhotoCanBeRedoneTwice(): void
+    public function testCreatedPhotoCanBeRedoneThreeTimes(): void
     {
         $ideas = new CountingIdea($this->tinyJpeg());
         [$service, $channel, $users, $posts, $user, $postId] = $this->readyPost('estudio', $ideas);
@@ -375,14 +375,16 @@ final class ImageEditTest extends TestCase
 
             $service->handleApprovalCallback($user, 930001, 'cb2', 'pix', $postId);
             $this->assertSame(2, $ideas->calls);
-            $this->assertSame(2, (int) $posts->find($postId)['idea_regen_count']);
+            $service->handleApprovalCallback($user, 930001, 'cb2b', 'pix', $postId);
+            $this->assertSame(3, $ideas->calls);
+            $this->assertSame(3, (int) $posts->find($postId)['idea_regen_count']);
             $this->openAdjustMenu($service, $user, 930001, $postId);
             $this->assertNotContains('Trocar imagem (IA)', $this->buttonLabels($channel));
 
             $service->handleApprovalCallback($user, 930001, 'cb3', 'pix', $postId);
-            $this->assertSame(2, $ideas->calls);
+            $this->assertSame(3, $ideas->calls);
             $texts = implode(' ', array_column($channel->sent, 'text'));
-            $this->assertStringContainsString('duas versões novas', $texts);
+            $this->assertStringContainsString('as 3 versões novas', $texts);
         } finally {
             if (is_file($original)) {
                 unlink($original);

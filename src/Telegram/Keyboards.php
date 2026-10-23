@@ -529,6 +529,28 @@ final class Keyboards
     /**
      * @return list<list<array{text:string, callback_data:string}>>
      */
+    public static function quoteConfirm(): array
+    {
+        return [
+            [['text' => 'Está certo, criar', 'callback_data' => 'qt:ok']],
+            [['text' => 'Trocar citação', 'callback_data' => 'qt:new']],
+        ];
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data:string}>>
+     */
+    public static function referenceMode(): array
+    {
+        return [
+            [['text' => 'Manter o que aparece na foto', 'callback_data' => 'rf:keep']],
+            [['text' => 'Só como inspiração', 'callback_data' => 'rf:free']],
+        ];
+    }
+
+    /**
+     * @return list<list<array{text:string, callback_data:string}>>
+     */
     public static function ideaChange(int $postId): array
     {
         return [

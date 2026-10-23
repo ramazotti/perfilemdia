@@ -19,7 +19,7 @@ final class PromptExtraRepository
     public function listForAccount(int $accountId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, instagram_account_id, trigger_word, prompt_text, image_path, sort_order
+            'SELECT id, instagram_account_id, trigger_word, prompt_text, image_path, image_role, sort_order
              FROM instagram_prompt_extras
              WHERE instagram_account_id = ?
              ORDER BY sort_order ASC, id ASC'
@@ -43,7 +43,7 @@ final class PromptExtraRepository
     public function findForAccount(int $id, int $accountId): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, instagram_account_id, trigger_word, prompt_text, image_path, sort_order
+            'SELECT id, instagram_account_id, trigger_word, prompt_text, image_path, image_role, sort_order
              FROM instagram_prompt_extras WHERE id = ? AND instagram_account_id = ? LIMIT 1'
         );
         $stmt->execute([$id, $accountId]);
@@ -52,8 +52,9 @@ final class PromptExtraRepository
         return $row === false ? null : $row;
     }
 
-    public function save(int $accountId, ?int $id, string $trigger, string $text): int
+    public function save(int $accountId, ?int $id, string $trigger, string $text, string $imageRole = PromptExtras::ROLE_LOGO): int
     {
+        $imageRole = PromptExtras::normalizeRole($imageRole);
         $trigger = PromptExtras::normalizeTrigger($trigger);
         if ($trigger === '') {
             throw new RuntimeException('Informe a palavra-gatilho.');
@@ -68,9 +69,9 @@ final class PromptExtraRepository
                 throw new RuntimeException('Extra não encontrado.');
             }
             $stmt = $this->pdo->prepare(
-                'UPDATE instagram_prompt_extras SET trigger_word = ?, prompt_text = ? WHERE id = ? AND instagram_account_id = ?'
+                'UPDATE instagram_prompt_extras SET trigger_word = ?, prompt_text = ?, image_role = ? WHERE id = ? AND instagram_account_id = ?'
             );
-            $stmt->execute([$trigger, $text, $id, $accountId]);
+            $stmt->execute([$trigger, $text, $imageRole, $id, $accountId]);
 
             return $id;
         }
@@ -79,11 +80,11 @@ final class PromptExtraRepository
         }
         $sort = $this->countForAccount($accountId);
         $stmt = $this->pdo->prepare(
-            'INSERT INTO instagram_prompt_extras (instagram_account_id, trigger_word, prompt_text, sort_order)
-             VALUES (?, ?, ?, ?)'
+            'INSERT INTO instagram_prompt_extras (instagram_account_id, trigger_word, prompt_text, image_role, sort_order)
+             VALUES (?, ?, ?, ?, ?)'
         );
         try {
-            $stmt->execute([$accountId, $trigger, $text, $sort]);
+            $stmt->execute([$accountId, $trigger, $text, $imageRole, $sort]);
         } catch (\PDOException $e) {
             if (str_contains($e->getMessage(), 'Duplicate')) {
                 throw new RuntimeException('Já existe um extra com essa palavra-gatilho.');

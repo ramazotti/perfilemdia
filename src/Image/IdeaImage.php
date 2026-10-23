@@ -71,7 +71,7 @@ final class IdeaImage implements IdeaImageGenerator
             'output_format' => null,
             'aspect_ratio' => $aspect === '9:16' ? '9:16' : ($aspect === '4:5' ? '3:4' : null),
             'resolution' => null,
-            'quality' => 'medium',
+            'quality' => 'high',
         ];
     }
 

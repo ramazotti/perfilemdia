@@ -869,9 +869,22 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
         return 'Post criado pela IA faz parte do plano Estúdio.';
     }
 
-    public static function ideaImageLimit(): string
+    public static function ideaImageLimit(int $limit = 3): string
     {
-        return 'A foto criada pela IA deste post já teve as duas versões novas. A legenda ainda pode mudar.';
+        $count = $limit === 1 ? 'a versão nova' : 'as ' . $limit . ' versões novas';
+
+        return 'A imagem criada pela IA deste post já teve ' . $count . '. A legenda ainda pode mudar.';
+    }
+
+    public static function quoteConfirm(string $quote, string $credit): string
+    {
+        return "Vou usar esta citação:\n\n«" . $quote . '»' . ($credit !== '' ? "\n— " . $credit : '')
+            . "\n\nConfira o texto e a referência. Se preferir outra, toque em Trocar citação ou mande a citação que você quer.";
+    }
+
+    public static function referenceAsk(): string
+    {
+        return 'Como a IA deve usar a sua foto? Manter o que aparece nela (produto, pessoa, lugar) e mudar só cenário e luz, ou usar só como inspiração para uma cena nova?';
     }
 
     public static function askIdeaChange(): string
