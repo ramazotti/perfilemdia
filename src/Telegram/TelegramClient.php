@@ -154,6 +154,7 @@ final class TelegramClient
                 ['command' => 'novo', 'description' => 'Como enviar um post'],
                 ['command' => 'perfil', 'description' => 'Ver e editar perfil'],
                 ['command' => 'conectar', 'description' => 'Conectar Instagram'],
+                ['command' => 'contas', 'description' => 'Trocar ou adicionar Instagram'],
                 ['command' => 'status', 'description' => 'Conta e limite do mes'],
                 ['command' => 'assinatura', 'description' => 'Ver ou cancelar a assinatura'],
                 ['command' => 'cancelar', 'description' => 'Cancelar post pendente'],

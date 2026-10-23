@@ -80,6 +80,7 @@ final class Messages
             . "/novo como mandar um post\n"
             . "/perfil ver e editar seus dados\n"
             . "/conectar ligar o Instagram\n"
+            . "/contas trocar ou adicionar uma @\n"
             . "/status conta e limite do mês\n"
             . "/assinatura plano e validade\n"
             . "/cancelar descartar o post que está esperando\n"
