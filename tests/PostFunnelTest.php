@@ -215,7 +215,7 @@ final class PostFunnelTest extends TestCase
         $this->assertSame(0, (int) $post['creative']);
     }
 
-    public function testAiChoiceFromOwnPhotoAsksFormatAndUsesThePhotoAsReference(): void
+    public function testAiChoiceFromOwnPhotoRecreatesSceneWithReference(): void
     {
         $this->setPending('kind:foto@story');
         $this->service->handleIncomingMedia($this->user(), self::TELEGRAM_ID, $this->photo(self::LONG));
@@ -223,19 +223,37 @@ final class PostFunnelTest extends TestCase
 
         $this->service->handlePhotoChoice($this->user(), self::TELEGRAM_ID, false, (int) $m[1]);
 
-        $this->assertSame('kind:ia@story', $this->pending());
-        $this->assertContains(Messages::askIdeaFormat(), $this->channel->texts());
-
-        $this->service->chooseIdeaFormat($this->user(), self::TELEGRAM_ID, 'quote');
-        $this->assertContains(Messages::referenceAsk(), $this->channel->texts());
-        $this->assertSame([], $this->ideas->calls);
-
-        $this->service->chooseReferenceMode($this->user(), self::TELEGRAM_ID, true);
-        $this->service->chooseQuote($this->user(), self::TELEGRAM_ID, true);
-
+        $this->assertNotContains(Messages::askIdeaFormat(), $this->channel->texts());
+        $this->assertNotContains(Messages::referenceAsk(), $this->channel->texts());
         $this->assertCount(1, $this->ideas->calls);
         $this->assertNotNull($this->ideas->calls[0]['reference']);
         $this->assertSame('9:16', $this->ideas->calls[0]['aspect']);
+        $this->assertStringContainsString(\PerfilEmDia\Image\IdeaPieces::KEEP_REFERENCE, $this->ideas->calls[0]['idea']);
+    }
+
+    public function testIdeaFromPhotoMenuWaitsForPhotoWhenOnlyTextArrives(): void
+    {
+        $this->setPending('where:feed');
+        $this->service->choosePostKind($this->user(), self::TELEGRAM_ID, 'iaref');
+
+        $this->assertSame('kind:ia|fmt:photo|ref:keep|src:photo', $this->pending());
+        $this->assertContains(Messages::kindIaFromPhoto(), $this->channel->texts());
+
+        $this->service->handleIdeaText($this->user(), self::TELEGRAM_ID, 'Agostinho ouvindo uma confissão');
+
+        $this->assertContains(Messages::kindIaFromPhotoNeedPhoto(), $this->channel->texts());
+        $this->assertSame([], $this->ideas->calls);
+    }
+
+    public function testIdeaFromPhotoFlowSkipsReferenceQuestion(): void
+    {
+        $this->setPending('kind:ia|fmt:photo|ref:keep|src:photo');
+        $message = $this->photo('Santo ouvindo confissão e a pessoa saindo aliviada');
+
+        $this->service->handleIncomingMedia($this->user(), self::TELEGRAM_ID, $message);
+
+        $this->assertNotContains(Messages::referenceAsk(), $this->channel->texts());
+        $this->assertCount(1, $this->ideas->calls);
         $this->assertStringContainsString(\PerfilEmDia\Image\IdeaPieces::KEEP_REFERENCE, $this->ideas->calls[0]['idea']);
     }
 

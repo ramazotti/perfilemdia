@@ -73,6 +73,7 @@ final class Keyboards
                 ['text' => 'Enviar meu vídeo', 'callback_data' => 'pk:video'],
             ],
             [['text' => 'IA cria a imagem', 'callback_data' => 'pk:ia']],
+            [['text' => 'Recriar cena a partir da minha foto', 'callback_data' => 'pk:iaref']],
         ];
     }
 
@@ -466,6 +467,7 @@ final class Keyboards
                 ['text' => 'Vídeo curto', 'callback_data' => 'pk:video'],
                 ['text' => 'IA cria imagem e legenda', 'callback_data' => 'pk:ia'],
             ],
+            [['text' => 'Recriar cena a partir da minha foto', 'callback_data' => 'pk:iaref']],
         ];
         if ($aiVideo) {
             $rows[] = [['text' => 'IA gera vídeo curto', 'callback_data' => 'pk:aivideo']];

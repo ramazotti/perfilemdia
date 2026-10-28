@@ -794,6 +794,29 @@ Precisa ser conta profissional (Empresa). Quando estiver pronta, toque em Conect
         return 'Guardei a foto como referência. Agora mande a ideia em texto ou áudio.';
     }
 
+    public static function kindIaFromPhoto(): string
+    {
+        return 'Mande a foto de referência (retrato, santo, objeto...) e, na mesma mensagem, descreva a cena que a IA deve criar. '
+            . 'Exemplo: foto de Santo Agostinho e o texto "Agostinho ouvindo uma confissão e a pessoa saindo aliviada". '
+            . 'A IA mantém quem ou o que aparece na foto e monta a cena nova.';
+    }
+
+    public static function kindStoryIaFromPhoto(): string
+    {
+        return 'Mande a foto de referência e, na mesma mensagem, descreva a cena em tela cheia. '
+            . 'A IA mantém quem ou o que aparece na foto e cria a cena que você descreveu.';
+    }
+
+    public static function kindIaFromPhotoNeedText(): string
+    {
+        return 'Guardei a foto. Agora descreva a cena que a IA deve criar a partir dela (texto ou áudio).';
+    }
+
+    public static function kindIaFromPhotoNeedPhoto(): string
+    {
+        return 'Guardei a ideia. Agora mande a foto de referência para eu manter quem ou o que aparece nela.';
+    }
+
     public static function kindUseAlbum(): string
     {
         return 'Você escolheu foto única. Para várias fotos, escolha Carrossel.';

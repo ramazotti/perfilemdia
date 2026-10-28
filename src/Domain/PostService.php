@@ -130,9 +130,12 @@ class PostService
             $idea = $this->extractTheme($message);
             if ($idea === null || $idea === '') {
                 $stashed = $this->stashIdeaReference($user, $message);
+                $needText = $this->ideaFromPhotoFlow($user)
+                    ? Messages::kindIaFromPhotoNeedText()
+                    : Messages::kindIaNeedTextWithPhoto();
                 $this->channel->sendText(
                     $chatId,
-                    $stashed ? Messages::kindIaNeedTextWithPhoto() : Messages::kindIaNeedText(),
+                    $stashed ? $needText : Messages::kindIaNeedText(),
                 );
 
                 return;
@@ -321,15 +324,21 @@ class PostService
             'photo' => [['file_id' => $fileId]],
         ]);
         $story = (string) ($draft['destination'] ?? 'feed') === 'story';
-        $this->users->update($userId, ['pending_action' => 'kind:ia' . ($story ? '@story' : '')]);
-        $user['pending_action'] = 'kind:ia' . ($story ? '@story' : '');
+        $pending = 'kind:ia' . ($story ? '@story' : '') . '|fmt:photo|ref:keep|src:photo';
+        $this->users->update($userId, ['pending_action' => $pending]);
+        $user['pending_action'] = $pending;
         if (!$this->aiAllowed($userId)) {
             $this->channel->sendText($chatId, Messages::aiPlan());
 
             return;
         }
-        $this->channel->sendText($chatId, Messages::ideaNeedFormat());
-        $this->sendFormatMenu($user, $chatId, $story ? 'story' : 'feed');
+        if ($this->tryConsumeIncomingStash($user, $chatId)) {
+            return;
+        }
+        $this->channel->sendText(
+            $chatId,
+            $story ? Messages::kindStoryIaFromPhoto() : Messages::kindIaFromPhoto(),
+        );
     }
 
     /**
@@ -3657,7 +3666,7 @@ class PostService
 
             return;
         }
-        if (!in_array($kind, ['foto', 'album', 'video', 'ia', 'aivideo', 'surpresa'], true)) {
+        if (!in_array($kind, ['foto', 'album', 'video', 'ia', 'iaref', 'aivideo', 'surpresa'], true)) {
             $this->askPostKind($chatId, $user);
 
             return;
@@ -3682,8 +3691,13 @@ class PostService
 
             return;
         }
-        if ($kind === 'ia' && !$this->aiAllowed((int) $user['id'])) {
+        if (in_array($kind, ['ia', 'iaref'], true) && !$this->aiAllowed((int) $user['id'])) {
             $this->channel->sendText($chatId, Messages::aiPlan());
+
+            return;
+        }
+        if ($kind === 'iaref') {
+            $this->beginIdeaFromPhotoFlow($user, $chatId);
 
             return;
         }
@@ -3798,7 +3812,9 @@ class PostService
             $text = match ($kind) {
                 'album' => Messages::kindAlbum(),
                 'video' => $where === 'story' ? Messages::kindStoryVideo() : Messages::kindVideo(),
-                'ia' => $where === 'story' ? Messages::kindStoryIa() : Messages::kindIaNeedText(),
+                'ia' => $this->ideaFromPhotoFlow($user)
+                    ? ($where === 'story' ? Messages::kindStoryIaFromPhoto() : Messages::kindIaFromPhoto())
+                    : ($where === 'story' ? Messages::kindStoryIa() : Messages::kindIaNeedText()),
                 default => $where === 'story' ? Messages::kindStoryFoto() : Messages::kindFoto(),
             };
             $this->channel->sendText($chatId, $text);
@@ -4132,6 +4148,12 @@ class PostService
 
             return true;
         }
+        if ($this->ideaFromPhotoFlow($user) && !$this->hasIdeaPhotoStash($user)) {
+            IncomingMediaStash::saveText((int) $user['id'], $idea);
+            $this->channel->sendText($chatId, Messages::kindIaFromPhotoNeedPhoto());
+
+            return true;
+        }
         if ($this->posts->findOpenWorkflowForUser((int) $user['id']) !== null) {
             $this->channel->sendText($chatId, Messages::postInProgress());
 
@@ -4296,6 +4318,50 @@ class PostService
 
     /**
      * @param array<string, mixed> $user
+     */
+    private function ideaFromPhotoFlow(array $user): bool
+    {
+        return str_contains((string) ($user['pending_action'] ?? ''), '|src:photo');
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function hasIdeaPhotoStash(array $user): bool
+    {
+        $userId = (int) $user['id'];
+        if (IdeaReference::hasStash($userId)) {
+            return true;
+        }
+        $payload = IncomingMediaStash::load($userId);
+        if ($payload === null) {
+            return false;
+        }
+        $file = $this->extractFile(IncomingMediaStash::toMessage($payload));
+
+        return $file !== null && $file['kind'] === 'image';
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function beginIdeaFromPhotoFlow(array $user, int $chatId): void
+    {
+        IdeaReference::clearStash((int) $user['id']);
+        $where = $this->chosenDestination($user);
+        $mark = $where === 'story' ? '@story' : '';
+        $pending = 'kind:ia' . $mark . '|fmt:photo|ref:keep|src:photo';
+        $this->users->update((int) $user['id'], ['pending_action' => $pending]);
+        $user['pending_action'] = $pending;
+        $this->channel->sendText(
+            $chatId,
+            $where === 'story' ? Messages::kindStoryIaFromPhoto() : Messages::kindIaFromPhoto(),
+        );
+        $this->tryConsumeIncomingStash($user, $chatId);
+    }
+
+    /**
+     * @param array<string, mixed> $user
      * @param array<string, mixed>|null $message
      */
     private function startIdea(
@@ -4445,7 +4511,11 @@ class PostService
                 return true;
             }
             if ($this->stashIdeaReference($user, $message)) {
-                $this->channel->sendText($chatId, Messages::kindIaNeedTextWithPhoto(), Keyboards::surpriseMe());
+                $prompt = $this->ideaFromPhotoFlow($user)
+                    ? Messages::kindIaFromPhotoNeedText()
+                    : Messages::kindIaNeedTextWithPhoto();
+                $keyboard = $this->ideaFromPhotoFlow($user) ? null : Keyboards::surpriseMe();
+                $this->channel->sendText($chatId, $prompt, $keyboard);
 
                 return true;
             }
